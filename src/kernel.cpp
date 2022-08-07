@@ -12,6 +12,8 @@
     - Core functionality of the operating system.
 */
 
+// external asm call
+extern "C" int PrimaryHandler();
 
 int main () {
     std :: cout << ".." << std :: endl;
