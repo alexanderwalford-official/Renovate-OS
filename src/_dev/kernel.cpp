@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h> //we can use it: it doesnt use any platform-related api functions
 #include <stdint.h> //include it to get int16_t and some integer types
 
@@ -103,3 +107,7 @@ void kernel_main()
 	terminal_writestring("wellcome to my first operating system!");
 	for(;;);
 }
+
+#ifdef __cplusplus
+}
+#endif
