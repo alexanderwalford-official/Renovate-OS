@@ -1,16 +1,12 @@
 // header.h
 // Alexander Walford 2022
 
-// boot_main.h
+// "Include guard" prevents multiple inclusion: 
+#ifndef HEADER_ALREADY_INCLUDED 
+#define HEADER_ALREADY_INCLUDED 
 
-class boot {
-public:
-    void boot_main();
-};
+// List prototypes of all functions in boot.cpp here: 
+int boot_main();
 
-#ifndef HEADER_H_INCLUDED
-#define HEADER_H_INCLUDED
-int boot_main() {
-
-}
-#endif
+// End include guard: 
+#endif 
