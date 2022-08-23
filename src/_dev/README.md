@@ -2,7 +2,7 @@
 
 ## Not OS Specific:
 - nasm -f elf64 boot.asm -o boot.o
-- g++ -c kernel.cpp -o kernel.o -ffreestanding -fno-exceptions -fno-rtti
+- g++ -c kernel.c -o kernel.o -ffreestanding -fno-exceptions -fno-rtti
 - gcc boot.o kernel.o -T linker.ld -o kern -nostdlib -nodefaultlibs -lgcc
 
 ## On Linux:
