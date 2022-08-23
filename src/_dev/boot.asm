@@ -18,6 +18,7 @@ MultiBootHeader:
    dd CHECKSUM
  
 extern kernel_main 
+
 start:
 	;push ebx ;this is optional and load's the grub structure
 	call kernel_main
