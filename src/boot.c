@@ -2,7 +2,7 @@
 // Alexander Walford 2022
 
 
-#include <iostream>
+#include <stdio.h>
 
 
 /*
@@ -16,6 +16,6 @@
 
 
 int boot_main () {
-    std :: cout << "<< BOOT SEQ INIT >>" << std :: endl;
+    printf("<< BOOT SEQ INIT >>\n");
     return 0;
 }

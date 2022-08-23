@@ -1,8 +1,7 @@
 // fs_primary.cpp
 // Alexander Walford 2022
 
-#include <iostream>
-#include "../header.h"
+#include <stdio.h>
 
 /*
     File System
@@ -15,6 +14,6 @@
 
 
 int fs_main () {
-    std :: cout << "<< FS >>" << std :: endl;
+    printf("<< FS INIT >>\n");
     return 0;
 }
