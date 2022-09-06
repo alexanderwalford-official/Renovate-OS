@@ -1,10 +1,5 @@
 # Build Instructions
-
-## Not OS Specific:
-- nasm -f elf32 boot.asm -o boot.o
-- g++ -c kernel.c -o kernel.o -ffreestanding -fno-exceptions -fno-rtti
-- gcc boot.o kernel.o -T linker.ld -o kern -nostdlib -nodefaultlibs -lgcc
+A very basic, frequently updated build guide for Renovate OS.
 
 ## On Linux:
-- cd src/_dev/
-- grub-mkrescue iso --output=kern.iso
+- Simply type: make into the command line of this directory.
