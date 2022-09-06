@@ -1,4 +1,5 @@
 #include "stdint.h"
+#include "stdio.h"
 
 enum color {
     BLACK = 0,
@@ -29,8 +30,15 @@ void clear(enum color bg) {
 }
 
 
-int __attribute__((noreturn)) main() {
-    clear(BLACK);
-    puts(0, 0, BRIGHT, BLACK, "Renovate OS by Renovate Software LTD 2022");
-    while (1);
+int main() {
+    clear(BRIGHT);
+    // COL : ROW
+    puts(35, 10, BLACK, BRIGHT, "Renovate OS");
+    puts(28, 11, BLACK, BRIGHT, "Renovate Software LTD 2022");
+    
+    // recent, new impl for char and char* (string):
+    char* a = "We have working chars now!";
+    puts(0, 0, BLACK, BRIGHT, a);
+    
+    return 0;
 }
