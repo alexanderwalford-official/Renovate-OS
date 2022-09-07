@@ -1,6 +1,6 @@
 #include "stdint.h"
-#include "lib/stdio.h"
-#include "lib/put.h"
+#include "../lib/stdio.h"
+#include "../lib/put.h"
 
 /*
     Things To Note:

@@ -1,5 +1,5 @@
 #include "stdint.h"
-#include "lib/put.h"
+#include "../lib/put.h"
 
 typedef struct file {
     int f_id; // ID

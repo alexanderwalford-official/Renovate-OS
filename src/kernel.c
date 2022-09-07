@@ -2,8 +2,8 @@
 #include "lib/stdio.h"
 #include "lib/put.h"
 #include "drivers/keyboard.h"
-#include "p_man.h"
-#include "f_sys.h"
+#include "sys/p_man.h"
+#include "sys/f_sys.h"
 
 /*
 TEMP DISABLED ASM CALL:
