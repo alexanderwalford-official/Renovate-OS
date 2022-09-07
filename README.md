@@ -17,8 +17,8 @@ Building an operating system from the ground up that can run on bare metal is qu
 - [ ] Implement boot process that calls the main methods.
 - [ ] Hardware drivers for user input.
 - [ ] Sound driver for error reporting.
-- [ ] Implement local filesystem.
+- [ ] Implement local filesystem. 🚧
 - [ ] Process management. 🚧
-- [ ] Programming interface with RenLang.
+- [ ] Programming interface.
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..
