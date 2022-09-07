@@ -19,6 +19,7 @@ Building an operating system from the ground up that can run on bare metal is qu
 - [ ] Sound driver for error reporting.
 - [ ] Implement local filesystem. 🚧
 - [ ] Process management. 🚧
-- [ ] Programming interface.
+- [ ] Programming interface. 🚧
+- [ ] Graphics driver. 🚧
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..
