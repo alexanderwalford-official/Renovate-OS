@@ -1,5 +1,5 @@
 #include "stdint.h"
-#include "../lib/put.h"
+#include "../drivers/video/put.h"
 
 typedef struct file {
     int f_id; // ID
@@ -62,8 +62,4 @@ void fs_create_d (char* d_path, char* d_name) {
 
 void fs_print () {
     // print all files & subdirectories in cd
-}
-
-void ret () {
-    return;
 }

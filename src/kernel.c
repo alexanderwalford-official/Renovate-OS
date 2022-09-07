@@ -1,7 +1,8 @@
 #include "stdint.h"
 #include "lib/stdio.h"
-#include "lib/put.h"
-#include "drivers/keyboard.h"
+#include "drivers/video/put.h"
+#include "drivers/input/keyboard.h"
+#include "drivers/input/mouse.h"
 #include "sys/p_man.h"
 #include "sys/f_sys.h"
 

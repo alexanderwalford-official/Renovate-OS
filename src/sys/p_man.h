@@ -1,6 +1,7 @@
 #include "stdint.h"
 #include "../lib/stdio.h"
-#include "../lib/put.h"
+#include "../drivers/video/put.h"
+#include "../lib/ren_comp.h"
 
 /*
     Things To Note:
@@ -26,8 +27,8 @@ int p_cnt = 0; // process count
 struct process p_stack[]; // process stack
 
 // primary process handler (alternate method)
-int p_id_handler (char action, int p_id) {
-    (action == "d") ? p_destory(p_id) : (action == "f") ? p_freeze(p_id, 1, 0) : (action == "e") ? p_exec(p_id) : 0;
+int p_id_handler (char* action, int p_id) {
+    (action == "d") ? p_destory(p_id) : (action == "f") ? p_freeze(p_id, 1, 0) : (action == "e") ? p_exec(p_id) : ret();
     return 0;
 }
 
@@ -52,7 +53,7 @@ void p_destory (int p_id) {
 
 // freeze a process
 void p_freeze (int p_id, float t, int dt) {
-    (dt <= t * 1000) ? dt = dt + 1, p_freeze(p_id, t, dt) : 0;    
+    (dt <= t * 1000) ? dt = dt + 1, p_freeze(p_id, t, dt) : ret();    
 }
 
 // repetative process execution (compilation)
@@ -62,11 +63,15 @@ void p_exec (int p_id) {
     char* instructions = p_stack[p_id].p_inst; // get instructions
     int exec_time = p_stack[p_id].p_et; // get execution time
     // handle execution
-    (instructions[0] == "p" && instructions[0] == "u") ? puts(0, 0,  BLACK, BRIGHT, instructions) : 0; // puts() - improve this handler
+    compile(instructions);
     // once executed, update the remaining p_et (IMPLEMENT)
     p_stack[p_id].p_et = 0;
 }
 
 // update method for the process stack - redefine the execution schedule by updating processes ticket ID if p_rs is 1 (live)
 void p_stack_update () {
+}
+
+void ret () {
+    return;
 }
