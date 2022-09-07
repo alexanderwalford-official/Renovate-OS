@@ -12,7 +12,7 @@ main.elf: entry.o main.o
 entry.o: entry.asm
 	nasm -f elf32 '$<' -o '$@'
 
-main.o: main.c
+main.o: kernel.c
 	gcc -c -m32 -std=c99 -ffreestanding -fno-builtin -Os -o '$@' -Wall -Wextra '$<'
 
 clean:

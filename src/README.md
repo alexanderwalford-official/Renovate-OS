@@ -1,7 +1,7 @@
 # Source Code
 
 ## Current Source Code Statistics
-- Build Failing [WIP]
+- Builds Passing
 - Process handling under development.
 
 ## Build Instructions On Linux:
