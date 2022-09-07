@@ -17,11 +17,18 @@ int main() {
     // COL : ROW
     puts(35, 10, BLACK, BRIGHT, "Renovate OS");
     puts(28, 11, BLACK, BRIGHT, "Renovate Software LTD 2022");
-    //p_create("puts(Renovate OS)"); // this is where we would print the text above
-    //p_freeze(0, 4, 0); // this is where we could freeze the boot screen process before we load the main methods
+
+    // untested:
+    p_create("[say:Renovate OS|3510|01]"); // this is where we would print the text above
+    p_exec(0); // execute process via ID
+    p_freeze(0, 4, 0); // this is where we could freeze the boot screen process before we load the main methods
 
     // initialise the temproary file system
     fs_init("n");
 
     return 0;
+}
+
+void ret () {
+    return;
 }

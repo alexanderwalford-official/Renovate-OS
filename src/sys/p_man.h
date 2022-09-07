@@ -71,7 +71,3 @@ void p_exec (int p_id) {
 // update method for the process stack - redefine the execution schedule by updating processes ticket ID if p_rs is 1 (live)
 void p_stack_update () {
 }
-
-void ret () {
-    return;
-}
