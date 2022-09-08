@@ -1,6 +1,6 @@
 // RenLang for Renovate OS compiler
 #include "stdint.h"
-#include "../drivers/video/put.h"
+#include "../drivers/video/IO.h"
 #include "../lib/sys_primary_definitions.h"
 #include "stdbool.h"
 

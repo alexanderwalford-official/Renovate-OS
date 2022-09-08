@@ -1,5 +1,8 @@
+#ifndef F_SYS_H
+#define F_SYS_H
+
 #include "stdint.h"
-#include "../drivers/video/put.h"
+#include "../drivers/video/IO.h"
 
 typedef struct file {
     int f_id; // ID
@@ -9,6 +12,7 @@ typedef struct file {
     char* f_datetime; // date & time created
     char* f_cont; // contents as string
 };
+
 typedef struct directory {
     int d_id;
     char* d_path;
@@ -19,7 +23,7 @@ typedef struct directory {
 int f_c = 0; // file count
 int d_c = 0; // directory count
 struct file files[];
-struct directory directories[];
+struct directory directories[3];
 char* cd = "/"; // current directory
 
 // fs init
@@ -34,6 +38,7 @@ void fs_init_base () {
     puts(0, 1, BLACK, BRIGHT, "< MK TMP REQ FS .. >");
     // .. 
     fs_create_d("", "/");
+    fs_create_d("accounts", "/acc/");
     fs_create_f("/", "conf.ren", "# here you will find all major system config options");
 }
 
@@ -47,7 +52,7 @@ void fs_create_f (char* f_path, char* f_name, char* f_cont) {
     f.f_path = f_path;
     f.f_cont = f_cont;
     f.f_size = sizeof(f_cont);
-    files[f_c] = f;
+    struct file files = f;
 }
 
 // create a directory
@@ -57,9 +62,16 @@ void fs_create_d (char* d_path, char* d_name) {
     d.d_id = d_c;
     d.d_path = d_path;
     d.d_name = d_name;
-    directories[d_c] = d;
+    struct directory directories = d;
 }
 
 void fs_print () {
     // print all files & subdirectories in cd
+    clear(BRIGHT);
+    puts(0, 0, BLACK, BRIGHT, cd); // print current dir
+    for (int i = 0; i < sizeof(directories); ++i) {
+        (contains(directories[i].d_path, cd, 0)) ? puts(0, 1, BLACK, BRIGHT, directories[i].d_path) : ret(); // found a directory with cd in path
+    }
 }
+
+#endif /* f_sys_h */

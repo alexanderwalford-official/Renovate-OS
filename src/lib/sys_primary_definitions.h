@@ -1,6 +1,10 @@
 #include "stdint.h"
 #include "stdbool.h"
 
+#ifndef NULL
+#define NULL 0;
+#endif
+
 // "for each" loop
 #define foreach(item, array) \
     for(int keep = 1, \
@@ -9,6 +13,11 @@
         keep && count != size; \
         keep = !keep, count++) \
       for(item = (array) + count; keep; keep = !keep)
+
+
+
+#ifndef SYS_PRIMARY_DEFINITIONS_H
+#define SYS_PRIMARY_DEFINITIONS_H
 
 // dynamic vars
 char str_chars[1];
@@ -42,5 +51,23 @@ bool contains(char* string, char* target, int c) {
 
 // "split" method
 char* split(char* string, char split) {
-    // TBI
+    int s_loc = 0;
+    char* new_string[sizeof(string) / 2][sizeof(string) / 2 - 1];
+    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
+        if (string[lc2] == split) {
+            // we found the character we're lookikng for the the string!
+            s_loc = lc2;
+            // add the rest of the characters to the 2nd dimension of the array
+            for (int lc3 = lc2 + 1; lc3 < sizeof(string) - s_loc; ++lc3) {
+                new_string[0][lc3] =  string[lc3];
+            }
+            // we're done, return the multi-dimensional array
+            return new_string;
+        }
+        else {
+            // add each char to new string before target
+            new_string[lc2][0] = string[lc2];
+        }
+    }
 }
+#endif /* SYS_PRIMARY_DEFINITIONS_H */
