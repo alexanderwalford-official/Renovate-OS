@@ -27,10 +27,32 @@ int dinit_ps2 () {
 
 char ps2_get_char () {
     // retrieve each keypress signal from the PS2 port
-    
-    // dynamic var
+    char* c = ps2_priv_char();
+    (c == "") ? ps2_get_char() : 0; // loop if null
+    return c;
+}
+
+char ps2_get_str (char* str, int cn) {
+    // retrieve each keypress signal from the PS2 port and compile it to a string
+    char* c = ps2_priv_char();
+    if (c != "\n") {
+        // continue
+        if (c != "") {
+            // add if not nul;
+            str[cn] = c;
+            cn = cn + 1;
+        }
+        // loop
+        ps2_get_str(str, cn);
+    }
+    else {
+        // end as enter has been pressed
+        return str;
+    }
+}
+
+char ps2_priv_char () {
     char* c;
-    
     // read memory address and see if true
     uint16_t *const SP = (uint16_t*) 0x39; // SPACE
     uint16_t *const ENT = (uint16_t*) 0x1C; // ENTER
@@ -38,8 +60,7 @@ char ps2_get_char () {
     uint16_t *const Y = (uint16_t*) 0x15; // Y
     uint16_t *const N = (uint16_t*) 0x32; // N
 
-    (SP) ? c = ' ' : (Y) ? c = 'Y' : (N) ? c = 'N' : (ENT) ? c = "\n" : (F2) ? c = "F2" : NULL;
-
+    (SP) ? c = ' ' : (Y) ? c = 'Y' : (N) ? c = 'N' : (ENT) ? c = "\n" : (F2) ? c = "F2" : c == "";
     return c;
 }
 
