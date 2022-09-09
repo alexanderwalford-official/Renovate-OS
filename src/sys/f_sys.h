@@ -3,6 +3,7 @@
 
 #include "stdint.h"
 #include "../drivers/video/IO.h"
+#include "../lib/primary_definitions.h"
 
 typedef struct file {
     int f_id; // ID

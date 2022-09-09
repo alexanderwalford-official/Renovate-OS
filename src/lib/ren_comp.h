@@ -1,7 +1,8 @@
 // RenLang for Renovate OS compiler
 #include "stdint.h"
 #include "../drivers/video/IO.h"
-#include "../lib/sys_primary_definitions.h"
+#include "../lib/primary_definitions.h"
+#include "../sys/p_man.h"
 #include "stdbool.h"
 
 /*
@@ -28,7 +29,10 @@ char* c_say_cols[1][1] = {{""},{""}};
 // main method to compile input line code
 void compile (char* code) {
     
-    if (c_say) {
+    if (code == "t_new") {
+        p_stack_update(0);
+    }
+    else if (c_say) {
         c_say = false;
         c_str_to_say = code;
         c_say_align = true;

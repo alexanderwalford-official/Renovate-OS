@@ -70,4 +70,9 @@ char* split(char* string, char split) {
         }
     }
 }
+
+// return to entry point
+void ret () {
+    return;
+}
 #endif /* SYS_PRIMARY_DEFINITIONS_H */

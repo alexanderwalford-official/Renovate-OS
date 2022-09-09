@@ -10,7 +10,7 @@
 #define PS2_H
 
 #include "stdint.h"
-#include "../../lib/sys_primary_definitions.h"
+#include "../../lib/primary_definitions.h"
 
 // use uint16_t (16 bit unsigned integer) for keyboard signals
 
@@ -25,11 +25,13 @@ int init_ps2 () {
     return 0;
 }
 
+// disable keyboard scanning
 int dinit_ps2 () {
     uint16_t *const DisableScan = (uint16_t*) 0xF5; // disable key scanning
     return 0;
 }
 
+// private method for getting each key press
 char* ps2_priv_char (int cn) {
     char* c = "";
     if (cn < sizeof(codes)) {
@@ -52,15 +54,15 @@ char* ps2_priv_char (int cn) {
     }
 }
 
+// get pressed char and return it
 char* ps2_get_char () {
-    // retrieve each keypress signal from the PS2 port
     char* c = ps2_priv_char(0);
     (c == "") ? ps2_get_char() : 0; // loop if null
     return c;
 }
 
+// get keyboard input as a string until ENTER is pressed
 char* ps2_get_str (char* str, int cn) {
-    // retrieve each keypress signal from the PS2 port and compile it to a string
     char* c = ps2_priv_char(0);
     if (c != "\n") {
         // continue

@@ -1,6 +1,10 @@
+#ifndef P_MAN_H
+#define P_MAN_H
+
 #include "stdint.h"
 #include "../drivers/video/IO.h"
 #include "../lib/ren_comp.h"
+#include "../lib/primary_definitions.h"
 
 /*
     Things To Note:
@@ -23,7 +27,7 @@ const float i = 0.0f;
 
 // dynamic variables
 int p_cnt = 0; // process count
-struct process p_stack[]; // process stack
+struct process p_stack[1]; // process stack
 
 // primary process handler (alternate method)
 int p_id_handler (char* action, int p_id) {
@@ -67,11 +71,38 @@ void p_exec (int p_id) {
     p_stack[p_id].p_et = 0;
 }
 
-// update method for the process stack - redefine the execution schedule by updating processes ticket ID if p_rs is 1 (live)
-void p_stack_update () {
+// dynamic vars
+int p_et_stack[];
+
+// update method for the process stack
+// redefine the execution schedule by updating processes ticket ID if p_rs is 1 (live)
+// uses a linear sorting algorithm to order processes by execution time
+
+void p_stack_update (int cn) {
+    if (cn < sizeof(p_stack)) {
+        if (p_stack[cn].p_rs == 1) {
+            p_et_stack[cn] = p_stack[cn].p_et;
+            if (cn != 0) {
+                if (p_et_stack[cn] < p_et_stack[cn - 1]) {
+                    // move the process closer to the execution point by swapping their struct values
+                    p_stack[p_et_stack[cn] - 1] = p_stack[p_et_stack[cn]];
+                    // move onto the next process
+                    cn = cn + 1;
+                    p_stack_update(cn);
+                }
+            }
+            else {
+                // move onto the next process as we don't have anything to compare it to
+                cn = cn + 1;
+                p_stack_update(cn);
+            }
+        }
+
+    }
 }
 
 void p_print () {
     puts(0, 0, BLACK, BRIGHT, "Process Stack:");
     puts(0, 1, BLACK, BRIGHT, p_stack);
 }
+#endif /* P_MAN_H */

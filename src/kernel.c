@@ -6,6 +6,7 @@
 #include "sys/f_sys.h"
 #include "sys/boot.h"
 #include "sys/recovery.h"
+#include "lib/primary_definitions.h"
 
 /*
 TEMP DISABLED ASM CALL:
@@ -24,8 +25,10 @@ int main() {
     puts(31, 18, BLACK, BRIGHT, "< F2 FOR RECOVERY >");
 
     // untested method using process:
-    p_create("[say:Renovate OS \nRenovate Software LTD 2022 \nF2 To Enter Recovery|3510|01]");
+    p_create("say:Renovate OS \nRenovate Software LTD 2022 \nF2 To Enter Recovery|3510|01");
     p_exec(0); 
+    p_create("t_new");
+    p_exec(1);
     (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
     p_freeze(0, 4, 0); // wait 4 seconds
 
@@ -38,6 +41,3 @@ int main() {
     return 0;
 }
 
-void ret () {
-    return;
-}
