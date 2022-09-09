@@ -14,7 +14,7 @@ Building an operating system from the ground up that can run on bare metal is qu
 
 ## To-Do List
 - [x] Successful build for printing text.
-- [ ] Implement boot process that calls the main methods.
+- [ ] Implement boot process that calls the main methods. 🚧
 - [ ] Hardware drivers for user input. 🚧
 - [ ] Sound driver for error reporting.
 - [ ] Implement local filesystem. 🚧
