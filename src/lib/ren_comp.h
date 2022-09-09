@@ -1,16 +1,19 @@
+#ifndef REN_COMP_H
+#define REN_COMP_H
+
 // RenLang for Renovate OS compiler
 #include "stdint.h"
 #include "../drivers/video/IO.h"
 #include "../lib/primary_definitions.h"
 #include "../sys/p_man.h"
+#include "../sys/boot.h"
 #include "stdbool.h"
 
 /*
-    COLOR GUIDE FOR PROGRAMMING INTERFACE:
+    COLOUR GUIDE FOR PROGRAMMING INTERFACE:
     0 = BLACK
     1 = BRIGHT
 */
-
 
 // pass arguments to compiler
 int comp_handler (char* arg) {
@@ -28,10 +31,13 @@ char* c_say_cols[1][1] = {{""},{""}};
 
 // main method to compile input line code
 void compile (char* code) {
-    
-    if (code == "t_new") {
+    if (code == "stk_up") {
         p_stack_update(0);
     }
+    else if (code == "init_boot") {
+        init_boot();
+    }
+    // the following is for printing text
     else if (c_say) {
         c_say = false;
         c_str_to_say = code;
@@ -64,8 +70,11 @@ void compile (char* code) {
 
         puts(c_i_say_align[0], c_i_say_align[1], c1, c2, c_str_to_say);
     }
-
     (contains(code, "say:", 0)) ? c_say = true : 0;
+    // text printing ends here
+
 
     c_lc = c_lc + 1;
 }
+
+#endif /* REN_COMP_H */

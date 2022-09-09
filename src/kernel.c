@@ -6,6 +6,7 @@
 #include "sys/f_sys.h"
 #include "sys/boot.h"
 #include "sys/recovery.h"
+#include "sys/terminal/t_int.h"
 #include "lib/primary_definitions.h"
 
 /*
@@ -15,29 +16,23 @@ extern PrimaryHandler();
 */
 
 int main() {
+    // set the screen background colour
     clear(BRIGHT);
-    // COL : ROW
-    puts(26, 7, BLACK, BRIGHT, "______________________________");
-    puts(35, 8, BLACK, BRIGHT, "");
-    puts(35, 9, BLACK, BRIGHT, "Renovate OS");
-    puts(28, 10, BLACK, BRIGHT, "Renovate Software LTD 2022");
-    puts(26, 11, BLACK, BRIGHT, "______________________________");
-    puts(31, 18, BLACK, BRIGHT, "< F2 FOR RECOVERY >");
-
-    // untested method using process:
-    p_create("say:Renovate OS \nRenovate Software LTD 2022 \nF2 To Enter Recovery|3510|01");
-    p_exec(0); 
-    p_create("t_new");
-    p_exec(1);
-    (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
-    p_freeze(0, 4, 0); // wait 4 seconds
 
     // initalise keyboard scanning
     init_ps2();
 
-    // initialise boot seq
-    // init_boot(); // temp disabled to test the boot screen
+    // failing method using process:
+    // look at ren_comp.h to find out why
+    p_create("say:Renovate OS \nRenovate Software LTD 2022 \n< F2 FOR RECOVERY >|3510|01");
+    p_exec(0); 
+    (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
+    p_freeze(0, 4, 0); // wait 4 seconds
+    p_destory(0); // destory the process
+
+    // create new process for boot sequence
+    p_create("init_boot");
+    p_exec(0); // then execute it
 
     return 0;
 }
-

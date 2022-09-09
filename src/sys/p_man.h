@@ -10,6 +10,7 @@
     Things To Note:
     - Once a process is created, it does not execute immediately. This must be called using: p_exec(p_id, p_et)
     - Process execution time is calculated based on the length of the input string, each character counting for 0.01 seconds.
+    - The process stack is automatically updated when the process is executed
 */
 
 
@@ -27,7 +28,7 @@ const float i = 0.0f;
 
 // dynamic variables
 int p_cnt = 0; // process count
-struct process p_stack[1]; // process stack
+struct process p_stack[256]; // process stack
 
 // primary process handler (alternate method)
 int p_id_handler (char* action, int p_id) {
@@ -61,14 +62,12 @@ void p_freeze (int p_id, float t, int dt) {
 
 // repetative process execution (compilation)
 void p_exec (int p_id) {   
+    
     // first, add to the process stack so that it can be queued for execution by setting its state to live
     p_stack[p_id].p_rs = 1; // live
-    char* instructions = p_stack[p_id].p_inst; // get instructions
-    int exec_time = p_stack[p_id].p_et; // get execution time
-    // handle execution
-    compile(instructions);
-    // once executed, update the remaining p_et (IMPLEMENT)
-    p_stack[p_id].p_et = 0;
+    
+    // update the process stack
+    p_stack_update(0); 
 }
 
 // dynamic vars
@@ -77,7 +76,6 @@ int p_et_stack[];
 // update method for the process stack
 // redefine the execution schedule by updating processes ticket ID if p_rs is 1 (live)
 // uses a linear sorting algorithm to order processes by execution time
-
 void p_stack_update (int cn) {
     if (cn < sizeof(p_stack)) {
         if (p_stack[cn].p_rs == 1) {
@@ -101,6 +99,31 @@ void p_stack_update (int cn) {
     }
 }
 
+// actually calls each process in order of execution
+void p_stack_runtime (int c) {
+    p_stack_exec(p_stack[c].p_id); // execute process
+    // increment or reset pointer
+    if (c == sizeof(p_stack)) {
+        c = 0;
+    }
+    else {
+        c = c + 1;
+    }
+    p_stack_runtime(c); // re-call method
+}
+
+// executes the code in the process
+void p_stack_exec (int p_id) {
+    // time for execution
+    char* instructions = p_stack[p_id].p_inst; // get instructions
+    int exec_time = p_stack[p_id].p_et; // get execution time
+    // handle execution
+    compile(instructions);
+    // once executed, update the remaining p_et (IMPLEMENT)
+    p_stack[p_id].p_et = 0;
+}
+
+// print the process stack
 void p_print () {
     puts(0, 0, BLACK, BRIGHT, "Process Stack:");
     puts(0, 1, BLACK, BRIGHT, p_stack);

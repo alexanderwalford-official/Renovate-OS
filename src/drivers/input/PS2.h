@@ -15,9 +15,8 @@
 // use uint16_t (16 bit unsigned integer) for keyboard signals
 
 // constant vars
-const char* codes_char[5] = {" ", "\n", "F2", "Y", "N"};
-const uint16_t codes[5] = {0x39, 0x1c, 0x3C, 0x15, 0x32};
-
+const char* codes_char[5] = {" ", "\n", "F2", "Y", "N", "F12"};
+const uint16_t codes[5] = {0x39, 0x1c, 0x3C, 0x15, 0x32, 0x58};
 
 // get keyboard input
 int init_ps2 () {

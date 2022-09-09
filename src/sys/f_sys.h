@@ -40,7 +40,13 @@ void fs_init_base () {
     // .. 
     fs_create_d("", "/");
     fs_create_d("accounts", "/acc/");
+    fs_create_d("bin", "/bin/");
+    fs_create_d("system", "/sys/");
+    fs_create_d("system cache", "/sys/cache/");
+    fs_create_d("system temp", "/sys/tmp/");
     fs_create_f("/", "conf.ren", "# here you will find all major system config options");
+
+    puts(0, 1, BLACK, BRIGHT, "< TMP REQ FS DONE .. >");
 }
 
 // create a file
