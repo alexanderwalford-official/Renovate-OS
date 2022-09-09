@@ -14,6 +14,11 @@
 
 // use uint16_t (16 bit unsigned integer) for keyboard signals
 
+// constant vars
+const char* codes_char[5] = {" ", "\n", "F2", "Y", "N"};
+const uint16_t codes[5] = {0x39, 0x1c, 0x3C, 0x15, 0x32};
+
+
 // get keyboard input
 int init_ps2 () {
     uint16_t *const EnableScan = (uint16_t*) 0xF4; // enable key scanning
@@ -25,16 +30,38 @@ int dinit_ps2 () {
     return 0;
 }
 
-char ps2_get_char () {
+char* ps2_priv_char (int cn) {
+    char* c = "";
+    if (cn < sizeof(codes)) {
+        // read memory address and see if true
+        uint16_t *const ps2_addr = (uint16_t*) codes[cn];
+        if (ps2_addr) {
+            // the code is true, translate it into a char and return it
+            c = codes_char[cn];
+            return c;
+        }
+        else {
+            // keep going until you find an active code
+            cn = cn + 1;
+            ps2_priv_char(cn);
+        }
+    }
+    else {
+        // nothing pressed
+        return c;
+    }
+}
+
+char* ps2_get_char () {
     // retrieve each keypress signal from the PS2 port
-    char* c = ps2_priv_char();
+    char* c = ps2_priv_char(0);
     (c == "") ? ps2_get_char() : 0; // loop if null
     return c;
 }
 
-char ps2_get_str (char* str, int cn) {
+char* ps2_get_str (char* str, int cn) {
     // retrieve each keypress signal from the PS2 port and compile it to a string
-    char* c = ps2_priv_char();
+    char* c = ps2_priv_char(0);
     if (c != "\n") {
         // continue
         if (c != "") {
@@ -49,19 +76,6 @@ char ps2_get_str (char* str, int cn) {
         // end as enter has been pressed
         return str;
     }
-}
-
-char ps2_priv_char () {
-    char* c;
-    // read memory address and see if true
-    uint16_t *const SP = (uint16_t*) 0x39; // SPACE
-    uint16_t *const ENT = (uint16_t*) 0x1C; // ENTER
-    uint16_t *const F2 = (uint16_t*) 0x3C; // F2
-    uint16_t *const Y = (uint16_t*) 0x15; // Y
-    uint16_t *const N = (uint16_t*) 0x32; // N
-
-    (SP) ? c = ' ' : (Y) ? c = 'Y' : (N) ? c = 'N' : (ENT) ? c = "\n" : (F2) ? c = "F2" : c == "";
-    return c;
 }
 
 #endif /* PS2_H */
