@@ -8,9 +8,10 @@
 
 /*
     Things To Note:
-    - Once a process is created, it does not execute immediately. This must be called using: p_exec(p_id, p_et)
+    - Once a process is created, it does not execute immediately. This must be called using: p_exec(p_id, p_et).
     - Process execution time is calculated based on the length of the input string, each character counting for 0.01 seconds.
-    - The process stack is automatically updated when the process is executed
+    - The process stack is automatically updated when the process is executed.
+    - All processes will be executed after execution of an initial process is they are live.
 */
 
 
@@ -68,6 +69,9 @@ void p_exec (int p_id) {
     
     // update the process stack
     p_stack_update(0); 
+
+    // start the process stack executioner
+    p_stack_runtime(0);
 }
 
 // dynamic vars
@@ -95,7 +99,11 @@ void p_stack_update (int cn) {
                 p_stack_update(cn);
             }
         }
-
+        else {
+            // process not live, move onto the next
+            cn = cn + 1;
+            p_stack_update(cn);
+        }
     }
 }
 
@@ -104,9 +112,11 @@ void p_stack_runtime (int c) {
     p_stack_exec(p_stack[c].p_id); // execute process
     // increment or reset pointer
     if (c == sizeof(p_stack)) {
+        // reset
         c = 0;
     }
     else {
+        // increment
         c = c + 1;
     }
     p_stack_runtime(c); // re-call method
