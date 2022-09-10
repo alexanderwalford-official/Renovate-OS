@@ -25,29 +25,34 @@ int c_lc = 0; // compiler line counter
 bool c_say = false;
 bool c_say_align = false;
 bool c_say_col = false;
-char* c_str_to_say = "";
+char* c_str_to_say;
 int c_i_say_align[1][1] = {{0}, {0}};
 char* c_say_cols[1][1] = {{""},{""}};
 
 // main method to compile input line code
 void compile (char* code) {
-    if (code == "stk_up") {
-        p_stack_update(0);
-    }
-    else if (code == "init_boot") {
-        init_boot();
-    }
+
     // the following is for printing text
+
+    // check if contains "say:"
+    if (contains_str(code, "say:")) {
+        c_say = true;
+    }
+    // check if say active
     else if (c_say) {
         c_say = false;
-        c_str_to_say = code;
+        c_str_to_say = remove(code, "say:", 0);
         c_say_align = true;
+        // temp
+        puts(0, 0, BLACK, BRIGHT, c_str_to_say);
+        //compile(c_str_to_say);
     }
     else if (c_say_align) {
         c_say_align = false;
         c_i_say_align[0][0] = code[0] + code[1];
         c_i_say_align[0][0] = code[2] + code[3];
         c_say_col = true;
+        compile(code);
     }
     else if (c_say_col) {
         c_say_col = false;
@@ -70,9 +75,13 @@ void compile (char* code) {
 
         puts(c_i_say_align[0], c_i_say_align[1], c1, c2, c_str_to_say);
     }
-    (contains(code, "say:", 0)) ? c_say = true : 0;
     // text printing ends here
-
+    else if (code == "stk_up") {
+        p_stack_update(0);
+    }
+    else if (code == "init_boot") {
+        init_boot();
+    }
 
     c_lc = c_lc + 1;
 }

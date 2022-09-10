@@ -44,6 +44,8 @@ void p_create (char* p_inst) {
     p.p_inst = p_inst;
     p.p_et = sizeof(p_inst) / 0.01f;
     p_stack[p.p_id] = p; // add process to process stack
+    // debugging message
+    // puts(0, 0, BRIGHT, BLACK, "[C:x0f1]");
 }
 
 // destory a process
@@ -63,15 +65,17 @@ void p_freeze (int p_id, float t, int dt) {
 
 // repetative process execution (compilation)
 void p_exec (int p_id) {   
-    
     // first, add to the process stack so that it can be queued for execution by setting its state to live
     p_stack[p_id].p_rs = 1; // live
-    
+
     // update the process stack
-    p_stack_update(0); 
+    p_stack_update(0);
 
     // start the process stack executioner
     p_stack_runtime(0);
+
+    // debugging message
+    // puts(0, 1, BRIGHT, BLACK, "[E:x0f1]");
 }
 
 // dynamic vars
@@ -107,19 +111,15 @@ void p_stack_update (int cn) {
     }
 }
 
-// actually calls each process in order of execution
+// actually calls each process in order of execution, requires implementation for execution that does not cause stack overflow
 void p_stack_runtime (int c) {
     p_stack_exec(p_stack[c].p_id); // execute process
-    // increment or reset pointer
-    if (c == sizeof(p_stack)) {
-        // reset
-        c = 0;
-    }
-    else {
+    // increment pointer if not reached max
+    if (c != sizeof(p_stack)) {
         // increment
         c = c + 1;
-    }
-    p_stack_runtime(c); // re-call method
+        p_stack_runtime(c); // re-call method
+    } 
 }
 
 // executes the code in the process

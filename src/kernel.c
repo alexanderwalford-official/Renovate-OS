@@ -26,15 +26,16 @@ int main() {
     init_USB();
 
     // process management for startup screen
-    p_create("say:Renovate OS \nRenovate Software LTD 2022 \n< F2 FOR RECOVERY >|3510|01");
+    p_create("say:Renovate OS Renovate Software LTD 2022 < F2 FOR RECOVERY >|3510|01");
     p_exec(0); 
     (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
     p_freeze(0, 4, 0); // wait 4 seconds
     p_destory(0); // destory the process
 
     // create new process for boot sequence
-    p_create("init_boot");
-    p_exec(0); // then execute it
+    //p_create("init_boot");
+    //p_exec(0); // then execute it
+    //p_destory(0); // destory the process after execution
 
     return 0;
 }

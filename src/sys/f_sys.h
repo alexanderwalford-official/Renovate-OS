@@ -77,7 +77,7 @@ void fs_print () {
     clear(BRIGHT);
     puts(0, 0, BLACK, BRIGHT, cd); // print current dir
     for (int i = 0; i < sizeof(directories); ++i) {
-        (contains(directories[i].d_path, cd, 0)) ? puts(0, 1, BLACK, BRIGHT, directories[i].d_path) : ret(); // found a directory with cd in path
+        (contains_str(directories[i].d_path, cd)) ? puts(0, 1, BLACK, BRIGHT, directories[i].d_path) : ret(); // found a directory with cd in path
     }
 }
 

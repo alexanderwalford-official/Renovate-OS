@@ -20,33 +20,25 @@
 #define SYS_PRIMARY_DEFINITIONS_H
 
 // dynamic vars
-char str_chars[1];
+char* str_chars[];
 
 // "conains" method
-bool contains(char* string, char* target, int c) {
-    if (c == 0) {
-        str_chars[sizeof(string)]; // create an array, length of chars in the string
+bool contains_str(char* string, char* target) {
+    int cc = 0;
+    int s_len_tar = sizeof(target);
+    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
+        if (string[lc2] == target[lc2]) {
+            // we found a character we're lookikng for the the string!
+            cc = cc + 1;
+        }
     }
-    if (c < sizeof(string)) {
-        str_chars[c] = string[c]; // set the values of the array to that of what is in the string
-        c = c + 1;
-        contains(string, target, c);
+    if (cc == sizeof(target)) {
+        return true;
     }
     else {
-        // now continue, the array contains all the chars from the string
-        int cc = 0;
-        int lc = 0;
-        int mc = sizeof(target);
-        for (lc = 0; lc < mc; ++lc) {
-            (str_chars[lc] == target[lc]) ? cc = cc + 1 : 0;
-        }
-        if (cc == mc) {
-            return true;
-        }
-        else {
-            return false;
-        }
+        return false;
     }
+
 }
 
 // "split" method
@@ -69,6 +61,27 @@ char* split(char* string, char split) {
             new_string[lc2][0] = string[lc2];
         }
     }
+}
+
+// "remove" method - seems to be returning an S.. ?
+char* remove(char* string, char* target, int c) {
+    int s_loc = 0;
+    int s_len_tar = sizeof(target);
+    char* new_string[sizeof(string) - s_len_tar];
+    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
+        if (string[lc2] == target) {
+            // we found a character we're lookikng for the the string!
+            s_loc = lc2;
+
+            // add each character to the new string, from the s_loc onwards
+            for (int lc3 = s_loc + s_len_tar; lc3 < sizeof(string); ++lc3) {
+                new_string[lc3] =  string[lc3];
+            }
+
+        }
+    }
+    // we're done, return the new string
+    return new_string;
 }
 
 // return to entry point
