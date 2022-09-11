@@ -34,14 +34,14 @@ void compile (char* code) {
 
     // the following is for printing text
 
-    // check if contains "say:"
-    if (contains_str(code, "say:")) {
+    // check if contains "s:"
+    if (contains_str(code, "s:")) {
         c_say = true;
     }
     // check if say active
     else if (c_say) {
         c_say = false;
-        c_str_to_say = remove(code, "say:", 0);
+        c_str_to_say = remove(code, "s:", 0);
         c_say_align = true;
         // temp
         puts(0, 0, BLACK, BRIGHT, c_str_to_say);
@@ -81,6 +81,15 @@ void compile (char* code) {
     }
     else if (code == "init_boot") {
         init_boot();
+    }
+    else if (code == "splash_screen") {
+        // print the splash screen
+        clear(BRIGHT);
+        puts(27, 7, BLACK, BRIGHT, "______________________");
+        puts(33, 9, BLACK, BRIGHT, "Renovate OS");
+        puts(28, 10, BLACK, BRIGHT, "Renovate Software LTD");
+        puts(27, 11, BLACK, BRIGHT, "______________________");
+        puts(27, 18, BLACK, BRIGHT, "< F2 FOR STARTUP MENU >");
     }
 
     c_lc = c_lc + 1;

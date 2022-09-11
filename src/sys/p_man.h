@@ -38,11 +38,11 @@ int p_id_handler (char* action, int p_id) {
 }
 
 // create new process
-void p_create (char* p_inst) {
+void p_create (char* c_p_inst) {
     struct process p;
     p.p_id = p_cnt + 1;
-    p.p_inst = p_inst;
-    p.p_et = sizeof(p_inst) / 0.01f;
+    p.p_inst = c_p_inst;
+    p.p_et = sizeof(c_p_inst) / 0.01f;
     p_stack[p.p_id] = p; // add process to process stack
     // debugging message
     // puts(0, 0, BRIGHT, BLACK, "[C:x0f1]");

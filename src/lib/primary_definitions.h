@@ -1,5 +1,6 @@
 #include "stdint.h"
 #include "stdbool.h"
+#include "../drivers/video/IO.h"
 
 #ifndef NULL
 #define NULL 0;
@@ -63,18 +64,19 @@ char* split(char* string, char split) {
     }
 }
 
-// "remove" method - seems to be returning an S.. ?
+// "remove" method - seems to be returning an S.. and only running for 4 interations ..?
 char* remove(char* string, char* target, int c) {
-    int s_loc = 0;
     int s_len_tar = sizeof(target);
     char* new_string[sizeof(string) - s_len_tar];
-    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
-        if (string[lc2] == target) {
-            // we found a character we're lookikng for the the string!
-            s_loc = lc2;
 
+    // iterate through every character in the string array
+    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
+        puts(lc2, 7, BLACK, BRIGHT, "+");
+        if (string[lc2] == target[lc2]) {
+            puts(0, 4, BLACK, BRIGHT, "MATCHES!");
+            // we found a character we're lookikng for the the string!
             // add each character to the new string, from the s_loc onwards
-            for (int lc3 = s_loc + s_len_tar; lc3 < sizeof(string); ++lc3) {
+            for (int lc3 = lc2 + s_len_tar; lc3 < sizeof(string); ++lc3) {
                 new_string[lc3] =  string[lc3];
             }
 
