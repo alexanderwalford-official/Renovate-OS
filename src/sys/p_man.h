@@ -75,7 +75,7 @@ void p_exec (int p_id) {
     p_stack_runtime(0);
 
     // debugging message
-    // puts(0, 1, BRIGHT, BLACK, "[E:x0f1]");
+    puts(0, 2, BRIGHT, BLACK, "[E:x0f1]");
 }
 
 // dynamic vars

@@ -8,6 +8,7 @@
 #include "sys/recovery.h"
 #include "sys/terminal/t_int.h"
 #include "lib/primary_definitions.h"
+#include "drivers/audio/tone.h"
 
 /*
     TEMP DISABLED ASM CALL:
@@ -28,8 +29,9 @@ int main() {
     // process for startup screen
     p_create("splash_screen");
     p_exec(0); 
+    beep(0); // beep
     (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
-    p_freeze(0, 4, 0); // wait 4 seconds
+    p_freeze(0, 400, 0); // wait 4 seconds
     p_destory(0); // destory the process
 
     // process for boot sequence

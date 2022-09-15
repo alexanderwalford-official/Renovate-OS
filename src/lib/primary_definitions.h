@@ -73,7 +73,6 @@ char* remove(char* string, char* target, int c) {
     for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
         puts(lc2, 7, BLACK, BRIGHT, "+");
         if (string[lc2] == target[lc2]) {
-            puts(0, 4, BLACK, BRIGHT, "MATCHES!");
             // we found a character we're lookikng for the the string!
             // add each character to the new string, from the s_loc onwards
             for (int lc3 = lc2 + s_len_tar; lc3 < sizeof(string); ++lc3) {
