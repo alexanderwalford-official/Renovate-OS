@@ -19,6 +19,8 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - Visual Studio Code IDE
 - Ubuntu 22.04 LTS
 - GCC GNU99
+- NASM X86 ASM
+- Qemu i386 & Virtual Box
 - Makefile
 - OS Dev Wiki: https://wiki.osdev.org/Main_Page 
 
