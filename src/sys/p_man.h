@@ -2,7 +2,7 @@
 #define P_MAN_H
 
 #include "stdint.h"
-#include "../drivers/video/IO.h"
+#include "../drivers/video/VGA_linear.h"
 #include "../lib/ren_comp.h"
 #include "../lib/primary_definitions.h"
 
@@ -28,7 +28,7 @@ typedef struct process {
 const float i = 0.0f;
 
 // dynamic variables
-int p_cnt = 0; // process count
+int p_cnt = 0; // process count, automatic handler
 struct process p_stack[256]; // process stack
 
 // primary process handler (alternate method)
@@ -44,14 +44,11 @@ void p_create (char* c_p_inst) {
     p.p_inst = c_p_inst;
     p.p_et = sizeof(c_p_inst) / 0.01f;
     p_stack[p.p_id] = p; // add process to process stack
-    // debugging message
-    // puts(0, 0, BRIGHT, BLACK, "[C:x0f1]");
 }
 
 // destory a process
 void p_destory (int p_id) {
     p_stack[p_id].p_id = 000; // set the PID to 000, making it possible to re-use it in memory for creating new processes
-    // the following is done to free memory
     p_stack[p_id].p_et = 0; // reset execution time to 0
     p_stack[p_id].p_rs = 0; // would normally make the process dead but not deleted but due to p_id = 000 this can be over-written
     p_stack[p_id].p_inst = ""; // remove all process instructions
@@ -61,6 +58,13 @@ void p_destory (int p_id) {
 // freeze a process
 void p_freeze (int p_id, float t, int dt) {
     (dt <= t * 1000) ? dt = dt + 1, p_freeze(p_id, t, dt) : ret();    
+
+    // we need to call a HALT on the processor using assembly but also to do this for only a limited duration of time
+    // so we'll use inline assembly to do this and parse the variables
+    __asm__ (
+        "HLT \n"
+        "RET \n"
+    );
 }
 
 // repetative process execution (compilation)

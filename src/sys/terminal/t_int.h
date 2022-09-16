@@ -4,6 +4,7 @@
 #define T_INT_H
 
 #include "stdint.h"
+#include "../../drivers/video/VGA_linear.h"
 
 int cli_init (int ent) {
 

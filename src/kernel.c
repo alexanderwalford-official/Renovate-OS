@@ -1,5 +1,12 @@
+/*
+    Renovate OS
+    Developed by Alexander Walford for Renovate Software LTD 2022
+
+    X86 Real Mode
+*/
+
 #include "stdint.h"
-#include "drivers/video/IO.h"
+#include "drivers/video/VGA_linear.h"
 #include "drivers/input/PS2.h"
 #include "drivers/input/USB.h"
 #include "sys/p_man.h"
@@ -9,12 +16,6 @@
 #include "sys/terminal/t_int.h"
 #include "lib/primary_definitions.h"
 #include "drivers/audio/tone.h"
-
-/*
-    TEMP DISABLED ASM CALL:
-    #include "asm/primary_handler.asm"
-    extern PrimaryHandler();
-*/
 
 int main() {
     // set the screen background colour
@@ -31,7 +32,7 @@ int main() {
     p_exec(0); 
     beep(0); // beep
     (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
-    p_freeze(0, 400, 0); // wait 4 seconds
+    p_freeze(0, 4000, 0); // wait 4 seconds
     p_destory(0); // destory the process
 
     // process for boot sequence

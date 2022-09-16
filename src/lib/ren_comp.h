@@ -3,7 +3,7 @@
 
 // RenLang for Renovate OS compiler
 #include "stdint.h"
-#include "../drivers/video/IO.h"
+#include "../drivers/video/VGA_linear.h"
 #include "../lib/primary_definitions.h"
 #include "../sys/p_man.h"
 #include "../sys/boot.h"
@@ -72,7 +72,6 @@ void compile (char* code) {
         else {
             c2 = BRIGHT;
         }
-
         puts(c_i_say_align[0], c_i_say_align[1], c1, c2, c_str_to_say);
     }
     // text printing ends here
@@ -85,10 +84,12 @@ void compile (char* code) {
     else if (code == "splash_screen") {
         // print the splash screen
         clear(BRIGHT);
+        puts(0, 2, BRIGHT, BLACK, "[E:b0f1]");
         puts(27, 7, BLACK, BRIGHT, "______________________");
         puts(33, 9, BLACK, BRIGHT, "Renovate OS");
         puts(28, 10, BLACK, BRIGHT, "Renovate Software LTD");
         puts(27, 11, BLACK, BRIGHT, "______________________");
+        puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
         puts(27, 18, BLACK, BRIGHT, "< F2 FOR STARTUP MENU >");
     }
 

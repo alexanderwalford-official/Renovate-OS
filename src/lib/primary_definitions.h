@@ -1,6 +1,6 @@
 #include "stdint.h"
 #include "stdbool.h"
-#include "../drivers/video/IO.h"
+#include "../drivers/video/VGA_linear.h"
 
 #ifndef NULL
 #define NULL 0;

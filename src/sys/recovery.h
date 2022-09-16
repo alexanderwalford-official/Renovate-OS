@@ -1,5 +1,5 @@
 #include "stdint.h"
-#include "../drivers/video/IO.h"
+#include "../drivers/video/VGA_linear.h"
 
 int init_recovery () {
     clear(BRIGHT);

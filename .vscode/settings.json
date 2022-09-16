@@ -7,7 +7,9 @@
     "io.h": "c",
     "primary_definitions.h": "c",
     "t_int.h": "c",
-    "ps2.h": "c"
+    "ps2.h": "c",
+    "vga_linear.h": "c",
+    "ren_comp.h": "c"
   },
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",

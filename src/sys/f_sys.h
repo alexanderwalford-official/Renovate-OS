@@ -2,7 +2,7 @@
 #define F_SYS_H
 
 #include "stdint.h"
-#include "../drivers/video/IO.h"
+#include "../drivers/video/VGA_linear.h"
 #include "../lib/primary_definitions.h"
 
 typedef struct file {
@@ -47,6 +47,7 @@ void fs_init_base () {
     fs_create_f("/", "conf.ren", "# here you will find all major system config options");
 
     puts(0, 1, BLACK, BRIGHT, "< TMP REQ FS DONE .. >");
+    puts(0, 2, BRIGHT, BLACK, "[E:fs0f1]");
 }
 
 // create a file

@@ -1,7 +1,7 @@
 #ifndef BOOT_H
 #define BOOT_H
 
-#include "../drivers/video/IO.h"
+#include "../drivers/video/VGA_linear.h"
 #include "f_sys.h"
 #include "../sys/terminal/t_int.h"
 #include "../drivers/audio/tone.h"
