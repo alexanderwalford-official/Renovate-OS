@@ -55,16 +55,27 @@ void p_destory (int p_id) {
     p_cnt = p_cnt - 1; // decrease process count
 }
 
-// freeze a process
+// freeze a process (milliseconds)
 void p_freeze (int p_id, float t, int dt) {
-    (dt <= t * 1000) ? dt = dt + 1, p_freeze(p_id, t, dt) : ret();    
 
-    // we need to call a HALT on the processor using assembly but also to do this for only a limited duration of time
-    // so we'll use inline assembly to do this and parse the variables
-    __asm__ (
-        "HLT \n"
-        "RET \n"
-    );
+    /*
+        Things to note:
+        Currently, the objective is to make the operating system 'hang' when this is called.
+        Once multi-threading has been implemented, this would have to be changed.
+    */
+
+    // loop until incremented to target
+    (dt <= t * 1000) ? dt = dt + 1, p_freeze(p_id, t, dt) : ret();
+
+    // use the system clock, H = hexidecimal, extended ASM: https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html 
+    // https://stackoverflow.com/questions/15201955/how-to-set-1-second-time-delay-at-assembly-language-8086 
+    asm (
+        "MOV %CX, $'FH' 0 \n"
+        "MOV %DX, $'H' 4240 \n"
+        "MOV %AH, $'H' " // or 86
+        "INT $'H' " // or 15
+        : "=r" (t)
+    ); // currently not working as intended
 }
 
 // repetative process execution (compilation)
