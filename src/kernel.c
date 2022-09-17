@@ -30,15 +30,21 @@ int main() {
     // process for startup screen
     p_create("splash_screen");
     p_exec(0); 
-    beep(0); // beep
+    beep(0);
     (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
     p_freeze(0, 4000, 0); // wait 4 seconds
-    p_destory(0); // destory the process
+    p_destory(0);
 
     // process for boot sequence
     p_create("init_boot");
-    p_exec(0); // then execute it
-    p_destory(0); // destory the process after execution
+    p_exec(0); 
+    p_destory(0);
+
+    // process for launch options
+    p_create("iso_launch_options");
+    p_exec(0);
+    p_freeze(0, 4000, 0);
+    p_destory(0);
 
     return 0;
 }

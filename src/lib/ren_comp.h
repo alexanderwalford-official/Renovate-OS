@@ -92,6 +92,13 @@ void compile (char* code) {
         puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
         puts(27, 18, BLACK, BRIGHT, "< F2 FOR STARTUP MENU >");
     }
+    else if (code = "iso_launch_options") {
+        clear(BLACK);
+        puts(0, 0, BRIGHT, BLACK, "Select an option:");
+        puts(0, 1, BRIGHT, BLACK, "- Install Renovate OS <");
+        puts(0, 2, BRIGHT, BLACK, "- Try Renovate OS");
+        puts(0, 5, BLACK, BRIGHT, "The selected option will launch in 5 seconds.");
+    }
 
     c_lc = c_lc + 1;
 }

@@ -14,6 +14,9 @@
 
 // use uint16_t (16 bit unsigned integer) for keyboard signals
 
+// possible better option using NASM Assembly? https://stackoverflow.com/questions/523185/how-do-i-get-user-input-with-nasm 
+
+
 // constant vars
 const char* codes_char[6] = {" ", "\n", "F2", "Y", "N", "F12"};
 const uint16_t codes[6] = {0x39, 0x1c, 0x3C, 0x15, 0x32, 0x58};
