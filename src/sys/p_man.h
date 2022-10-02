@@ -76,6 +76,8 @@ void p_freeze (int p_id, float t, int dt) {
         "INT $'H' " // or 15
         : "=r" (t)
     ); // currently not working as intended
+
+    // perhaps we should implement a refresh rate system?
 }
 
 // repetative process execution (compilation)
@@ -90,7 +92,7 @@ void p_exec (int p_id) {
     p_stack_runtime(0);
 
     // debugging message
-    puts(0, 2, BRIGHT, BLACK, "[E:x0f1]");
+    puts(0, 2, BRIGHT, BLACK, "[E:x0f0]");
 }
 
 // dynamic vars

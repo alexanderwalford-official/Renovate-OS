@@ -58,8 +58,10 @@ void compile (char* code) {
         c_say_col = false;
         c_say_cols[0][0] = code[0];
         c_say_cols[0][0] = code[1];
+        
         enum color c1;
         enum color c2;
+
         if (c_say_cols[0] == "0") {
             c1 = BLACK;
         }
@@ -72,6 +74,7 @@ void compile (char* code) {
         else {
             c2 = BRIGHT;
         }
+
         puts(c_i_say_align[0], c_i_say_align[1], c1, c2, c_str_to_say);
     }
     // text printing ends here
@@ -90,14 +93,7 @@ void compile (char* code) {
         puts(28, 10, BLACK, BRIGHT, "Renovate Software LTD");
         puts(27, 11, BLACK, BRIGHT, "______________________");
         puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
-        puts(27, 18, BLACK, BRIGHT, "< F2 FOR STARTUP MENU >");
-    }
-    else if (code = "iso_launch_options") {
-        clear(BLACK);
-        puts(0, 0, BRIGHT, BLACK, "Select an option:");
-        puts(0, 1, BRIGHT, BLACK, "- Install Renovate OS <");
-        puts(0, 2, BRIGHT, BLACK, "- Try Renovate OS");
-        puts(0, 5, BLACK, BRIGHT, "The selected option will launch in 5 seconds.");
+        puts(27, 18, BLACK, BRIGHT, "< F2 FOR BOOT OPTIONS >");
     }
 
     c_lc = c_lc + 1;

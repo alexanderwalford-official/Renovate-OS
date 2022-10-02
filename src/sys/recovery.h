@@ -2,7 +2,10 @@
 #include "../drivers/video/VGA_linear.h"
 
 int init_recovery () {
-    clear(BRIGHT);
-    puts(0, 0, BLACK, BRIGHT, "ENTERING RECOVERY MODE..");
+    // process for launch options
+    p_create("iso_launch_options");
+    p_exec(0);
+    p_freeze(0, 4000, 0);
+    p_destory(0);
     return 0;
 }
