@@ -18,7 +18,7 @@
 
 
 // constant vars
-const char* codes_char[6] = {" ", "\n", "F2", "Y", "N", "F12"};
+const char* codes_char[6] = {" ", "\n", "F2", "y", "n", "F12"};
 const uint16_t codes[6] = {0x39, 0x1c, 0x3C, 0x15, 0x32, 0x58};
 
 // get keyboard input
