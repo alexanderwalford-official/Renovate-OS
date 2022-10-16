@@ -5,6 +5,7 @@
 #include "../drivers/video/VGA_linear.h"
 #include "../lib/ren_comp.h"
 #include "../lib/primary_definitions.h"
+#include "../sys/sys_clck.h"
 
 /*
     Things To Note:
@@ -13,7 +14,6 @@
     - The process stack is automatically updated when the process is executed.
     - All processes will be executed after execution of an initial process is they are live.
 */
-
 
 // structures
 typedef struct process {
@@ -62,22 +62,12 @@ void p_freeze (int p_id, float t, int dt) {
         Things to note:
         Currently, the objective is to make the operating system 'hang' when this is called.
         Once multi-threading has been implemented, this would have to be changed.
+
+        More features such as invoke event handlers will be added here eventually.
     */
 
-    // loop until incremented to target
-    (dt <= t * 1000) ? dt = dt + 1, p_freeze(p_id, t, dt) : ret();
-
-    // use the system clock, H = hexidecimal, extended ASM: https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html 
-    // https://stackoverflow.com/questions/15201955/how-to-set-1-second-time-delay-at-assembly-language-8086 
-    asm (
-        "MOV %CX, $'FH' 0 \n"
-        "MOV %DX, $'H' 4240 \n"
-        "MOV %AH, $'H' " // or 86
-        "INT $'H' " // or 15
-        : "=r" (t)
-    ); // currently not working as intended
-
-    // perhaps we should implement a refresh rate system?
+    // hang the clock by making the CPU complete iterative operations
+    clck_hang(t, 0);
 }
 
 // repetative process execution (compilation)
@@ -91,8 +81,8 @@ void p_exec (int p_id) {
     // start the process stack executioner
     p_stack_runtime(0);
 
-    // debugging message
-    puts(0, 2, BRIGHT, BLACK, "[E:x0f0]");
+    // update the system clock
+    clck_invoke(p_id);
 }
 
 // dynamic vars
@@ -128,15 +118,11 @@ void p_stack_update (int cn) {
     }
 }
 
-// actually calls each process in order of execution, requires implementation for execution that does not cause stack overflow
-void p_stack_runtime (int c) {
-    p_stack_exec(p_stack[c].p_id); // execute process
-    // increment pointer if not reached max
-    if (c != sizeof(p_stack)) {
-        // increment
-        c = c + 1;
-        p_stack_runtime(c); // re-call method
-    } 
+// calls each process in order of execution by looping through process stack elements
+void p_stack_runtime () {
+    for (int i = 0; i < sizeof(p_stack); ++i) {
+        p_stack_exec(p_stack[i].p_id); // execute process
+    }
 }
 
 // executes the code in the process
@@ -153,6 +139,8 @@ void p_stack_exec (int p_id) {
 // print the process stack
 void p_print () {
     puts(0, 0, BLACK, BRIGHT, "Process Stack:");
-    puts(0, 1, BLACK, BRIGHT, p_stack);
+    for (int i = 0; i < sizeof(p_stack); ++i) {
+        puts(0, i, BLACK, BRIGHT, p_stack->p_id);
+    }
 }
 #endif /* P_MAN_H */

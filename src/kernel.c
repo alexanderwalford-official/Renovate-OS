@@ -18,8 +18,6 @@
 #include "drivers/audio/tone.h"
 
 int main() {
-    // set the screen background colour
-    clear(BRIGHT);
 
     // init PS2 device scanning
     init_ps2();
@@ -37,7 +35,7 @@ int main() {
 
     // process for boot sequence
     p_create("init_boot");
-    p_exec(0); 
+    p_exec(0);
     p_destory(0);
 
     return 0;
