@@ -66,7 +66,7 @@ void p_freeze (int p_id, float t, int dt) {
         More features such as invoke event handlers will be added here eventually.
     */
 
-    // to be replaced with new method in the system clock class file:
+    // hang the clock by making the CPU complete iterative operations
     clck_hang(t, 0);
 }
 
@@ -118,15 +118,11 @@ void p_stack_update (int cn) {
     }
 }
 
-// actually calls each process in order of execution, requires implementation for execution that does not cause stack overflow
-void p_stack_runtime (int c) {
-    p_stack_exec(p_stack[c].p_id); // execute process
-    // increment pointer if not reached max
-    if (c != sizeof(p_stack)) {
-        // increment
-        c = c + 1;
-        p_stack_runtime(c); // re-call method
-    } 
+// calls each process in order of execution by looping through process stack elements
+void p_stack_runtime () {
+    for (int i = 0; i < sizeof(p_stack); ++i) {
+        p_stack_exec(p_stack[i].p_id); // execute process
+    }
 }
 
 // executes the code in the process
@@ -143,6 +139,8 @@ void p_stack_exec (int p_id) {
 // print the process stack
 void p_print () {
     puts(0, 0, BLACK, BRIGHT, "Process Stack:");
-    puts(0, 1, BLACK, BRIGHT, "- TBI");
+    for (int i = 0; i < sizeof(p_stack); ++i) {
+        puts(0, i, BLACK, BRIGHT, p_stack->p_id);
+    }
 }
 #endif /* P_MAN_H */

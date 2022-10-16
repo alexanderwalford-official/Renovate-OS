@@ -9,9 +9,11 @@
     - The operating system timing works based on CPU performance, faster = less proccess hanging
     - Only 1 thread at a time can be used.
     - Performance is less than to be desired - implement CPU clock cycle timing
+    - Cannot use many branchless methods due to lvalues not being modifiable.
 */
 
 #include <stdint.h>
+#include "../lib/primary_definitions.h"
 
 #ifndef SYS_CLOCK_H
 #define SYS_CLOCK_H
@@ -22,7 +24,10 @@ int gt = 0; // global timer
 
 // fires when a process is executed from the main class
 void clck_invoke (int pid) {
-    (p_clck_invokes[pid]) ? 0 : p_clck_invokes[pid] = true; // set array value of process invoke value to true
+    // if not invoked, invoke
+    if (!p_clck_invokes[pid]) {
+        p_clck_invokes[pid] = true;
+    }
     clck_timing(0, pid); // update sys clock
 }
 
@@ -36,8 +41,14 @@ void clck_timing (int lt, int pid) {
 // used to time how long a thread should hang for
 void clck_hang (float t, float lt) {
     sys_threads_status[0] = false;
-    lt = lt + 0.001;
-    (lt < t) ? clck_hang(t, lt) : sys_threads_status[0] = true; 
+    lt = lt + 0.1;
+
+    if (lt < t) {
+        clck_hang(t, lt);
+    }
+    else {
+        sys_threads_status[0] = true; 
+    }
 }
 
 #endif
