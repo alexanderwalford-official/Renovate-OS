@@ -11,6 +11,8 @@ int init_boot () {
 
     // clear screen
     clear(BRIGHT);
+
+    puts(0, 2, BRIGHT, BLACK, "[E:b1f1]");
     
     // initialise the temproary file system
     fs_init("n");
