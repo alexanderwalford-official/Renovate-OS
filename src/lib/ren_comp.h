@@ -87,7 +87,6 @@ void compile (char* code) {
     else if (code == "splash_screen") {
         // print the splash screen
         clear(BRIGHT);
-        puts(0, 2, BRIGHT, BLACK, "[E:b0f1]");
         puts(27, 7, BLACK, BRIGHT, "______________________");
         puts(33, 9, BLACK, BRIGHT, "Renovate OS");
         puts(28, 10, BLACK, BRIGHT, "Renovate Software LTD");

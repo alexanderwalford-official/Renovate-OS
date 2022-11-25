@@ -25,16 +25,14 @@ int main() {
     // init USB device scanning
     init_USB();
 
-    // process for startup screen
+    // processes for startup
     p_create("splash_screen");
-    p_exec(0); 
+    p_exec(0);
     beep(0);
     (ps2_get_char() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
-    p_freeze(0, 4000, 0); // wait 4 seconds
-    p_destory(0);
-
-    // process for boot sequence
     p_create("init_boot");
+    p_freeze(1, 4000);
+    p_destory(0);
     p_exec(0);
     p_destory(0);
 

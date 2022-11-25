@@ -33,7 +33,7 @@ struct process p_stack[256]; // process stack
 
 // primary process handler (alternate method)
 int p_id_handler (char* action, int p_id) {
-    (action == "d") ? p_destory(p_id) : (action == "f") ? p_freeze(p_id, 1, 0) : (action == "e") ? p_exec(p_id) : (action == "p") ? p_print() : ret();
+    (action == "d") ? p_destory(p_id) : (action == "f") ? p_freeze(p_id, 1) : (action == "e") ? p_exec(p_id) : (action == "p") ? p_print() : ret();
     return 0;
 }
 
@@ -56,7 +56,7 @@ void p_destory (int p_id) {
 }
 
 // freeze a process (milliseconds)
-void p_freeze (int p_id, float t, int dt) {
+void p_freeze (int p_id, float t) {
 
     /*
         Things to note:
@@ -66,23 +66,27 @@ void p_freeze (int p_id, float t, int dt) {
         More features such as invoke event handlers will be added here eventually.
     */
 
+    // set the process as dead
+    p_stack[p_id].p_rs = 0;
+
     // hang the clock by making the CPU complete iterative operations
     clck_hang(t, 0);
+
+    // set the process as live again
+    p_stack[p_id].p_rs = 1;
 }
 
 // repetative process execution (compilation)
 void p_exec (int p_id) {   
+    
     // first, add to the process stack so that it can be queued for execution by setting its state to live
     p_stack[p_id].p_rs = 1; // live
 
+    // execute all live processes
+    p_stack_runtime();
+
     // update the process stack
-    p_stack_update(0);
-
-    // start the process stack executioner
-    p_stack_runtime(0);
-
-    // update the system clock
-    clck_invoke(p_id);
+    p_stack_update(0); 
 }
 
 // dynamic vars
@@ -121,7 +125,8 @@ void p_stack_update (int cn) {
 // calls each process in order of execution by looping through process stack elements
 void p_stack_runtime () {
     for (int i = 0; i < sizeof(p_stack); ++i) {
-        p_stack_exec(p_stack[i].p_id); // execute process
+        // check if the process is live, if yes then execute it
+        (p_stack[i].p_rs == 1) ? p_stack_exec(p_stack[i].p_id) : 0;
     }
 }
 
