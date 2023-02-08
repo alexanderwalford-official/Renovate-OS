@@ -23,6 +23,8 @@ int init_boot () {
     // beep once
     beep(0);
 
+    puts(0, 3, BRIGHT, BLACK, "[VFS:UP]");
+
     return 0;
 }
 

@@ -10,7 +10,9 @@
     "ps2.h": "c",
     "vga_linear.h": "c",
     "ren_comp.h": "c",
-    "tone.h": "c"
+    "tone.h": "c",
+    "time.h": "c",
+    "p_man.h": "c"
   },
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",
