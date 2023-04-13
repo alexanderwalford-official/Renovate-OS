@@ -1,8 +1,8 @@
 /*
     PS2.h
-    Alexander Walford 2022
+    Alexander Walford 2023
 
-    This class file was developed from the brilliant information over at:
+    This class file was developed from information over at:
     https://wiki.osdev.org/PS/2_Keyboard
 */
 
@@ -10,9 +10,10 @@
 #define PS2_H
 
 #include "stdint.h"
+#include "GIO.h"
 #include "../../lib/primary_definitions.h"
 
-// use uint16_t (16 bit unsigned integer) for keyboard signals
+// use uint16_t (16 bit unsigned integer) for 16bit keyboard signals
 
 // possible better option using NASM Assembly? https://stackoverflow.com/questions/523185/how-do-i-get-user-input-with-nasm 
 
@@ -21,15 +22,25 @@
 const char* codes_char[6] = {" ", "\n", "F2", "y", "n", "F12"};
 const uint16_t codes[6] = {0x39, 0x1c, 0x3C, 0x15, 0x32, 0x58};
 
-// get keyboard input
+// get keyboard input sect
+
+
 int init_ps2 () {
-    uint16_t *const EnableScan = (uint16_t*) 0xF4; // enable key scanning
+    // reset keyboard controller
+    /*
+    commented due to too many references for mov error
+    __asm(
+    "mov rcx, 0xFE"
+    "out 0x64, rcx"
+    );
+    */
+    set_byte(0xF4); // enable key scanning
     return 0;
 }
 
 // disable keyboard scanning
 int dinit_ps2 () {
-    uint16_t *const DisableScan = (uint16_t*) 0xF5; // disable key scanning
+    set_byte(0xF5); // disable key scanning
     return 0;
 }
 
