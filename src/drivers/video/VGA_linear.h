@@ -1,8 +1,8 @@
 // rendering the screen in a linear VGA framebuffer
 // https://wiki.osdev.org/Drawing_In_a_Linear_Framebuffer
 
-#ifndef IO_H
-#define IO_H
+#ifndef VGA_LINEAR_H
+#define VGA_LINEAR_H
 
 #include "stdint.h"
 
@@ -42,4 +42,4 @@ void clear(enum color bg) {
         }     
     }
 }
-#endif /* IO_H */
+#endif /* VGA_LINEAR */

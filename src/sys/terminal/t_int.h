@@ -5,6 +5,7 @@
 
 #include "stdint.h"
 #include "../../drivers/video/VGA_linear.h"
+#include "../../drivers/input/IO.h"
 
 int cli_init (int ent) {
 
@@ -19,8 +20,8 @@ int cli_init (int ent) {
 char* CombineInput (int c_cnt) {
     c_cnt = c_cnt + 1;
     char* c_comb[] = {}; // blank string array
-    char c = ps2_get_char; // get a single character
-    (c == "") ? ps2_get_char : (c != "\n") ? c_comb[c_cnt] = c : 0;
+    char c = GetChar(); // get a single character
+    (c == "") ? GetChar() : (c != "\n") ? c_comb[c_cnt] = c : 0;
     return c_comb;
 }
 
