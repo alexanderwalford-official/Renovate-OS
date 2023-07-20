@@ -92,7 +92,7 @@ void compile (char* code) {
         puts(28, 10, BLACK, BRIGHT, "Renovate Software LTD");
         puts(27, 11, BLACK, BRIGHT, "______________________");
         puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
-        puts(27, 18, BLACK, BRIGHT, "< F2 FOR BOOT OPTIONS >");
+        puts(27, 18, BLACK, BRIGHT, "< X FOR BOOT OPTIONS >");
     }
 
     c_lc = c_lc + 1;

@@ -78,7 +78,6 @@ void p_freeze (int p_id, float t) {
 
 // repetative process execution (compilation)
 void p_exec (int p_id) {   
-    
     // first, add to the process stack so that it can be queued for execution by setting its state to live
     p_stack[p_id].p_rs = 1; // live
 

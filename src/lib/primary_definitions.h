@@ -2,6 +2,10 @@
 #include "stdbool.h"
 #include "../drivers/video/VGA_linear.h"
 
+#ifndef PI
+#define PI 3.14159
+#endif
+
 #ifndef NULL
 #define NULL 0;
 #endif
@@ -15,11 +19,8 @@
         keep = !keep, count++) \
       for(item = (array) + count; keep; keep = !keep)
 
-
-
 #ifndef SYS_PRIMARY_DEFINITIONS_H
 #define SYS_PRIMARY_DEFINITIONS_H
-
 // dynamic vars
 char* str_chars[];
 

@@ -20,13 +20,11 @@ int main() {
     // processes for startup
     p_create("splash_screen");
     p_exec(0);
-    beep(0);
-    (GetChar() == "F2") ? init_recovery() : ret(); // if presses F2, open recovery
+    //(GetChar() == "x") ? init_recovery() : ret(); // if presses x, open recovery
     p_create("init_boot");
     p_freeze(1, 4000);
     p_destory(0);
     p_exec(0);
     p_destory(0);
-
     return 0;
 }

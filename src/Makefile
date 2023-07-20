@@ -27,7 +27,7 @@ clean:
 
 # copy the file to the host
 move:
-	su
+	sudo rm /media/sf_share/main.iso
 	sudo cp main.iso /media/sf_share/
 
 # GRUB config with kernel integration
