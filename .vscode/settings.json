@@ -12,7 +12,8 @@
     "ren_comp.h": "c",
     "tone.h": "c",
     "boot.h": "c",
-    "p_man.h": "c"
+    "p_man.h": "c",
+    "f_sys.h": "c"
   },
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",

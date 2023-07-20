@@ -25,6 +25,11 @@ clean:
 	rm -f entry.o
 	rm -f *.elf *.o iso/boot/*.elf *.iso
 
+# copy the file to the host
+move:
+	su
+	sudo cp main.iso /media/sf_share/
+
 # GRUB config with kernel integration
 run: main.elf
 	qemu-system-i386 -kernel '$<'
