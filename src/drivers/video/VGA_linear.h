@@ -12,7 +12,21 @@ int puthandler () {
 
 enum color {
     BLACK = 0,
-    BRIGHT = 7
+    DARK_BLUE = 1,
+    GREEN = 2,
+    CYAN = 3,
+    RED = 4,
+    PURPLE = 5,
+    BROWN = 6,
+    BRIGHT = 7,
+    DARK_GRAY = 8,
+    LIGHT_BLUE = 9,
+    LIGHT_GREEN = 10,
+    LIGHT_CYAN = 11,
+    LIGHT_RED = 12,
+    LIGHT_PURPLE = 13,
+    YELLOW = 14,
+    WHITE = 15
 };
 
 enum size {

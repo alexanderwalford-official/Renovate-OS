@@ -17,25 +17,36 @@ int InputBufferBusy = 0;
 char* InputBuffer;
 
 // get user input char and parse it to the input buffer, will be saved if the buffer state is 1
-char GetChar() {
-  uint16_t in;
-  __asm__ __volatile__ ("int $0x16\n\t"
-    : "=a"(in)
-    : "0"(0x0));
-  puts(0, 20, BLACK, BRIGHT, InputBufferBusy);
-  HandleInputbuffer((char)in);
-  return ((char)in);
+char GetChar()
+{
+	uint16_t ax = 0;
+	__asm__ ("int $0x16" : "+a" (ax));
+  //HandleInputbuffer((char)ax);
+	return ax & 0xff;
 }
 
 // parse either 1 or 0 to enable to disable input buffer for current string
 void InputBufferChangeState (int state) {
   InputBufferBusy = state;
+  if (state == 0) {
+    puts(0, 20, RED, BLACK, "[BFS0]");
+  }
+  else {
+    puts(0, 20, RED, BLACK, "[BFS1]");
+  }
+  return;
+}
+
+void ClearInputbuffer () {
+  InputBuffer = "";
+  return;
 }
 
 void HandleInputbuffer(char in) {
   if (InputBuffer == 0) {
     InputBuffer += in;
   }
+  return;
 }
 
 // formulate a string from the GetChar method
