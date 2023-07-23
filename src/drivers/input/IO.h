@@ -11,18 +11,30 @@
 
 // use uint16_t (16 bit unsigned integer) for 16bit keyboard signals
 
-// experimental methods:
+int InputBufferBusy = 0; // input buffer state
+int ClearBuffer = 0;
 
-int InputBufferBusy = 0;
-char* InputBuffer;
-
-// get user input char and parse it to the input buffer, will be saved if the buffer state is 1
-char GetChar()
+// returns the pressed character
+int GetChar(void)
 {
-	uint16_t ax = 0;
+  uint16_t ax;
 	__asm__ ("int $0x16" : "+a" (ax));
-  //HandleInputbuffer((char)ax);
-	return ax & 0xff;
+  return ax & 0xff;
+}
+
+// get input string
+char GetString (char in[]) {
+  if (ClearBuffer == 1) {
+    in = NewString();
+  }
+  if (InputBufferBusy == 1) {
+    int size_of_buffer = sizeof(in);
+    int key = GetChar();
+    if (key != '\r' && key != '\b' && key != '\0' && key !=' ') {
+      //in[size_of_buffer] = key;
+    }
+  }
+  return in;
 }
 
 // parse either 1 or 0 to enable to disable input buffer for current string
@@ -38,25 +50,47 @@ void InputBufferChangeState (int state) {
 }
 
 void ClearInputbuffer () {
-  InputBuffer = "";
+  ClearBuffer = 1;
   return;
 }
 
-void HandleInputbuffer(char in) {
-  if (InputBuffer == 0) {
-    InputBuffer += in;
-  }
-  return;
-}
-
-// formulate a string from the GetChar method
-char *GetString(char *InputBuffer, int MaxChars) {
-  char *BufferPtr = InputBuffer;
-  while(BufferPtr < (InputBuffer + MaxChars) && (*BufferPtr == GetChar()) != '\r') {
-    //FUNCT(*BufferPtr++, 0);
-  }
-  *BufferPtr = '\0';
-  return InputBuffer;
+// convert int to string
+char* itoa(int value, char* str, int base)
+{
+    char* rc;
+    char* ptr;
+    char* low;
+    // Check for supported base.
+    if ( base < 2 || base > 36 )
+    {
+        *str = '\0';
+        return str;
+    }
+    rc = ptr = str;
+    // Set '-' for negative decimals.
+    if ( value < 0 && base == 10 )
+    {
+        *ptr++ = '-';
+    }
+    // Remember where the numbers start.
+    low = ptr;
+    // The actual conversion.
+    do
+    {
+        // Modulo is negative for negative value. This trick makes abs() unnecessary.
+        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz"[35 + value % base];
+        value /= base;
+    } while ( value );
+    // Terminating the string.
+    *ptr-- = '\0';
+    // Invert the numbers.
+    while ( low < ptr )
+    {
+        char tmp = *low;
+        *low++ = *ptr;
+        *ptr-- = tmp;
+    }
+    return rc;
 }
 
 

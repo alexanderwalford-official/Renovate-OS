@@ -43,6 +43,37 @@ bool contains_str(char* string, char* target) {
 
 }
 
+int NewString () {
+    char new_string[] = "";
+    return new_string;
+}
+
+// compare if two strings are the same, used in conditional statements
+bool StrCompare (char string_a[], char string_b[]) {
+    int a_size = sizeof(string_a);
+    int b_size = sizeof(string_b);
+    if (a_size != b_size) {
+        return false; // not the same size, cannot be the same
+    }
+    else {
+        int score = 0;
+        // same size, can be compared
+        for (int i = 0; i < a_size; i++) {
+            // compare each char for the size of the array
+            if (string_a[i] == string_b[i]) {
+                score = score + 1; // matches
+            }
+        }
+        if (score == sizeof(a_size)) {
+            return true; // perfect match
+        }
+        else {
+            return false; // not perfect match
+        }
+    }
+}
+
+
 // "split" method
 char* split(char* string, char split) {
     int s_loc = 0;
