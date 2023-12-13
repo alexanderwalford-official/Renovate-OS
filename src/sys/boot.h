@@ -21,7 +21,7 @@ int init_boot () {
     cli_init(0);
 
     // beep once
-    beep(0);
+    //beep(0);
 
     puts(0, 3, BRIGHT, BLACK, "[VFS:UP]");
 

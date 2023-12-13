@@ -17,10 +17,10 @@
 
 // structures
 typedef struct process {
-    int p_id; // process ID
-    int p_et; // process execution time
-    int p_rs; // process runstate, 0 = dead, 1 = live
-    int p_t; // process ticket - when it will be executed, defined by the process stack
+    unsigned int p_id; // process ID
+    unsigned int p_et; // process execution time
+    signed int p_rs; // process runstate, 0 = dead, 1 = live
+    unsigned int p_t; // process ticket - when it will be executed, defined by the process stack
     char* p_inst; // process instructions
 };
 
@@ -51,7 +51,7 @@ void p_destory (int p_id) {
     p_stack[p_id].p_id = 000; // set the PID to 000, making it possible to re-use it in memory for creating new processes
     p_stack[p_id].p_et = 0; // reset execution time to 0
     p_stack[p_id].p_rs = 0; // would normally make the process dead but not deleted but due to p_id = 000 this can be over-written
-    p_stack[p_id].p_inst = ""; // remove all process instructions
+    p_stack[p_id].p_inst = NULL; // remove all process instructions
     p_cnt = p_cnt - 1; // decrease process count
 }
 
@@ -78,7 +78,6 @@ void p_freeze (int p_id, float t) {
 
 // repetative process execution (compilation)
 void p_exec (int p_id) {   
-    
     // first, add to the process stack so that it can be queued for execution by setting its state to live
     p_stack[p_id].p_rs = 1; // live
 

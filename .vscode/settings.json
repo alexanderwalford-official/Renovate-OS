@@ -42,5 +42,6 @@
     "**/.*/**",
     "**/.vscode",
     "**/.vscode/**"
-  ]
+  ],
+  "C_Cpp.dimInactiveRegions": false
 }
