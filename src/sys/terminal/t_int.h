@@ -16,16 +16,17 @@ int cli_init (int ent) {
     return 0;
 }
 
-void cli_rend_main () {
+int cli_rend_main () {
     clear(BLACK);
     puts(0, 0, WHITE, BLACK, "Renovate OS - Version 0.01 ALPHA");
-    puts(0, 1, WHITE, BLACK, "Renovate Software LTD 2023");
+    puts(0, 1, WHITE, BLACK, "Alexander Walford 2025");
     puts(0, 3, RED, BLACK, "[ ! ] You are in VFS mode, your files will not be written.");
     puts(0, 5, BRIGHT, BLACK, "0//: ");
-    ClearInputbuffer();
-    InputBufferChangeState(1);
-    HandleInput();
-    return;
+    //ClearInputbuffer();
+    //InputBufferChangeState(1);
+    //init_keyboard();
+    //HandleInput();
+    return 0;
 }
 
 void HandleInput () {

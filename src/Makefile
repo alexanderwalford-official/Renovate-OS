@@ -27,8 +27,8 @@ clean:
 
 # copy the file to the host
 move:
-	sudo rm /media/sf_share/main.iso
-	sudo cp main.iso /media/sf_share/
+	#sudo rm /home/vboxuser/share/main.iso
+	sudo cp main.iso /home/vboxuser/share/
 
 # GRUB config with kernel integration
 run: main.elf
@@ -37,3 +37,13 @@ run: main.elf
 # compile ISO file
 rub-img: main.iso
 	qemu-system-i386 -hda '$<'
+
+run:
+	sudo qemu-system-i386 -cdrom main.iso -smp 1 -icount 1
+
+# install the relevant packages
+setup-dev:
+	sudo apt install xorriso
+	sudo apt install mtools
+	sudo apt install nasm
+	sudo apt install qemu-system-i386

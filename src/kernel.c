@@ -20,11 +20,19 @@ int main() {
     // processes for startup
     p_create("splash_screen");
     p_exec(0);
+    p_freeze(0, 4000);
+    p_destory(0);
+
     //(GetChar() == "x") ? init_recovery() : ret(); // if presses x, open recovery
     p_create("init_boot");
+    p_exec(1);
     p_freeze(1, 4000);
-    p_destory(0);
-    p_exec(0);
-    p_destory(0);
+    p_destory(1);
+
+    p_create("print_stack");
+    p_exec(2);
+    p_freeze(2, 4000);
+    p_destory(2);
+    
     return 0;
 }
