@@ -5,4 +5,4 @@
 - Process handling under development.
 
 ## Build Instructions On Linux:
-- Simply type: "make" into the command line of this directory.
+- Please check the "Wiki" tab for more information.
