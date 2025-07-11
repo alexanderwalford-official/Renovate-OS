@@ -1,7 +1,7 @@
 # Renovate-OS
  Official repo for Renovate OS, written entirely in C and assembly language.
  
- ![alt text](media/prev.mp4)
+ ![alt text](media/preview.gif)
  
 ## What is Renovate OS?
 It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "RenLang". 
@@ -27,11 +27,11 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 
 ## To-Do List
 - [x] Successful build for printing text.
-- [ ] Implement boot process that calls the main methods. 🚧
+- [ ] Implement boot process that calls the main methods. 🚧 80%
 - [ ] Hardware drivers for user input. 🚧
 - [ ] Sound driver for error reporting.
-- [ ] Implement local filesystem. 🚧
-- [ ] Process management. 🚧
+- [ ] Implement local filesystem. 🚧 VFS 100%
+- [ ] Process management. 🚧 80%
 - [ ] Programming interface. 🚧
 - [ ] Graphics driver. 🚧
 - [ ] Ethernet network driver.
