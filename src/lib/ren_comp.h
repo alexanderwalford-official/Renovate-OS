@@ -9,6 +9,7 @@
 #include "../sys/p_man.h"
 #include "../sys/boot.h"
 #include "../sys/sys_clck.h"
+#include "../sys/terminal/t_int.h"
 
 
 /*
@@ -41,15 +42,18 @@ int splash_screen () {
     puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
     puts(27, 18, BLACK, BRIGHT, "< X FOR BOOT OPTIONS >");
 
+    clck_hang(4000, 0);
+
     return 0;
 }
 
 int error_screen () {
     clear(RED);
-    puts(27, 7, BLACK, RED, "==================================");
-    puts(33, 9, BLACK, RED, ">> SYSTEM EXCEPTION <<");
-    puts(28, 10, BLACK, RED, "The system encountered an error and was forced to stop. Message is as followed:");
-    puts(27, 11, BLACK, RED, "[ ! ] OS COMPILER LEVEL EXCEPTION >> INVALID CODE PARSED");
+    puts(5, 7, BLACK, RED, "==================================");
+    puts(5, 9, BLACK, RED, ">> SYSTEM EXCEPTION <<");
+    puts(5, 10, BLACK, RED, "The system encountered an error and was forced to stop.");
+    puts(5, 11, BLACK, RED, "Message is as followed:");
+    puts(5, 12, BLACK, RED, "[ ! ] OS COMPILER LEVEL EXCEPTION >> INVALID CODE PARSED");
     // wait and load the OS again by re-creating the relevant processes
     clck_hang(4000, 0);
     return 0;
@@ -121,6 +125,9 @@ int compile (char* code) {
     else if (StrCompare(code, "print_stack")) {
         // print (dmp) the process stack
         stack_print();
+    }
+    else if (StrCompare(code, "flash")) {
+        flash_pointer(2, 0);
     }
     else {
         // invalid code

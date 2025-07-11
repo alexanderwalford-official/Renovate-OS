@@ -48,6 +48,33 @@ bool contains_str(char* string, char* target) {
 //     return dest;
 // }
 
+char buffer[100]; // Assume max 100-digit number
+
+char *toArray(int number) {
+    // Handle the case where the number is 0
+    if (number == 0) {
+        buffer[0] = '0';
+        return buffer;
+    }
+
+    // Count the number of digits
+    int n = 0;
+    int temp = number;
+    while (temp > 0) {
+        temp /= 10;
+        n++;
+    }
+
+    // Fill the buffer with digits
+    for (int i = n - 1; i >= 0; --i) {
+        buffer[i] = (number % 10) + '0';
+        number /= 10;
+    }
+
+    return buffer;
+}
+
+
 // compare if two strings are the same, used in conditional statements
 int StrCompare (char* string_a, char* string_b) {
     

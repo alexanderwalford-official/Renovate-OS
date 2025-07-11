@@ -7,11 +7,28 @@
 #include "../../drivers/video/VGA_linear.h"
 #include "../../drivers/input/IO.h"
 #include "../../lib/primary_definitions.h"
+#include "../sys_clck.h"
+
+
+int flash_pointer (int times, int lc) {
+    if (lc < times) {
+        puts(0, 6, BRIGHT, BLACK, " ");
+        clck_hang(2000, 0);
+        puts(0, 6, BLACK, BRIGHT, " ");
+        clck_hang(2000, 0);
+        lc = lc + 1;
+        flash_pointer(times, lc);
+    }
+    else {
+        return 0;
+    }
+}
 
 int cli_init (int ent) {
     if (ent == 0) {
         // bypass login
         cli_rend_main();
+        flash_pointer(2, 0);
     }
     return 0;
 }
