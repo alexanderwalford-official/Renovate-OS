@@ -5,6 +5,7 @@
 #include "f_sys.h"
 #include "../sys/terminal/t_int.h"
 #include "../drivers/audio/tone.h"
+#include "../sys/sys_clck.h"
 
 
 int init_boot () {
@@ -16,6 +17,9 @@ int init_boot () {
     
     // initialise the temproary file system
     fs_init("n");
+
+    // wait
+    clck_hang(4000, 0);
     
     // initialise the terminal, bypass login
     cli_init(0);

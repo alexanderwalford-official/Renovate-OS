@@ -7,7 +7,7 @@
 #endif
 
 #ifndef NULL
-#define NULL 0;
+#define NULL 0
 #endif
 
 // "for each" loop
@@ -43,36 +43,52 @@ bool contains_str(char* string, char* target) {
 
 }
 
-int NewString () {
-    char new_string[] = "";
-    return new_string;
-}
+// char* StrCombine(char* dest, const char* src) {
+//     // to be implemented
+//     return dest;
+// }
 
 // compare if two strings are the same, used in conditional statements
-bool StrCompare (char string_a[], char string_b[]) {
-    int a_size = sizeof(string_a);
-    int b_size = sizeof(string_b);
-    if (a_size != b_size) {
-        return false; // not the same size, cannot be the same
+int StrCompare (char* string_a, char* string_b) {
+    
+    // ensure that neither strings are NULL
+    if (string_a == NULL || string_b == NULL) {
+        return 0;
     }
-    else {
-        int score = 0;
-        // same size, can be compared
-        for (int i = 0; i < a_size; i++) {
-            // compare each char for the size of the array
-            if (string_a[i] == string_b[i]) {
-                score = score + 1; // matches
-            }
-        }
-        if (score == sizeof(a_size)) {
-            return true; // perfect match
-        }
-        else {
-            return false; // not perfect match
+
+    // calculate the length of both strings using string literals
+    int len_a = 0;
+    while (string_a[len_a] != '\0') {
+        len_a++;
+    }
+    int len_b = 0;
+    while (string_b[len_b] != '\0') {
+        len_b++;
+    }
+
+    // check to see if the length is 0
+    if (len_a == 0 || len_b == 0) {
+        return 0;
+    }
+
+    // if the lengths are not the same, return false
+    if (len_a != len_b) {
+        return 0;
+    }
+
+    // compare each character in the strings
+    for (int i = 0; i < len_a; i++) {
+        //if (string_a[i] == '\0' || string_b[i] == '\0') break;
+        if (string_a[i] != string_b[i]) {
+            return 0;
         }
     }
+
+    // if we reach here, the strings are the same
+    return 1;
 }
 
+// many of these methods likely don't work
 
 // "split" method
 char* split(char* string, char split) {

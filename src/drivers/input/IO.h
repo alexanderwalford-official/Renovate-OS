@@ -25,13 +25,13 @@ int GetChar(void)
 // get input string
 char GetString (char in[]) {
   if (ClearBuffer == 1) {
-    in = NewString();
+    char* in = "";
   }
   if (InputBufferBusy == 1) {
     int size_of_buffer = sizeof(in);
     int key = GetChar();
     if (key != '\r' && key != '\b' && key != '\0' && key !=' ') {
-      //in[size_of_buffer] = key;
+      in[size_of_buffer] = key;
     }
   }
   return in;
@@ -91,6 +91,36 @@ char* itoa(int value, char* str, int base)
         *ptr-- = tmp;
     }
     return rc;
+}
+
+// the code below this point requires testing
+
+// function to write a byte to a specified port
+void outb(uint16_t port, uint8_t value) {
+    asm volatile ("outb %0, %1" : : "a" (value), "Nd" (port));
+}
+
+// function to read a byte from a specified port
+uint8_t inb(uint16_t port) {
+    uint8_t result;
+    asm volatile ("inb %1, %0" : "=a" (result) : "Nd" (port));
+    return result;
+}
+
+// function to initialize the keyboard
+void init_keyboard() {
+    puts(0, 20, BRIGHT, BLACK, "[E:kbinit1]");
+
+    // disable interrupts
+    asm volatile ("cli");
+
+    // enable the keyboard by sending the appropriate command to the controller
+    // for example, to enable the keyboard (bit 0 of port 0x61)
+    uint8_t current = inb(0x61);
+    outb(0x61, current | 0x01);
+    
+    // enable interrupts
+    asm volatile ("sti");
 }
 
 

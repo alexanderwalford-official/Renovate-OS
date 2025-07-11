@@ -1,0 +1,6 @@
+# files to ignore
+*.o
+*.so
+*.out
+*.elf
+src/main.iso
