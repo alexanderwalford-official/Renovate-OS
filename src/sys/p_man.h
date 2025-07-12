@@ -40,11 +40,11 @@ int p_id_handler (char* action, int p_id) {
 // create new process
 void p_create (char* c_p_inst) {
     struct process p;
-    p.p_id = p_cnt + 1;
-    p.p_inst = c_p_inst;
-    p.p_et = sizeof(c_p_inst) / 0.01f;
-    p_stack[p.p_id] = p; // add process to process stack
-    //printf("Process Created: ID = %d, Instructions = %s, Execution Time = %d\n", p.p_id, p.p_inst, p.p_et); // debug print
+    p.p_id = p_cnt; // ID - should be the count
+    p.p_inst = c_p_inst; // instructions
+    p.p_et = sizeof(c_p_inst) / sizeof(c_p_inst[0]) / 0.01f; // execution time
+    p_stack[p.p_id] = p; // add process to process stack structure
+    p_cnt = p_cnt + 1; // increase process count
 }
 
 // destory a process
@@ -127,40 +127,10 @@ void p_stack_update(int cn) {
     p_stack_update(cn + 1);
 }
 
-// old method:
-// void p_stack_update (int cn) {
-//     if (cn < sizeof(p_stack) / sizeof(p_stack[0])) {
-//         if (p_stack[cn].p_rs == 1) {
-//             p_et_stack[cn] = p_stack[cn].p_et;
-//             if (cn != 0) {
-//                 if (p_et_stack[cn] < p_et_stack[cn - 1]) {
-//                     // move the process closer to the execution point by swapping their struct values
-//                     p_stack[p_et_stack[cn] - 1] = p_stack[p_et_stack[cn]];
-
-//                     // move onto the next process
-//                     cn = cn + 1;
-//                     p_stack_update(cn);
-//                 }
-//             }
-//             else {
-//                 // move onto the next process as we don't have anything to compare it to
-//                 cn = cn + 1;
-//                 p_stack_update(cn);
-//             }
-//         }
-//         else {
-//             // process not live, move onto the next
-//             cn = cn + 1;
-//             p_stack_update(cn);
-//         }
-//     }
-// }
-
 // calls each process in order of execution by looping through process stack elements
 void p_stack_runtime () {
     int size = sizeof(p_stack) / sizeof(p_stack[0]); // get the size of the process stack
     for (int i = 0; i < size; ++i) {
-        //printf("Process ID: %d, Execution Time: %d, Runstate: %d\n", p_stack[i].p_id, p_stack[i].p_et, p_stack[i].p_rs); // debug print
         // check if the process is live, if yes then execute it
         (p_stack[i].p_rs == 1) ? p_stack_exec(p_stack[i].p_id) : 0;
     }
@@ -171,11 +141,11 @@ void p_stack_exec (int p_id) {
     // time for execution
     char* instructions = p_stack[p_id].p_inst; // get instructions
     int exec_time = p_stack[p_id].p_et; // get execution time
+
     // handle execution
-    //printf("Executing Process ID: %d with Execution Time: %d\n", p_id, exec_time); // debug print
-    //printf("Instructions: %s\n", instructions); // debug print
     if (instructions == NULL) {
-        //printf("No instructions to execute for Process ID: %d\n", p_id); // debug print
+        // no instructions, print it
+        puts(0, 20, BLACK, BRIGHT, "INSTRUCTIONS NULL");
     }
     else {
         compile(instructions);
@@ -188,8 +158,13 @@ void p_stack_exec (int p_id) {
 // print the process stack
 void stack_print () {
     puts(0, 0, BLACK, BRIGHT, "Process Stack:");
-    for (int i = 0; i < sizeof(p_stack); ++i) {
-        puts(0, i, BLACK, BRIGHT, p_stack->p_id);
+    for (int i = 0; i < sizeof(p_stack) / sizeof(p_stack[0]); ++i) {
+        if (p_stack[i].p_rs == 1) {
+            const char* a = toArray(p_stack[i].p_id);
+            const char* b = p_stack[i].p_inst;
+            char* data = StrCombine(a, b); 
+            puts(0, i + 1, BLACK, BRIGHT, data); // print the process ID, instructions
+        }
     }
 }
 #endif /* P_MAN_H */

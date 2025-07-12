@@ -120,8 +120,49 @@ void init_keyboard() {
     outb(0x61, current | 0x01);
     
     // enable interrupts
-    asm volatile ("sti");
+    //asm volatile ("sti"); // causes a crash
+    init_idt(); // needs further work! assumes protected mode, not real mode...
 }
+
+void keyboard_handler() {
+    puts(0, 20, BRIGHT, BLACK, "[INPUT REC]");
+}
+
+// define the IDT structure
+typedef struct {
+    uint16_t offset_low;
+    uint16_t selector;
+    uint8_t  flags;
+    uint8_t  offset_high;
+} idt_entry_t;
+
+// define the IDT pointer structure
+typedef struct {
+    uint16_t limit;
+    uint32_t base;
+} idt_ptr_t;
+
+// global IDT array and pointer
+idt_entry_t idt[256];
+idt_ptr_t idt_ptr;
+
+// func to init the IDT
+void init_idt() {
+    // init the IDT pointer
+    idt_ptr.limit = sizeof(idt_entry_t) * 256 - 1;
+    idt_ptr.base = (uint32_t)&idt;
+
+    // fill the keyboard interrupt entry (IRQ 1)
+    idt[1].offset_low = (uint16_t)(keyboard_handler);
+    idt[1].selector = 0x08;  // code segment selector
+    idt[1].flags = 0x8E;     // 0x8E is the interrupt gate flag (0b10001110)
+    idt[1].offset_high = (uint8_t)((uint32_t)keyboard_handler >> 16);
+
+    // load the IDT into the IDTR register
+    asm volatile("lidt %0" : : "m"(idt_ptr));
+}
+
+
 
 
 #endif /* IO_H */

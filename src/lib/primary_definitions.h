@@ -43,10 +43,72 @@ bool contains_str(char* string, char* target) {
 
 }
 
-// char* StrCombine(char* dest, const char* src) {
-//     // to be implemented
-//     return dest;
-// }
+char buffer_str[1024]; //max buffer size
+
+char *StrCombine(const char *str1, const char *str2) {
+    // count length of str1
+    int len1 = 0;
+    while (str1[len1] != '\0') {
+        len1++;
+    }
+
+    // count length of str2
+    int len2 = 0;
+    while (str2[len2] != '\0') {
+        len2++;
+    }
+
+    // ensure the buffer is large enough
+    if (len1 + len2 + 1 > sizeof(buffer_str)) {
+        return NULL; // Buffer overflow, return NULL to indicate error
+    }
+
+    // copy str1 into buffer
+    int i = 0;
+    while (str1[i] != '\0') {
+        buffer_str[i] = str1[i];
+        i++;
+    }
+
+    // copy str2 into buffer
+    int j = 0;
+    while (str2[j] != '\0') {
+        buffer_str[i + j] = str2[j];
+        j++;
+    }
+
+    // add null terminator
+    buffer_str[i + j] = '\0';
+
+    return buffer_str;
+}
+
+char buffer[100]; //max buffer size
+
+char *toArray(int number) {
+    // handle the case where the number is 0
+    if (number == 0) {
+        buffer[0] = '0';
+        return buffer;
+    }
+
+    // count the number of digits
+    int n = 0;
+    int temp = number;
+    while (temp > 0) {
+        temp /= 10;
+        n++;
+    }
+
+    // fill the buffer with digits
+    for (int i = n - 1; i >= 0; --i) {
+        buffer[i] = (number % 10) + '0';
+        number /= 10;
+    }
+
+    return buffer;
+}
+
 
 // compare if two strings are the same, used in conditional statements
 int StrCompare (char* string_a, char* string_b) {

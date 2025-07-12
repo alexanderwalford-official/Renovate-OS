@@ -17,22 +17,32 @@
 #include "lib/primary_definitions.h"
 
 int main() {
+
+    // NOTE: p_destroy does not seem to be working as intended with p_create
+
     // processes for startup
     p_create("splash_screen");
+    p_exec(0);
+    p_destory(0);
+
+    //(GetChar() == "x") ? init_recovery() : ret(); // if presses x, open recovery
+    
+    p_create("init_boot");
+    p_exec(0);
+    p_destory(0);
+
+    p_create("flash");
+    p_exec(0);
+    p_destory(0);
+
+    p_create("print_stack");
     p_exec(0);
     p_freeze(0, 4000);
     p_destory(0);
 
-    //(GetChar() == "x") ? init_recovery() : ret(); // if presses x, open recovery
-    p_create("init_boot");
-    p_exec(1);
-    p_freeze(1, 4000);
-    p_destory(1);
-
-    p_create("print_stack");
-    p_exec(2);
-    p_freeze(2, 4000);
-    p_destory(2);
+    p_create("error");
+    p_exec(0);
+    p_destory(0);
     
     return 0;
 }
