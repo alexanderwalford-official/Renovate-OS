@@ -27,11 +27,12 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 
 ## To-Do List
 - [x] Successful build for printing text.
-- [ ] Implement boot process that calls the main methods. 🚧 80%
+- [x] Implement boot process that calls the main methods.
+- [ ] Implement a memory pool and a way to assign / un-assign memory.
 - [ ] Hardware drivers for user input. 🚧
 - [ ] Sound driver for error reporting.
 - [ ] Implement local filesystem. 🚧 VFS 100%
-- [ ] Process management. 🚧 80%
+- [x] Process management.
 - [ ] Programming interface. 🚧
 - [ ] Graphics driver. 🚧
 - [ ] Ethernet network driver.

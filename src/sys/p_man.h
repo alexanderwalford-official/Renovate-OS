@@ -131,7 +131,6 @@ void p_stack_update(int cn) {
 void p_stack_runtime () {
     int size = sizeof(p_stack) / sizeof(p_stack[0]); // get the size of the process stack
     for (int i = 0; i < size; ++i) {
-        //printf("Process ID: %d, Execution Time: %d, Runstate: %d\n", p_stack[i].p_id, p_stack[i].p_et, p_stack[i].p_rs); // debug print
         // check if the process is live, if yes then execute it
         (p_stack[i].p_rs == 1) ? p_stack_exec(p_stack[i].p_id) : 0;
     }
@@ -142,11 +141,11 @@ void p_stack_exec (int p_id) {
     // time for execution
     char* instructions = p_stack[p_id].p_inst; // get instructions
     int exec_time = p_stack[p_id].p_et; // get execution time
+
     // handle execution
-    //printf("Executing Process ID: %d with Execution Time: %d\n", p_id, exec_time); // debug print
-    //printf("Instructions: %s\n", instructions); // debug print
     if (instructions == NULL) {
-        //printf("No instructions to execute for Process ID: %d\n", p_id); // debug print
+        // no instructions, print it
+        puts(0, 20, BLACK, BRIGHT, "INSTRUCTIONS NULL");
     }
     else {
         compile(instructions);
@@ -160,7 +159,12 @@ void p_stack_exec (int p_id) {
 void stack_print () {
     puts(0, 0, BLACK, BRIGHT, "Process Stack:");
     for (int i = 0; i < sizeof(p_stack) / sizeof(p_stack[0]); ++i) {
-        puts(0, i, BLACK, BRIGHT, toArray(p_stack[i].p_id)); // look into this, not really working
+        if (p_stack[i].p_rs == 1) {
+            const char* a = toArray(p_stack[i].p_id);
+            const char* b = p_stack[i].p_inst;
+            char* data = StrCombine(a, b); 
+            puts(0, i + 1, BLACK, BRIGHT, data); // print the process ID, instructions
+        }
     }
 }
 #endif /* P_MAN_H */

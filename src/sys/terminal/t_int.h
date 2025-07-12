@@ -39,9 +39,9 @@ int cli_rend_main () {
     puts(0, 1, WHITE, BLACK, "Alexander Walford 2025");
     puts(0, 3, RED, BLACK, "[ ! ] You are in VFS mode, your files will not be written.");
     puts(0, 5, BRIGHT, BLACK, "0//: ");
-    //ClearInputbuffer();
-    //InputBufferChangeState(1);
-    //init_keyboard();
+    ClearInputbuffer();
+    InputBufferChangeState(1);
+    init_keyboard(); // problematic
     //HandleInput();
     return 0;
 }
