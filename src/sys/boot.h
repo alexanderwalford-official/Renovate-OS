@@ -19,7 +19,7 @@ int init_boot () {
     fs_init("n");
 
     // wait
-    clck_hang(4000, 0);
+    clck_hang(4000);
     
     // initialise the terminal, bypass login
     cli_init(0);

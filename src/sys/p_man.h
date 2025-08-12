@@ -71,7 +71,7 @@ void p_freeze (int p_id, float t) {
     p_stack[p_id].p_rs = 0;
 
     // hang the clock by making the CPU complete iterative operations
-    clck_hang(t, 0);
+    clck_hang(t);
 
     // set the process as live again
     p_stack[p_id].p_rs = 1;

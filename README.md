@@ -30,6 +30,7 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Implement boot process that calls the main methods.
 - [ ] Implement a memory pool and a way to assign / un-assign memory.
 - [ ] Hardware drivers for user input. 🚧
+- [ ] Switch to interrupt instead of maths for delays. 🚧
 - [ ] Sound driver for error reporting.
 - [ ] Implement local filesystem. 🚧 VFS 100%
 - [x] Process management.

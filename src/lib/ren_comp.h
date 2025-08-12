@@ -42,20 +42,25 @@ int splash_screen () {
     puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
     puts(27, 18, BLACK, BRIGHT, "< X FOR BOOT OPTIONS >");
 
-    clck_hang(4000, 0);
+    clck_hang(4000);
 
     return 0;
 }
 
-int error_screen () {
+int error_screen (char* code) {
     clear(RED);
     puts(5, 7, BLACK, RED, "==================================");
     puts(5, 9, BLACK, RED, ">> SYSTEM EXCEPTION <<");
     puts(5, 10, BLACK, RED, "The system encountered an error and was forced to stop.");
     puts(5, 11, BLACK, RED, "Message is as followed:");
-    puts(5, 12, BLACK, RED, "[ ! ] OS COMPILER LEVEL EXCEPTION >> INVALID CODE PARSED");
+    if (StrCompare(code, "invalid_code") == 1) {
+        puts(5, 12, BLACK, RED, "[ ! ] OS COMPILER LEVEL EXCEPTION >> INVALID CODE PARSED");
+    }
+    else {
+        puts(5, 12, BLACK, RED, "[ ! ] OS UNHANDLED EXCEPTION >> UNKNOWN ERROR");
+    }
     // wait and load the OS again by re-creating the relevant processes
-    clck_hang(4000, 0);
+    clck_hang(4000);
     return 0;
 }
 
@@ -110,7 +115,6 @@ int compile (char* code) {
     // }
 
 
-
     // text printing ends here
     if (StrCompare(code, "update_stack") == 1) {
         p_stack_update(0);
@@ -131,7 +135,7 @@ int compile (char* code) {
     }
     else {
         // invalid code
-        error_screen();
+        error_screen("invalid_code");
     }
 
     c_lc = c_lc + 1;

@@ -13,9 +13,9 @@
 int flash_pointer (int times, int lc) {
     if (lc < times) {
         puts(0, 6, BRIGHT, BLACK, " ");
-        clck_hang(2000, 0);
+        clck_hang(2000);
         puts(0, 6, BLACK, BRIGHT, " ");
-        clck_hang(2000, 0);
+        clck_hang(2000);
         lc = lc + 1;
         flash_pointer(times, lc);
     }

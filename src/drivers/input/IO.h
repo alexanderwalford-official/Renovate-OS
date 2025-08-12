@@ -133,6 +133,7 @@ typedef struct {
     uint16_t offset_low;
     uint16_t selector;
     uint8_t  flags;
+    uint8_t  zero;
     uint8_t  offset_high;
 } idt_entry_t;
 
