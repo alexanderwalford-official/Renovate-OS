@@ -33,7 +33,7 @@ struct process p_stack[256]; // process stack
 
 // primary process handler (alternate method)
 int p_id_handler (char* action, int p_id) {
-    (action == "d") ? p_destory(p_id) : (action == "f") ? p_freeze(p_id, 1) : (action == "e") ? p_exec(p_id) : (action == "p") ? stack_print() : ret();
+    (action == "d") ? p_destroy(p_id) : (action == "f") ? p_freeze(p_id, 1) : (action == "e") ? p_exec(p_id) : (action == "p") ? stack_print() : ret();
     return 0;
 }
 
@@ -42,13 +42,13 @@ void p_create (char* c_p_inst) {
     struct process p;
     p.p_id = p_cnt; // ID - should be the count
     p.p_inst = c_p_inst; // instructions
-    p.p_et = sizeof(c_p_inst) / sizeof(c_p_inst[0]) / 0.01f; // execution time
+    p.p_et = calculate_string_length(c_p_inst) / 100.0f; // execution time
     p_stack[p.p_id] = p; // add process to process stack structure
     p_cnt = p_cnt + 1; // increase process count
 }
 
-// destory a process
-void p_destory (int p_id) {
+// destroy a process
+void p_destroy (int p_id) {
     p_stack[p_id].p_id = 000; // set the PID to 000, making it possible to re-use it in memory for creating new processes
     p_stack[p_id].p_et = 0; // reset execution time to 0
     p_stack[p_id].p_rs = 0; // would normally make the process dead but not deleted but due to p_id = 000 this can be over-written

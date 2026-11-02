@@ -6,6 +6,6 @@ int init_recovery () {
     p_create("iso_launch_options");
     p_exec(0);
     p_freeze(0, 4000);
-    p_destory(0);
+    p_destroy(0);
     return 0;
 }
