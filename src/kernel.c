@@ -23,26 +23,26 @@ int main() {
     // processes for startup
     p_create("splash_screen");
     p_exec(0);
-    p_destory(0);
+    p_destroy(0);
 
     //(GetChar() == "x") ? init_recovery() : ret(); // if presses x, open recovery
     
     p_create("init_boot");
     p_exec(0);
-    p_destory(0);
+    p_destroy(0);
 
     p_create("flash");
     p_exec(0);
-    p_destory(0);
+    p_destroy(0);
 
     p_create("print_stack");
     p_exec(0);
     p_freeze(0, 4000);
-    p_destory(0);
+    p_destroy(0);
 
     p_create("error");
     p_exec(0);
-    p_destory(0);
+    p_destroy(0);
     
     return 0;
 }
