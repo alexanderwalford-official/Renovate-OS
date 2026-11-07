@@ -2,47 +2,57 @@
     Renovate OS
     Developed by Alexander Walford for Renovate Software LTD 2023
 
-    X86 Real Mode
+    X86 32 bit protected mode, loaded by GRUB (multiboot)
 */
 
-#include "stdint.h"
+#include <stdint.h>
+#include "lib/primary_definitions.h"
 #include "drivers/video/VGA_linear.h"
+#include "drivers/serial/serial.h"
 #include "drivers/input/IO.h"
 #include "drivers/audio/tone.h"
+#include "sys/interrupts.h"
+#include "sys/sys_clck.h"
 #include "sys/p_man.h"
 #include "sys/f_sys.h"
 #include "sys/boot.h"
 #include "sys/recovery.h"
 #include "sys/terminal/t_int.h"
-#include "lib/primary_definitions.h"
+#include "lib/ren_comp.h"
 
-int main() {
+// called from entry.asm with the multiboot information address and magic number GRUB left in ebx / eax
+int main(uint32_t mb_info_addr, uint32_t mb_magic) {
 
-    // NOTE: p_destroy does not seem to be working as intended with p_create
+    // hardware setup, this has to happen before any process runs
+    vga_init();                                   // screen & cursor
+    serial_init();                                // debug output on COM1
+    boot_parse_multiboot(mb_magic, mb_info_addr); // memory size
+    gdt_init();                                   // segments
+    idt_init();                                   // exception & IRQ handlers, PIC remap
+    clck_init();                                  // 1000Hz system timer (IRQ0)
+    init_keyboard();                              // PS/2 keyboard (IRQ1)
+    interrupts_enable();
+
+    int pid;
 
     // processes for startup
-    p_create("splash_screen");
-    p_exec(0);
-    p_destory(0);
+    pid = p_create("splash_screen");
+    p_exec(pid);
+    p_destroy(pid);
 
-    //(GetChar() == "x") ? init_recovery() : ret(); // if presses x, open recovery
-    
-    p_create("init_boot");
-    p_exec(0);
-    p_destory(0);
+    // if X was pressed on the splash screen, open the boot options
+    if (boot_options_requested) {
+        init_recovery();
+    }
 
-    p_create("flash");
-    p_exec(0);
-    p_destory(0);
+    pid = p_create("init_boot");
+    p_exec(pid);
+    p_destroy(pid);
 
-    p_create("print_stack");
-    p_exec(0);
-    p_freeze(0, 4000);
-    p_destory(0);
+    // the terminal runs until the computer is turned off
+    pid = p_create("terminal");
+    p_exec(pid);
+    p_destroy(pid);
 
-    p_create("error");
-    p_exec(0);
-    p_destory(0);
-    
     return 0;
 }

@@ -1,5 +1,19 @@
-#include "stdint.h"
-#include "stdbool.h"
+/*
+    primary_definitions.h
+    The core helper library. Including this gives you the freestanding C library
+    replacements (ren_ctype / ren_string / ren_stdlib / ren_stdio) plus the Renovate
+    specific helpers below.
+*/
+#ifndef SYS_PRIMARY_DEFINITIONS_H
+#define SYS_PRIMARY_DEFINITIONS_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include "ren_ctype.h"
+#include "ren_string.h"
+#include "ren_stdlib.h"
+#include "ren_stdio.h"
 #include "../drivers/video/VGA_linear.h"
 
 #ifndef PI
@@ -7,196 +21,118 @@
 #endif
 
 #ifndef NULL
-#define NULL 0
+#define NULL ((void*)0)
 #endif
 
-// "for each" loop
+// "for each" loop, only works on real arrays (not pointers), e.g.
+//     int values[3] = {1, 2, 3};
+//     int* item;
+//     foreach(item, values) { printf("%d\n", *item); }
 #define foreach(item, array) \
-    for(int keep = 1, \
-            count = 0,\
-            size = sizeof (array) / sizeof *(array); \
-        keep && count != size; \
-        keep = !keep, count++) \
-      for(item = (array) + count; keep; keep = !keep)
+    for(int foreach_keep = 1, \
+            foreach_count = 0,\
+            foreach_size = (int)(sizeof (array) / sizeof *(array)); \
+        foreach_keep && foreach_count != foreach_size; \
+        foreach_keep = !foreach_keep, foreach_count++) \
+      for(item = (array) + foreach_count; foreach_keep; foreach_keep = !foreach_keep)
 
-#ifndef SYS_PRIMARY_DEFINITIONS_H
-#define SYS_PRIMARY_DEFINITIONS_H
-// dynamic vars
-char* str_chars[];
-
-// "conains" method
-bool contains_str(char* string, char* target) {
-    int cc = 0;
-    int s_len_tar = sizeof(target);
-    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
-        if (string[lc2] == target[lc2]) {
-            // we found a character we're lookikng for the the string!
-            cc = cc + 1;
-        }
-    }
-    if (cc == sizeof(target)) {
-        return true;
-    }
-    else {
+// "contains" method, true if target appears anywhere inside string
+bool contains_str(const char* string, const char* target) {
+    if (string == NULL || target == NULL) {
         return false;
     }
-
+    return strstr(string, target) != NULL;
 }
 
-char buffer_str[1024]; //max buffer size
+char StrCombine_buffer[1024]; //max buffer size
 
+// join two strings together
+// NOTE: the result lives in a shared buffer, the next call overwrites it (copy it if you need to keep it)
+// strings that do not fit are cut off rather than overflowing the buffer
 char *StrCombine(const char *str1, const char *str2) {
-    // count length of str1
-    int len1 = 0;
-    while (str1[len1] != '\0') {
-        len1++;
-    }
+    char combined[sizeof(StrCombine_buffer)];
+    if (str1 == NULL) str1 = "";
+    if (str2 == NULL) str2 = "";
 
-    // count length of str2
-    int len2 = 0;
-    while (str2[len2] != '\0') {
-        len2++;
-    }
+    // build in a temporary buffer first, so StrCombine(StrCombine(a, b), c) works
+    strlcpy(combined, str1, sizeof(combined));
+    strlcat(combined, str2, sizeof(combined));
 
-    // ensure the buffer is large enough
-    if (len1 + len2 + 1 > sizeof(buffer_str)) {
-        return NULL; // Buffer overflow, return NULL to indicate error
-    }
-
-    // copy str1 into buffer
-    int i = 0;
-    while (str1[i] != '\0') {
-        buffer_str[i] = str1[i];
-        i++;
-    }
-
-    // copy str2 into buffer
-    int j = 0;
-    while (str2[j] != '\0') {
-        buffer_str[i + j] = str2[j];
-        j++;
-    }
-
-    // add null terminator
-    buffer_str[i + j] = '\0';
-
-    return buffer_str;
+    memcpy(StrCombine_buffer, combined, sizeof(combined));
+    return StrCombine_buffer;
 }
 
-char buffer[100]; //max buffer size
+char toArray_buffer[16]; // big enough for "-2147483648"
 
+// convert a number to a string (shared buffer, the next call overwrites it)
 char *toArray(int number) {
-    // handle the case where the number is 0
-    if (number == 0) {
-        buffer[0] = '0';
-        return buffer;
-    }
-
-    // count the number of digits
-    int n = 0;
-    int temp = number;
-    while (temp > 0) {
-        temp /= 10;
-        n++;
-    }
-
-    // fill the buffer with digits
-    for (int i = n - 1; i >= 0; --i) {
-        buffer[i] = (number % 10) + '0';
-        number /= 10;
-    }
-
-    return buffer;
+    return itoa(number, toArray_buffer, 10);
 }
-
 
 // compare if two strings are the same, used in conditional statements
-int StrCompare (char* string_a, char* string_b) {
-    
+// returns 1 when they match, 0 when they don't (or either is NULL)
+int StrCompare (const char* string_a, const char* string_b) {
     // ensure that neither strings are NULL
     if (string_a == NULL || string_b == NULL) {
         return 0;
     }
-
-    // calculate the length of both strings using string literals
-    int len_a = 0;
-    while (string_a[len_a] != '\0') {
-        len_a++;
-    }
-    int len_b = 0;
-    while (string_b[len_b] != '\0') {
-        len_b++;
-    }
-
-    // check to see if the length is 0
-    if (len_a == 0 || len_b == 0) {
-        return 0;
-    }
-
-    // if the lengths are not the same, return false
-    if (len_a != len_b) {
-        return 0;
-    }
-
-    // compare each character in the strings
-    for (int i = 0; i < len_a; i++) {
-        //if (string_a[i] == '\0' || string_b[i] == '\0') break;
-        if (string_a[i] != string_b[i]) {
-            return 0;
-        }
-    }
-
-    // if we reach here, the strings are the same
-    return 1;
+    return strcmp(string_a, string_b) == 0 ? 1 : 0;
 }
-
-// many of these methods likely don't work
 
 // "split" method
-char* split(char* string, char split) {
-    int s_loc = 0;
-    char* new_string[sizeof(string) / 2][sizeof(string) / 2 - 1];
-    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
-        if (string[lc2] == split) {
-            // we found the character we're lookikng for the the string!
-            s_loc = lc2;
-            // add the rest of the characters to the 2nd dimension of the array
-            for (int lc3 = lc2 + 1; lc3 < sizeof(string) - s_loc; ++lc3) {
-                new_string[0][lc3] =  string[lc3];
-            }
-            // we're done, return the multi-dimensional array
-            return new_string;
-        }
-        else {
-            // add each char to new string before target
-            new_string[lc2][0] = string[lc2];
+// splits string in place on the split character and stores a pointer to each part in parts
+// at most max_parts parts are made, the last part keeps the rest of the string (like Python's split(sep, max))
+// returns the number of parts, e.g. split("sd /sys/", ' ', parts, 2) -> parts = {"sd", "/sys/"}, returns 2
+int split(char* string, char split_char, char** parts, int max_parts) {
+    if (string == NULL || parts == NULL || max_parts <= 0) {
+        return 0;
+    }
+    int count = 0;
+    parts[count++] = string;
+    for (char* p = string; *p && count < max_parts; ++p) {
+        if (*p == split_char) {
+            *p = '\0';
+            parts[count++] = p + 1;
         }
     }
+    return count;
 }
 
-// "remove" method - seems to be returning an S.. and only running for 4 interations ..?
-char* remove(char* string, char* target, int c) {
-    int s_len_tar = sizeof(target);
-    char* new_string[sizeof(string) - s_len_tar];
-
-    // iterate through every character in the string array
-    for (int lc2 = 0; lc2 < sizeof(string); ++lc2) {
-        puts(lc2, 7, BLACK, BRIGHT, "+");
-        if (string[lc2] == target[lc2]) {
-            // we found a character we're lookikng for the the string!
-            // add each character to the new string, from the s_loc onwards
-            for (int lc3 = lc2 + s_len_tar; lc3 < sizeof(string); ++lc3) {
-                new_string[lc3] =  string[lc3];
-            }
-
-        }
+// "remove" method, removes target from string in place
+// c = the maximum number of times to remove it (0 or less removes every occurrence)
+// returns string
+char* StrRemove(char* string, const char* target, int c) {
+    if (string == NULL || target == NULL || *target == '\0') {
+        return string;
     }
-    // we're done, return the new string
-    return new_string;
+    size_t target_len = strlen(target);
+    int removed = 0;
+    char* found = string;
+    while ((c <= 0 || removed < c) && (found = strstr(found, target)) != NULL) {
+        memmove(found, found + target_len, strlen(found + target_len) + 1);
+        removed++;
+    }
+    return string;
+}
+
+// trim leading and trailing whitespace in place, returns the start of the trimmed string
+char* StrTrim(char* string) {
+    if (string == NULL) {
+        return string;
+    }
+    while (isspace((unsigned char)*string)) {
+        string++;
+    }
+    size_t len = strlen(string);
+    while (len > 0 && isspace((unsigned char)string[len - 1])) {
+        string[--len] = '\0';
+    }
+    return string;
 }
 
 // return to entry point
 void ret () {
     return;
 }
+
 #endif /* SYS_PRIMARY_DEFINITIONS_H */
