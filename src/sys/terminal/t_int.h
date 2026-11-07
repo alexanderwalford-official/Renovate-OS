@@ -59,7 +59,7 @@ int cli_rend_main () {
     console_set_color(WHITE, BLACK);
     console_clear();
     printf("Renovate OS - Version 0.01 ALPHA\n");
-    printf("Alexander Walford 2025\n\n");
+    printf("Alexander Walford 2026\n\n");
     console_set_color(RED, BLACK);
     printf("[ ! ] You are in VFS mode, your files will not be written.\n");
     console_set_color(BRIGHT, BLACK);

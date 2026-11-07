@@ -41,7 +41,7 @@ int splash_screen () {
     clear(BRIGHT);
     puts(27, 7, BLACK, BRIGHT, "______________________");
     puts(33, 9, BLACK, BRIGHT, "Renovate OS");
-    puts(28, 10, BLACK, BRIGHT, "Alexander Walford 2025");
+    puts(28, 10, BLACK, BRIGHT, "Alexander Walford 2026");
     puts(27, 11, BLACK, BRIGHT, "______________________");
     puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
     puts(27, 18, BLACK, BRIGHT, "< X FOR BOOT OPTIONS >");
