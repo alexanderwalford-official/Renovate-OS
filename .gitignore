@@ -4,3 +4,4 @@
 *.out
 *.elf
 src/main.iso
+src/disk.img

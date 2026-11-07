@@ -231,11 +231,11 @@ void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, co
 
 /* ---------------- kernel heap ---------------- */
 /*
-    A simple first-fit allocator over a fixed 1MB memory pool.
+    A simple first-fit allocator over a fixed 4MB memory pool.
     Every allocation is preceded by a small header, neighbouring free blocks are merged on free().
 */
 
-#define HEAP_SIZE  (1024u * 1024u)
+#define HEAP_SIZE  (4u * 1024u * 1024u)
 #define HEAP_ALIGN 16u
 #define HEAP_MAGIC 0xC0FFEE42u
 

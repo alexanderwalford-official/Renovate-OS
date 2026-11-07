@@ -60,8 +60,13 @@ int cli_rend_main () {
     console_clear();
     printf("Renovate OS - Version 0.01 ALPHA\n");
     printf("Alexander Walford 2026\n\n");
-    console_set_color(RED, BLACK);
-    printf("[ ! ] You are in VFS mode, your files will not be written.\n");
+    if (fs_mode == FS_MODE_DISK) {
+        console_set_color(LIGHT_GREEN, BLACK);
+        printf("[ * ] You are in DISK mode, your files are saved to the %s disk.\n", fat_vol.label);
+    } else {
+        console_set_color(RED, BLACK);
+        printf("[ ! ] You are in VFS mode, your files will not be written.\n");
+    }
     console_set_color(BRIGHT, BLACK);
     printf("Type HELP for a list of commands.\n\n");
     ClearInputbuffer();
@@ -142,12 +147,14 @@ void cli_read_file (const char* args) {
         printf("Usage: RD <file>\n");
         return;
     }
-    const char* contents = fs_read_f(dir, name);
+    char* contents = fs_read_f(dir, name);
     if (contents == NULL) {
         printf("File not found: %s\n", args);
         return;
     }
-    printf("%s\n", contents);
+    size_t length = strlen(contents);
+    printf((length > 0 && contents[length - 1] == '\n') ? "%s" : "%s\n", contents);
+    free(contents);
 }
 
 void cli_make_file (char* args) {
@@ -161,12 +168,9 @@ void cli_make_file (char* args) {
         printf("Usage: MKF <file> [text]\n");
         return;
     }
-    if (fs_find_f(dir, name) >= 0) {
-        printf("File already exists: %s\n", parts[0]);
-        return;
-    }
-    if (fs_create_f(dir, name, text) < 0) {
-        printf("Could not create %s (directory missing or file system full)\n", parts[0]);
+    int result = fs_create_f(dir, name, text);
+    if (result != FS_OK) {
+        printf("Could not create %s: %s\n", parts[0], fs_strerror(result));
     }
 }
 
@@ -180,29 +184,36 @@ void cli_write_file (char* args) {
         printf("Usage: WR <file> <text>\n");
         return;
     }
-    const char* existing = fs_read_f(dir, name);
+    char* existing = fs_read_f(dir, name);
     if (existing == NULL) {
         printf("File not found: %s\n", parts[0]);
         return;
     }
-    // start the new text on its own line
-    if (existing[0] != '\0') {
-        fs_write_f(dir, name, "\n", true);
-    }
-    if (fs_write_f(dir, name, StrTrim(parts[1]), true) < 0) {
+
+    // add the text as a new line
+    char* text = StrTrim(parts[1]);
+    char* line = (char*)malloc(strlen(text) + 2);
+    if (line == NULL) {
+        free(existing);
         printf("Out of memory.\n");
+        return;
+    }
+    strcpy(line, (existing[0] != '\0') ? "\n" : "");
+    strcat(line, text);
+    free(existing);
+
+    int result = fs_write_f(dir, name, line, true);
+    free(line);
+    if (result != FS_OK) {
+        printf("Could not write %s: %s\n", parts[0], fs_strerror(result));
     }
 }
 
 void cli_make_directory (const char* args) {
     char path[FS_PATH_MAX];
     char name[FS_NAME_MAX];
-    if (*args == '\0' || !fs_resolve_dir(args, path, sizeof(path))) {
+    if (*args == '\0' || !fs_resolve_dir(args, path, sizeof(path)) || StrCompare(path, "/")) {
         printf("Usage: MKD <directory>\n");
-        return;
-    }
-    if (fs_find_d(path) >= 0) {
-        printf("Directory already exists: %s\n", path);
         return;
     }
     // the last part of the path is the directory's name
@@ -210,8 +221,9 @@ void cli_make_directory (const char* args) {
     fs_parent_path(path, parent, sizeof(parent));
     strlcpy(name, path + strlen(parent), sizeof(name));
     name[strlen(name) - 1] = '\0'; // drop the trailing '/'
-    if (fs_create_d(path, name) < 0) {
-        printf("Could not create %s (parent missing or file system full)\n", path);
+    int result = fs_create_d(path, name);
+    if (result != FS_OK) {
+        printf("Could not create %s: %s\n", path, fs_strerror(result));
     }
 }
 
@@ -225,14 +237,18 @@ void cli_delete (const char* args) {
         return;
     }
     // a file?
-    if (fs_split_path(args, dir, sizeof(dir), name, sizeof(name)) && fs_find_f(dir, name) >= 0) {
-        fs_delete_f(dir, name);
+    if (fs_split_path(args, dir, sizeof(dir), name, sizeof(name)) && fs_file_exists(dir, name)) {
+        int result = fs_delete_f(dir, name);
+        if (result != FS_OK) {
+            printf("Can't delete %s: %s\n", args, fs_strerror(result));
+        }
         return;
     }
     // a directory?
-    if (fs_resolve_dir(args, path, sizeof(path)) && fs_find_d(path) >= 0) {
-        if (fs_delete_d(path) != 0) {
-            printf("Can't delete %s (not empty, or it is the current directory)\n", path);
+    if (fs_resolve_dir(args, path, sizeof(path)) && fs_dir_exists(path)) {
+        int result = fs_delete_d(path);
+        if (result != FS_OK) {
+            printf("Can't delete %s: %s\n", path, fs_strerror(result));
         }
         return;
     }
@@ -245,8 +261,15 @@ void cli_memory (void) {
                sys_mem_lower_kb, sys_mem_upper_kb, (sys_mem_lower_kb + sys_mem_upper_kb) / 1024);
     }
     printf("Kernel heap: %u / %u bytes used\n", (unsigned int)heap_used(), (unsigned int)heap_total());
-    printf("Processes: %d / %d   Files: %d / %d   Directories: %d / %d\n",
-           p_cnt, P_STACK_SIZE, f_c, FS_MAX_FILES, d_c, FS_MAX_DIRS);
+    printf("Processes: %d / %d\n", p_cnt, P_STACK_SIZE);
+    if (fs_mode == FS_MODE_DISK) {
+        // 2 sectors = 1 KB (work in sectors, clusters can be smaller than 1 KB)
+        uint32_t free_kb = fat_free_clusters() * fat_vol.sectors_per_cluster / 2;
+        uint32_t total_kb = fat_vol.cluster_count * fat_vol.sectors_per_cluster / 2;
+        printf("Disk: FAT%d \"%s\", %u KB free of %u KB\n", fat_vol.type, fat_vol.label, free_kb, total_kb);
+    } else {
+        printf("VFS: %d / %d files, %d / %d directories\n", f_c, FS_MAX_FILES, d_c, FS_MAX_DIRS);
+    }
 }
 
 void cli_drives (void) {
@@ -254,8 +277,16 @@ void cli_drives (void) {
     for (int bus = 0; bus < 2; bus++) {
         for (int slave = 0; slave < 2; slave++) {
             char model[41];
-            int type = drive_probe(bus, slave, model, sizeof(model));
-            printf("%-9s %-6s : %s %s\n", bus_names[bus], slave ? "slave" : "master", drive_type_name(type), model);
+            uint32_t sectors;
+            int type = drive_probe_info(bus, slave, model, sizeof(model), &sectors);
+            printf("%-9s %-6s : %s %s", bus_names[bus], slave ? "slave" : "master", drive_type_name(type), model);
+            if (sectors) {
+                printf(" (%u MB)", sectors / 2048);
+            }
+            if (fs_mode == FS_MODE_DISK && fat_vol.bus == bus && fat_vol.slave == slave) {
+                printf(" [mounted]");
+            }
+            printf("\n");
         }
     }
 }

@@ -17,7 +17,13 @@ HEADERS = $(wildcard lib/*.h sys/*.h sys/*/*.h drivers/*/*.h drivers/*/*/*.h dri
 
 QEMU = qemu-system-i386
 
-.PHONY: all clean move run run-kernel run-img setup-dev
+# the disk Renovate OS saves files to: a FAT32 image labelled RENOVATE (64MB)
+# it is kept between builds, "make clean-disk" deletes it
+DISK = disk.img
+DISK_SECTORS = 131072
+QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
+
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs disk-ls disk-put setup-dev
 
 all: main.iso
 
@@ -47,13 +53,34 @@ move:
 	#sudo rm /home/vboxuser/share/main.iso
 	sudo cp main.iso /home/vboxuser/share/
 
-# boot the ISO through GRUB (terminal output is mirrored to this console via the serial port)
-run: main.iso
-	$(QEMU) -cdrom main.iso -smp 1 -serial stdio
+# create the disk (mtools formats it, no root needed)
+$(DISK):
+	truncate -s $$(( $(DISK_SECTORS) * 512 )) '$@'
+	mformat -i '$@' -T $(DISK_SECTORS) -h 16 -s 63 -F -v RENOVATE ::
 
-# boot the kernel directly, skipping GRUB
-run-kernel: main.elf
-	$(QEMU) -kernel main.elf -serial stdio
+clean-disk:
+	rm -f $(DISK)
+
+# list every file on the disk
+disk-ls: $(DISK)
+	mdir -i $(DISK) -/ ::
+
+# copy a file onto the disk, e.g. "make disk-put FILE=hello.ren" (DIR=/bin to put it in a folder)
+disk-put: $(DISK)
+	mcopy -i $(DISK) -o '$(FILE)' ::$(DIR)/
+
+# boot the ISO through GRUB with the disk attached (terminal output is mirrored to this console via the serial port)
+# -boot d starts from the CD, otherwise the BIOS would try the (non bootable) disk first
+run: main.iso $(DISK)
+	$(QEMU) -cdrom main.iso $(QEMU_DISK) -boot d -smp 1 -serial stdio
+
+# boot the kernel directly with the disk attached, skipping GRUB
+run-kernel: main.elf $(DISK)
+	$(QEMU) -kernel main.elf $(QEMU_DISK) -serial stdio
+
+# boot without a disk (temporary VFS mode)
+run-vfs: main.iso
+	$(QEMU) -cdrom main.iso -smp 1 -serial stdio
 
 # boot the ISO as a hard drive image
 run-img: main.iso

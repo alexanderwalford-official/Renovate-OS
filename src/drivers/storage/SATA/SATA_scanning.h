@@ -36,6 +36,7 @@
 
 // status register bits
 #define ATA_SR_BSY 0x80
+#define ATA_SR_DF  0x20
 #define ATA_SR_DRQ 0x08
 #define ATA_SR_ERR 0x01
 
@@ -107,8 +108,8 @@ bool ata_identify (uint16_t io, uint16_t ctrl, uint8_t command, uint16_t* data) 
 }
 
 // detect the drive at bus (0 = primary, 1 = secondary) / slave (0 = master, 1 = slave)
-// model receives the drive's model name if it reports one
-int drive_probe (int bus, int slave, char* model, size_t model_size) {
+// model receives the drive's model name if it reports one, sectors (optional) its size for ATA drives
+int drive_probe_info (int bus, int slave, char* model, size_t model_size, uint32_t* sectors) {
     uint16_t io = bus ? ATA_SECONDARY_IO : ATA_PRIMARY_IO;
     uint16_t ctrl = bus ? ATA_SECONDARY_CTRL : ATA_PRIMARY_CTRL;
     uint16_t data[256];
@@ -116,11 +117,17 @@ int drive_probe (int bus, int slave, char* model, size_t model_size) {
     if (model && model_size) {
         model[0] = '\0';
     }
+    if (sectors) {
+        *sectors = 0;
+    }
 
     // a floating bus (no controller / no drives) reads as 0xFF
     if (inb(io + ATA_REG_STATUS) == 0xFF) {
         return DRIVE_NONE;
     }
+
+    // the driver polls the status register, so stop the drive raising IRQ 14 / 15 (nIEN)
+    outb(ctrl, 0x02);
 
     // select the drive
     outb(io + ATA_REG_DRIVE, (uint8_t)(0xA0 | (slave ? 0x10 : 0x00)));
@@ -180,7 +187,15 @@ int drive_probe (int bus, int slave, char* model, size_t model_size) {
         model[n] = '\0';
         StrTrim(model);
     }
+    // words 60-61 = number of sectors reachable with 28 bit LBA addressing
+    if (ok && sectors && type == DRIVE_ATA) {
+        *sectors = (uint32_t)data[60] | ((uint32_t)data[61] << 16);
+    }
     return type;
+}
+
+int drive_probe (int bus, int slave, char* model, size_t model_size) {
+    return drive_probe_info(bus, slave, model, model_size, NULL);
 }
 
 char drive_response[64];

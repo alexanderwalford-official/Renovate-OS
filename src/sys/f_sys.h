@@ -3,11 +3,13 @@
 
 /*
     f_sys.h
-    Temporary (in memory) virtual file system - VFS.
-    Nothing is written to a disk, everything is lost on restart.
+    The file system the rest of the OS uses. It runs in one of two modes:
+    - DISK mode: a FAT disk labelled RENOVATE was found, every file is saved to it (sys/fat.h).
+    - VFS mode: no disk, files live in a temporary (in memory) file system and are lost on restart.
 
     Directory paths are always absolute and end in a slash, e.g. "/", "/sys/", "/sys/cache/".
     A file lives in a directory (f_path) and has a name (f_name).
+    Functions return FS_OK (0) or a negative FS_ERR_ code, fs_strerror() describes it.
 */
 
 #include <stdint.h>
@@ -15,12 +17,16 @@
 #include "../drivers/video/VGA_linear.h"
 #include "../lib/primary_definitions.h"
 #include "sys_clck.h"
+#include "fat.h"
 
 #define FS_MAX_FILES    64
 #define FS_MAX_DIRS     32
 #define FS_PATH_MAX     96
 #define FS_NAME_MAX     32
 #define FS_DATETIME_MAX 20
+
+#define FS_MODE_MEMORY 0
+#define FS_MODE_DISK   1
 
 typedef struct file {
     int f_id; // ID
@@ -40,35 +46,17 @@ typedef struct directory {
 } directory_t;
 
 // dynamic vars
-int f_c = 0; // file count
-int d_c = 0; // directory count
+int fs_mode = FS_MODE_MEMORY;
+char fs_disk_status[96] = ""; // what happened when looking for a disk (shown in the boot log)
+int f_c = 0; // file count (VFS mode)
+int d_c = 0; // directory count (VFS mode)
 int f_next_id = 1;
 int d_next_id = 1;
 struct file files[FS_MAX_FILES];
 struct directory directories[FS_MAX_DIRS];
 char cd[FS_PATH_MAX] = "/"; // current directory
 
-/* ---------------- lookups & path helpers ---------------- */
-
-// index of the directory with this exact path, or -1
-int fs_find_d(const char* d_path) {
-    for (int i = 0; i < FS_MAX_DIRS; ++i) {
-        if (directories[i].d_used && StrCompare(directories[i].d_path, d_path)) {
-            return i;
-        }
-    }
-    return -1;
-}
-
-// index of the file with this name in this directory, or -1
-int fs_find_f(const char* f_path, const char* f_name) {
-    for (int i = 0; i < FS_MAX_FILES; ++i) {
-        if (files[i].f_used && StrCompare(files[i].f_path, f_path) && StrCompare(files[i].f_name, f_name)) {
-            return i;
-        }
-    }
-    return -1;
-}
+/* ---------------- path helpers (both modes) ---------------- */
 
 // a valid file / directory name: not empty, no slashes, not "." or ".."
 bool fs_valid_name(const char* name) {
@@ -187,24 +175,37 @@ bool fs_is_child(const char* parent, const char* d_path) {
     return strchr(rest, '/') == d_path + dlen - 1;
 }
 
-/* ---------------- create / write / delete ---------------- */
+/* ---------------- VFS mode: temporary in memory file system ---------------- */
 
-// create a directory, returns its ID or -1
-int fs_create_d (const char* d_path, const char* d_name) {
-    char path[FS_PATH_MAX];
-    char parent[FS_PATH_MAX];
-
-    if (d_path == NULL || !fs_resolve_dir(d_path, path, sizeof(path))) {
-        return -1;
+// index of the directory with this exact path, or -1
+int mem_find_d(const char* d_path) {
+    for (int i = 0; i < FS_MAX_DIRS; ++i) {
+        if (directories[i].d_used && StrCompare(directories[i].d_path, d_path)) {
+            return i;
+        }
     }
-    if (fs_find_d(path) >= 0) {
-        return -1; // already exists
+    return -1;
+}
+
+// index of the file with this name in this directory, or -1
+int mem_find_f(const char* f_path, const char* f_name) {
+    for (int i = 0; i < FS_MAX_FILES; ++i) {
+        if (files[i].f_used && StrCompare(files[i].f_path, f_path) && StrCompare(files[i].f_name, f_name)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int mem_create_d(const char* path, const char* d_name) {
+    char parent[FS_PATH_MAX];
+    if (mem_find_d(path) >= 0) {
+        return FS_ERR_EXISTS;
     }
     fs_parent_path(path, parent, sizeof(parent));
-    if (!StrCompare(path, "/") && fs_find_d(parent) < 0) {
-        return -1; // parent directory missing
+    if (!StrCompare(path, "/") && mem_find_d(parent) < 0) {
+        return FS_ERR_NOT_FOUND; // parent directory missing
     }
-
     for (int i = 0; i < FS_MAX_DIRS; ++i) {
         if (!directories[i].d_used) {
             struct directory* d = &directories[i];
@@ -214,29 +215,22 @@ int fs_create_d (const char* d_path, const char* d_name) {
             strlcpy(d->d_path, path, sizeof(d->d_path));
             strlcpy(d->d_name, d_name ? d_name : "", sizeof(d->d_name));
             d_c = d_c + 1;
-            return d->d_id;
+            return FS_OK;
         }
     }
-    return -1; // no space left
+    return FS_ERR_FULL;
 }
 
-// create a file, returns its ID or -1
-int fs_create_f (const char* f_path, const char* f_name, const char* f_cont) {
-    char path[FS_PATH_MAX];
-
-    if (f_path == NULL || !fs_resolve_dir(f_path, path, sizeof(path))) {
-        return -1;
-    }
-    if (!fs_valid_name(f_name) || fs_find_d(path) < 0 || fs_find_f(path, f_name) >= 0) {
-        return -1; // bad name, missing directory or the file already exists
-    }
+int mem_create_f(const char* path, const char* f_name, const char* f_cont) {
+    if (mem_find_d(path) < 0) return FS_ERR_NOT_FOUND;
+    if (mem_find_f(path, f_name) >= 0) return FS_ERR_EXISTS;
 
     for (int i = 0; i < FS_MAX_FILES; ++i) {
         if (!files[i].f_used) {
             struct file* f = &files[i];
-            char* contents = strdup(f_cont ? f_cont : "");
+            char* contents = strdup(f_cont);
             if (contents == NULL) {
-                return -1; // out of memory
+                return FS_ERR_NO_MEMORY;
             }
             memset(f, 0, sizeof(*f));
             f->f_used = true;
@@ -247,125 +241,219 @@ int fs_create_f (const char* f_path, const char* f_name, const char* f_cont) {
             f->f_cont = contents;
             f->f_size = (int)strlen(contents);
             f_c = f_c + 1;
-            return f->f_id;
+            return FS_OK;
         }
     }
-    return -1; // no space left
+    return FS_ERR_FULL;
 }
 
-// replace (append = false) or add to (append = true) the contents of a file
-int fs_write_f (const char* f_path, const char* f_name, const char* text, bool append) {
-    int index = fs_find_f(f_path, f_name);
-    if (index < 0 || text == NULL) {
-        return -1;
+int mem_write_f(const char* path, const char* f_name, const char* text, bool append) {
+    int index = mem_find_f(path, f_name);
+    if (index < 0) {
+        return FS_ERR_NOT_FOUND;
     }
     struct file* f = &files[index];
     size_t old_len = append ? strlen(f->f_cont) : 0;
     size_t add_len = strlen(text);
     char* contents = (char*)realloc(f->f_cont, old_len + add_len + 1);
     if (contents == NULL) {
-        return -1;
+        return FS_ERR_NO_MEMORY;
     }
     memcpy(contents + old_len, text, add_len + 1);
     f->f_cont = contents;
     f->f_size = (int)(old_len + add_len);
-    return f->f_size;
+    return FS_OK;
 }
 
-// contents of a file, or NULL if it does not exist
-const char* fs_read_f (const char* f_path, const char* f_name) {
-    int index = fs_find_f(f_path, f_name);
-    return (index < 0) ? NULL : files[index].f_cont;
-}
-
-int fs_delete_f (const char* f_path, const char* f_name) {
-    int index = fs_find_f(f_path, f_name);
+int mem_delete_f(const char* path, const char* f_name) {
+    int index = mem_find_f(path, f_name);
     if (index < 0) {
-        return -1;
+        return FS_ERR_NOT_FOUND;
     }
     free(files[index].f_cont);
     memset(&files[index], 0, sizeof(files[index]));
     f_c = f_c - 1;
-    return 0;
+    return FS_OK;
 }
 
-// delete an empty directory (not "/" and not the current directory or one of its parents)
-int fs_delete_d (const char* d_path) {
-    int index = fs_find_d(d_path);
-    if (index < 0 || StrCompare(d_path, "/") || strncmp(cd, d_path, strlen(d_path)) == 0) {
-        return -1;
+int mem_delete_d(const char* path) {
+    int index = mem_find_d(path);
+    if (index < 0) {
+        return FS_ERR_NOT_FOUND;
     }
     for (int i = 0; i < FS_MAX_DIRS; ++i) {
-        if (directories[i].d_used && fs_is_child(d_path, directories[i].d_path)) {
-            return -1; // not empty
+        if (directories[i].d_used && fs_is_child(path, directories[i].d_path)) {
+            return FS_ERR_NOT_EMPTY;
         }
     }
     for (int i = 0; i < FS_MAX_FILES; ++i) {
-        if (files[i].f_used && StrCompare(files[i].f_path, d_path)) {
-            return -1; // not empty
+        if (files[i].f_used && StrCompare(files[i].f_path, path)) {
+            return FS_ERR_NOT_EMPTY;
         }
     }
     memset(&directories[index], 0, sizeof(directories[index]));
     d_c = d_c - 1;
-    return 0;
+    return FS_OK;
 }
 
-// change the current directory, returns 0 on success
-int fs_set_cd (const char* input) {
-    char path[FS_PATH_MAX];
-    if (!fs_resolve_dir(input, path, sizeof(path)) || fs_find_d(path) < 0) {
-        return -1;
-    }
-    strlcpy(cd, path, sizeof(cd));
-    return 0;
-}
-
-/* ---------------- init & listing ---------------- */
-
-void fs_print () {
-    // print all files & subdirectories in cd
+int mem_print(const char* path) {
     int shown = 0;
-    printf("Directory of %s\n", cd); // print current dir
     for (int i = 0; i < FS_MAX_DIRS; ++i) {
-        if (directories[i].d_used && fs_is_child(cd, directories[i].d_path)) {
-            // found a directory directly inside cd
+        if (directories[i].d_used && fs_is_child(path, directories[i].d_path)) {
+            // found a directory directly inside path
             char name[FS_NAME_MAX + 1];
-            strlcpy(name, directories[i].d_path + strlen(cd), sizeof(name));
+            strlcpy(name, directories[i].d_path + strlen(path), sizeof(name));
             printf("  <DIR>   %-22s %s\n", name, directories[i].d_name);
             shown++;
         }
     }
     for (int i = 0; i < FS_MAX_FILES; ++i) {
-        if (files[i].f_used && StrCompare(files[i].f_path, cd)) {
+        if (files[i].f_used && StrCompare(files[i].f_path, path)) {
             printf("  <FILE>  %-22s %6d bytes  %s\n", files[i].f_name, files[i].f_size, files[i].f_datetime);
             shown++;
         }
     }
+    return shown;
+}
+
+/* ---------------- the file system interface (both modes) ---------------- */
+
+bool fs_dir_exists(const char* d_path) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(d_path, path, sizeof(path))) return false;
+    return (fs_mode == FS_MODE_DISK) ? fat_dir_exists(path) : mem_find_d(path) >= 0;
+}
+
+bool fs_file_exists(const char* f_path, const char* f_name) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, path, sizeof(path))) return false;
+    return (fs_mode == FS_MODE_DISK) ? fat_file_exists(path, f_name) : mem_find_f(path, f_name) >= 0;
+}
+
+// create a directory, d_name is a description shown by LA (VFS mode only)
+int fs_create_d (const char* d_path, const char* d_name) {
+    char path[FS_PATH_MAX];
+    if (d_path == NULL || !fs_resolve_dir(d_path, path, sizeof(path))) return FS_ERR_BAD_NAME;
+    if (StrCompare(path, "/")) return FS_ERR_EXISTS;
+    return (fs_mode == FS_MODE_DISK) ? fat_create_dir(path) : mem_create_d(path, d_name);
+}
+
+// create a file
+int fs_create_f (const char* f_path, const char* f_name, const char* f_cont) {
+    char path[FS_PATH_MAX];
+    if (f_path == NULL || !fs_resolve_dir(f_path, path, sizeof(path))) return FS_ERR_NOT_FOUND;
+    if (!fs_valid_name(f_name)) return FS_ERR_BAD_NAME;
+    if (f_cont == NULL) f_cont = "";
+    return (fs_mode == FS_MODE_DISK) ? fat_create_file(path, f_name, f_cont) : mem_create_f(path, f_name, f_cont);
+}
+
+// replace (append = false) or add to (append = true) the contents of a file
+int fs_write_f (const char* f_path, const char* f_name, const char* text, bool append) {
+    char path[FS_PATH_MAX];
+    if (text == NULL || !fs_resolve_dir(f_path, path, sizeof(path))) return FS_ERR_NOT_FOUND;
+    return (fs_mode == FS_MODE_DISK) ? fat_write_file(path, f_name, text, append) : mem_write_f(path, f_name, text, append);
+}
+
+// the contents of a file in a new buffer (free() it when done), or NULL
+char* fs_read_f (const char* f_path, const char* f_name) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, path, sizeof(path))) return NULL;
+    if (fs_mode == FS_MODE_DISK) {
+        return fat_read_file(path, f_name);
+    }
+    int index = mem_find_f(path, f_name);
+    return (index < 0) ? NULL : strdup(files[index].f_cont);
+}
+
+int fs_delete_f (const char* f_path, const char* f_name) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, path, sizeof(path))) return FS_ERR_NOT_FOUND;
+    return (fs_mode == FS_MODE_DISK) ? fat_delete_file(path, f_name) : mem_delete_f(path, f_name);
+}
+
+// delete an empty directory (not "/" and not the current directory or one of its parents)
+int fs_delete_d (const char* d_path) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(d_path, path, sizeof(path)) || StrCompare(path, "/")) return FS_ERR_NOT_FOUND;
+    if (strncmp(cd, path, strlen(path)) == 0) return FS_ERR_BUSY;
+    return (fs_mode == FS_MODE_DISK) ? fat_delete_dir(path) : mem_delete_d(path);
+}
+
+// change the current directory
+int fs_set_cd (const char* input) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(input, path, sizeof(path)) || !fs_dir_exists(path)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    strlcpy(cd, path, sizeof(cd));
+    return FS_OK;
+}
+
+void fs_print () {
+    // print all files & subdirectories in cd
+    printf("Directory of %s%s\n", cd, (fs_mode == FS_MODE_DISK) ? "  (disk)" : ""); // print current dir
+    int shown = (fs_mode == FS_MODE_DISK) ? fat_print_dir(cd) : mem_print(cd);
     if (shown == 0) {
         printf("  (empty)\n");
+    } else if (shown < 0) {
+        printf("  (could not read the directory)\n");
     }
 }
 
-// init all base os files
-void fs_init_base () {
-    printf("< MK TMP REQ FS .. >\n");
-    // ..
-    fs_create_d("/", "root");
-    fs_create_d("/acc/", "accounts");
-    fs_create_d("/bin/", "bin");
-    fs_create_d("/sys/", "system");
-    fs_create_d("/sys/cache/", "system cache");
-    fs_create_d("/sys/tmp/", "system temp");
-    fs_create_f("/", "conf.ren", "# here you will find all major system config options");
+/* ---------------- init ---------------- */
 
-    printf("< TMP REQ FS DONE .. > %d directories, %d files\n", d_c, f_c);
+// look for a RENOVATE disk and use it if there is one
+bool fs_mount_disk () {
+    if (fat_mount_auto(fs_disk_status, sizeof(fs_disk_status))) {
+        fs_mode = FS_MODE_DISK;
+        return true;
+    }
+    fs_mode = FS_MODE_MEMORY;
+    return false;
+}
+
+// make a directory / file unless it already exists, returns 1 if it was created
+int fs_ensure_d (const char* d_path, const char* d_name) {
+    return fs_dir_exists(d_path) ? 0 : (fs_create_d(d_path, d_name) == FS_OK);
+}
+
+int fs_ensure_f (const char* f_path, const char* f_name, const char* f_cont) {
+    return fs_file_exists(f_path, f_name) ? 0 : (fs_create_f(f_path, f_name, f_cont) == FS_OK);
+}
+
+// init all base os files (on a disk only the missing ones are created, so the first boot sets it up)
+void fs_init_base () {
+    int created = 0;
+    printf((fs_mode == FS_MODE_DISK) ? "< CHK REQ FS .. >\n" : "< MK TMP REQ FS .. >\n");
+    // ..
+    if (fs_mode == FS_MODE_MEMORY) {
+        mem_create_d("/", "root");
+    }
+    created += fs_ensure_d("/acc/", "accounts");
+    created += fs_ensure_d("/bin/", "bin");
+    created += fs_ensure_d("/sys/", "system");
+    created += fs_ensure_d("/sys/cache/", "system cache");
+    created += fs_ensure_d("/sys/tmp/", "system temp");
+    created += fs_ensure_f("/", "conf.ren", "# here you will find all major system config options");
+
+    if (fs_mode == FS_MODE_DISK) {
+        printf("< REQ FS DONE .. > %d missing item(s) created\n", created);
+    } else {
+        printf("< TMP REQ FS DONE .. > %d directories, %d files\n", d_c, f_c);
+    }
     printf("[E:fs0f1]\n");
 }
 
-// fs init: "n" = create the base file system, "p" = print the current directory
+// fs init: "n" = find a disk (or use the temporary file system) and create the base files, "p" = print the current directory
 int fs_init (const char* arg) {
-    printf("< INIT TMP FS .. >\n");
     if (StrCompare(arg, "n")) {
+        if (fs_mount_disk()) {
+            printf("[ OK ] Disk: %s\n", fs_disk_status);
+            printf("< INIT DISK FS .. >\n");
+        } else {
+            printf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
+            printf("< INIT TMP FS .. >\n");
+        }
         fs_init_base();
     } else if (StrCompare(arg, "p")) {
         fs_print();
