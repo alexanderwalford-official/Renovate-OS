@@ -18,12 +18,14 @@ MultiBootHeader:
 
 section .text
 
-STACKSIZE equ 0x4000
+STACKSIZE equ 0x8000
 
 loader:
+  cli                       ; no interrupts until the kernel has set up its IDT
+  cld                       ; C code expects the direction flag to be clear
   mov esp, stack+STACKSIZE
-  push eax
-  push ebx
+  push eax                  ; main(arg 2) = multiboot magic number
+  push ebx                  ; main(arg 1) = address of the multiboot information
 
   call main
 
@@ -34,7 +36,10 @@ hang:
   jmp hang
 
 section .bss
-align 4
+align 16
 stack:
   resb STACKSIZE
 stack_ptr:
+
+; mark the stack as non-executable (silences the linker warning)
+section .note.GNU-stack noalloc noexec nowrite progbits
