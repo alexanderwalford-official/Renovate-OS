@@ -125,6 +125,16 @@ int cli_rend_main (void) {
         console_set_color(RED, BLACK);
         printf("[ ! ] You are in VFS mode, your files will not be written.\n");
     }
+    // wrong passwords typed for this account since its last login (shown once, after logging in)
+    if (auth_failures_seen > 0) {
+        console_set_color(YELLOW, BLACK);
+        printf("[ ! ] %u wrong password(s) were typed for %s since your last login.\n", auth_failures_seen, auth_user);
+        if (auth_failures_seen >= AUTH_MAX_FAILURES) {
+            printf("[ ! ] Your home folder was wiped %u time(s) because of them.\n",
+                   auth_failures_seen / AUTH_MAX_FAILURES);
+        }
+        auth_failures_seen = 0;
+    }
     // the normal terminal colours (light grey on black) for everything after the banner
     console_set_color(BRIGHT, BLACK);
     printf("Type HELP for a list of commands, or DOCS to read the manual.\n\n");
@@ -726,6 +736,11 @@ static void cli_add_user (char* args) {
         printf("Usage: ADDUSER <NAME>\n");
         return;
     }
+    // check the name before asking for a password, not after
+    if (!auth_valid_new_name(args)) {
+        printf("Can't use that name: %s\n", auth_strerror(AUTH_ERR_NAME));
+        return;
+    }
     if (auth_exists(args)) {
         printf("%s already exists.\n", args);
         return;
@@ -734,7 +749,9 @@ static void cli_add_user (char* args) {
     if (cli_ask_new_password(password, sizeof(password))) {
         int result = auth_add(args, password);
         if (result == AUTH_OK) {
-            printf("Made the account %s.\n", args);
+            char home[FS_PATH_MAX] = "";
+            printf("Made the account %s", args);
+            printf(auth_home(args, home, sizeof(home)) ? ", with the home folder %s.\n" : ".\n", home);
         } else {
             printf("Couldn't make the account: %s\n", auth_strerror(result));
         }

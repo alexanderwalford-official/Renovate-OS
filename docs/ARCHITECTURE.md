@@ -169,7 +169,8 @@ Users can type relative paths with `.` and `..`, and `fs_split_path` / `fs_resol
 them into that form. On disk, new names must fit 8.3 (`NOTES.TXT`). Existing long names can be
 read.
 
-The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
+Each user's home folder is `/home/<name>/`, made with the account. The folders made at every
+boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
 `/sys/` (system files: `startup.wav`, `cache/`, `tmp/`) and `/conf.aer`.
 
 ## The manual inside AerOS

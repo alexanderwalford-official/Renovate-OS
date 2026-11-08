@@ -7,6 +7,7 @@
 | `/acc/` | the accounts file, `users` |
 | `/bin/` | the apps: `hello.aer`, `read.aer`, pictures... |
 | `/docs/` | this manual |
+| `/home/<name>/` | each user's own folder, where the prompt starts |
 | `/sys/` | system files, like `startup.wav` |
 | `/sys/cache/`, `/sys/tmp/` | room for the system to work in |
 | `/conf.aer` | settings (not used much yet) |

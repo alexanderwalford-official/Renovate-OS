@@ -33,7 +33,7 @@ See [Accounts and encryption](security.md).
 | --- | --- |
 | `whoami` | who is logged in |
 | `users` | list the accounts |
-| `adduser <name>` | make a new account |
+| `adduser <name>` | make a new account and its home folder |
 | `deluser <name>` | delete an account (asks for your password) |
 | `passwd` | change your password |
 | `logout` | back to the login screen |

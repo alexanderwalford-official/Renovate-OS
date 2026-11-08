@@ -100,6 +100,11 @@ char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size);
 int fs_list (const char* d_path, fs_list_fn fn, void* ctx);
 // delete a file
 int fs_delete_f (const char* f_path, const char* f_name);
+// securely delete everything inside a directory (the directory itself stays): files are zeroed
+// on the disk before they are deleted, sub directories are emptied and deleted too.
+// Returns how many files were deleted, or a negative FS_ERR_ code
+int fs_wipe_dir (const char* d_path);
+
 // delete an empty directory (not "/", the current directory or one of its parents)
 int fs_delete_d (const char* d_path);
 // change the current directory (cd), FS_ERR_NOT_FOUND if it does not exist

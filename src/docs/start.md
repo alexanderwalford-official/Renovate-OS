@@ -31,9 +31,12 @@ An AEROS disk is any IDE disk formatted as FAT16 or FAT32 with the volume label 
 ## Logging in
 
 In DISK mode AerOS asks who you are. The very first time, it asks you to make an account:
-choose a name (lower case letters, numbers, `_` and `-`) and a password. After that, the
-login screen appears at every start. In VFS and DEMO mode there is no login and you are
-`guest`. See [Accounts and encryption](security.md).
+choose a name (up to 8 lower case letters, numbers, `_` and `-`) and a password. After that,
+the login screen appears at every start, and you start in your home folder, `/home/<name>/`.
+In VFS and DEMO mode there is no login and you are `guest`.
+
+**Careful:** after 3 wrong passwords in a row for an account, everything in its home folder
+is deleted. The first wrong password brings a warning. See [Accounts and encryption](security.md).
 
 ## The prompt
 
