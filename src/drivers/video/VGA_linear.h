@@ -94,6 +94,11 @@ bool vga_framebuffer_active(void);
 // copy out the framebuffer's details for drawing graphics, false in VGA text mode
 bool vga_framebuffer_info(vga_framebuffer_t* out);
 
+// the pixel rectangle covered by cols x rows cells starting at col, row (framebuffer only),
+// for drawing something finer than text in a screen layout (e.g. the splash's wordmark)
+bool vga_cell_area(uint8_t col, uint8_t row, uint8_t cols, uint8_t rows,
+                   uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h);
+
 // carry on drawing on a different framebuffer (the card changed resolution), redrawing everything
 // false if it can't be used (smaller than 640 x 400, or the screen isn't a framebuffer)
 bool vga_change_framebuffer(const vga_framebuffer_t* info);

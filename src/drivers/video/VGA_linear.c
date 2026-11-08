@@ -234,6 +234,19 @@ bool vga_framebuffer_info(vga_framebuffer_t* out) {
     return fb_mode;
 }
 
+// where a block of cells is on screen, in framebuffer pixels
+bool vga_cell_area(uint8_t col, uint8_t row, uint8_t cols, uint8_t rows,
+                   uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h) {
+    if (!fb_mode) {
+        return false;
+    }
+    *x = fb.left + col * fb.cell_width * fb.scale;
+    *y = fb.top + row * CELL_HEIGHT * fb.scale;
+    *w = cols * fb.cell_width * fb.scale;
+    *h = rows * CELL_HEIGHT * fb.scale;
+    return true;
+}
+
 // switch to a new framebuffer (after the graphics card changed mode) and redraw the screen on it
 bool vga_change_framebuffer(const vga_framebuffer_t* info) {
     uint32_t bytes = (info->bpp + 7) / 8;
