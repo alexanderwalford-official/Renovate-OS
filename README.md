@@ -1,7 +1,7 @@
 # AerOS
  Official repo for AerOS, written entirely in C and assembly language.
  
- ![alt text](media/preview.gif)
+ ![alt text](media/thumb.png)
  
 ## What is AerOS?
 It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "RenLang". 
