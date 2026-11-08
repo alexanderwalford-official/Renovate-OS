@@ -14,18 +14,21 @@ CFLAGS = -m32 -march=i686 -std=gnu99 -ffreestanding -fno-builtin -fno-stack-prot
 LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
 # every .c file is compiled on its own into obj/, then linked together
-SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c)
-OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES))
+SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
+# the built-in apps (apps/*.ren and their files) are linked into the kernel as raw data,
+# sys/apps.c copies them into /bin/ when the OS starts
+APP_FILES = $(wildcard apps/*)
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(APP_FILES))
 
 QEMU = qemu-system-i386
 
-# the disk Renovate OS saves files to: a FAT32 image labelled RENOVATE (64MB)
+# the disk AerOS saves files to: a FAT32 image labelled AEROS (64MB)
 # it is kept between builds, "make clean-disk" deletes it
 DISK = disk.img
 DISK_SECTORS = 131072
 QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
 
-.PHONY: all clean clean-disk move run run-kernel run-img run-vfs disk-ls disk-put setup-dev
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev
 
 all: main.iso
 
@@ -48,6 +51,12 @@ obj/%.o: %.c
 	@mkdir -p '$(dir $@)'
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
 
+# a built-in app: "ld -b binary" wraps the file's bytes in an object file, with the symbols
+# _binary_apps_<name>_start / _end marking where they are (see sys/apps.c)
+obj/apps/%.o: apps/%
+	@mkdir -p obj/apps
+	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
+
 # header dependencies written by -MMD
 -include $(OBJECTS:.o=.d)
 
@@ -63,7 +72,7 @@ move:
 # create the disk (mtools formats it, no root needed)
 $(DISK):
 	truncate -s $$(( $(DISK_SECTORS) * 512 )) '$@'
-	mformat -i '$@' -T $(DISK_SECTORS) -h 16 -s 63 -F -v RENOVATE ::
+	mformat -i '$@' -T $(DISK_SECTORS) -h 16 -s 63 -F -v AEROS ::
 
 clean-disk:
 	rm -f $(DISK)
@@ -89,10 +98,15 @@ run-kernel: main.elf $(DISK)
 run-vfs: main.iso
 	$(QEMU) -cdrom main.iso -smp 1 -serial stdio
 
+# boot the ISO like a modern UEFI PC (OVMF firmware). The ISO only contains UEFI boot files when
+# grub-efi-amd64-bin is installed (make setup-dev), and the 64 bit firmware needs the 64 bit QEMU
+run-uefi: main.iso $(DISK)
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom main.iso $(QEMU_DISK) -m 256 -serial stdio
+
 # boot the ISO as a hard drive image
 run-img: main.iso
 	$(QEMU) -hda main.iso
 
 # install the relevant packages
 setup-dev:
-	sudo apt install build-essential gcc-multilib nasm xorriso mtools grub-pc-bin grub-common qemu-system-x86
+	sudo apt install build-essential gcc-multilib nasm xorriso mtools grub-pc-bin grub-efi-amd64-bin grub-common qemu-system-x86 ovmf

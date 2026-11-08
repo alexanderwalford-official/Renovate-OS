@@ -1,7 +1,7 @@
 /*
     f_sys.h
     The file system the rest of the OS uses. It runs in one of two modes:
-    - DISK mode: a FAT disk labelled RENOVATE was found, every file is saved to it (sys/fat.c).
+    - DISK mode: a FAT disk labelled AEROS was found, every file is saved to it (sys/fat.c).
     - VFS mode: no disk, files live in a temporary (in memory) file system and are lost on restart.
     (There is also DEMO mode, picked from the boot menu: it is just VFS mode where we never even
     look at the disks, see fs_init("d"). Handy when booting on someone else's computer.)
@@ -85,6 +85,15 @@ int fs_create_f (const char* f_path, const char* f_name, const char* f_cont);
 // replace (append = false) or add to (append = true) the contents of an existing file
 int fs_write_f (const char* f_path, const char* f_name, const char* text, bool append);
 char* fs_read_f (const char* f_path, const char* f_name); // free() the result
+
+// create a file from length bytes of data (binary safe)
+int fs_create_bytes (const char* f_path, const char* f_name, const void* data, uint32_t length);
+
+// read a whole file and its length (binary safe), NULL if missing; free() the result
+char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size);
+
+// call fn(name, is_dir, size, ctx) for every entry in d_path, returns the count (-1 if missing)
+int fs_list (const char* d_path, fs_list_fn fn, void* ctx);
 // delete a file
 int fs_delete_f (const char* f_path, const char* f_name);
 // delete an empty directory (not "/", the current directory or one of its parents)

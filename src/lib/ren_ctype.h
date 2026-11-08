@@ -3,7 +3,7 @@
     Character classification (freestanding replacement for <ctype.h>).
 
     Why do we need our own?
-    Renovate OS is built with -ffreestanding and linked with -nostdlib, so there is no
+    AerOS is built with -ffreestanding and linked with -nostdlib, so there is no
     C library underneath us at all: no glibc, no newlib, nothing. In a freestanding
     build the compiler only promises a handful of headers that are pure definitions
     (<stddef.h>, <stdint.h>, <stdbool.h>, <stdarg.h> and friends). Anything that needs

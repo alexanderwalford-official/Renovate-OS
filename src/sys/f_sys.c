@@ -9,7 +9,7 @@
        them, so neither the FAT driver nor the memory tables ever have to deal with "." or "..".
 
     2. Picking a backend. fs_init() runs once at boot and sets fs_mode:
-       - "n" (normal boot): look for a FAT disk labelled RENOVATE. Found one? DISK mode, every
+       - "n" (normal boot): look for a FAT disk labelled AEROS. Found one? DISK mode, every
          call is passed on to sys/fat.c. Otherwise VFS mode.
        - "d" (demo boot): straight to VFS mode, the disks are never even read.
        After that every public fs_ function is a tiny wrapper: resolve the path, then
@@ -29,7 +29,7 @@
 
 // dynamic vars
 int fs_mode = FS_MODE_MEMORY;  // VFS until fs_init() finds a disk
-char fs_disk_status[96] = "";  // filled in by fat_mount_auto(), e.g. "no RENOVATE disk found"
+char fs_disk_status[96] = "";  // filled in by fat_mount_auto(), e.g. "no AEROS disk found"
 int f_c = 0;                   // how many files[] slots are in use (VFS mode)
 int d_c = 0;                   // how many directories[] slots are in use (VFS mode, includes "/")
 char cd[FS_PATH_MAX] = "/";    // the current directory, always absolute and ending in '/'
@@ -228,7 +228,7 @@ static int mem_create_d (const char* path, const char* d_name) {
 
 // add a file to the table with a copy of f_cont as its contents
 // returns FS_OK, FS_ERR_NOT_FOUND (no such directory), FS_ERR_EXISTS, FS_ERR_NO_MEMORY or FS_ERR_FULL
-static int mem_create_f (const char* path, const char* f_name, const char* f_cont) {
+static int mem_create_f (const char* path, const char* f_name, const char* f_cont, uint32_t length) {
     if (mem_find_d(path) < 0) return FS_ERR_NOT_FOUND;
     if (mem_find_f(path, f_name) >= 0) return FS_ERR_EXISTS;
 
@@ -236,7 +236,7 @@ static int mem_create_f (const char* path, const char* f_name, const char* f_con
         if (!files[i].f_used) {
             struct file* f = &files[i];
             // copy the contents before touching the slot, so running out of memory leaves nothing half made
-            char* contents = strdup(f_cont);
+            char* contents = malloc(length + 1);
             if (contents == NULL) {
                 return FS_ERR_NO_MEMORY;
             }
@@ -246,8 +246,10 @@ static int mem_create_f (const char* path, const char* f_name, const char* f_con
             rtc_datetime(f->f_datetime, sizeof(f->f_datetime)); // "DD-MM-YY--HH:MM:SS" from the CMOS clock
             strlcpy(f->f_name, f_name, sizeof(f->f_name));
             strlcpy(f->f_path, path, sizeof(f->f_path));
+            memcpy(contents, f_cont, length);
+            contents[length] = '\0';
             f->f_cont = contents;
-            f->f_size = (int)strlen(contents);
+            f->f_size = (int)length;
             f_c++;
             return FS_OK;
         }
@@ -367,11 +369,17 @@ int fs_create_d (const char* d_path, const char* d_name) {
 // create a file
 // f_cont = NULL is allowed and gives an empty file
 int fs_create_f (const char* f_path, const char* f_name, const char* f_cont) {
+    if (f_cont == NULL) f_cont = "";
+    return fs_create_bytes(f_path, f_name, f_cont, (uint32_t)strlen(f_cont));
+}
+
+// create a file from length bytes of data (which may contain '\0', e.g. an image)
+int fs_create_bytes (const char* f_path, const char* f_name, const void* data, uint32_t length) {
     char path[FS_PATH_MAX];
     if (f_path == NULL || !fs_resolve_dir(f_path, path, sizeof(path))) return FS_ERR_NOT_FOUND;
     if (!fs_valid_name(f_name)) return FS_ERR_BAD_NAME;
-    if (f_cont == NULL) f_cont = "";
-    return (fs_mode == FS_MODE_DISK) ? fat_create_file(path, f_name, f_cont) : mem_create_f(path, f_name, f_cont);
+    return (fs_mode == FS_MODE_DISK) ? fat_create_file(path, f_name, data, length)
+                                     : mem_create_f(path, f_name, data, length);
 }
 
 // replace (append = false) or add to (append = true) the contents of a file
@@ -388,10 +396,54 @@ char* fs_read_f (const char* f_path, const char* f_name) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(f_path, path, sizeof(path))) return NULL;
     if (fs_mode == FS_MODE_DISK) {
-        return fat_read_file(path, f_name);
+        return fat_read_file(path, f_name, NULL);
     }
     int index = mem_find_f(path, f_name);
     return (index < 0) ? NULL : strdup(files[index].f_cont);
+}
+
+// like fs_read_f, but also returns the length, for files that aren't text
+char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, path, sizeof(path))) return NULL;
+    if (fs_mode == FS_MODE_DISK) {
+        return fat_read_file(path, f_name, size);
+    }
+    int index = mem_find_f(path, f_name);
+    if (index < 0) return NULL;
+    char* copy = malloc((size_t)files[index].f_size + 1);
+    if (copy) {
+        memcpy(copy, files[index].f_cont, (size_t)files[index].f_size + 1);
+        *size = (uint32_t)files[index].f_size;
+    }
+    return copy;
+}
+
+// call fn for every file and directory in d_path, returns how many (-1 if the directory doesn't exist)
+int fs_list (const char* d_path, fs_list_fn fn, void* ctx) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(d_path, path, sizeof(path))) return -1;
+    if (fs_mode == FS_MODE_DISK) {
+        return fat_list_dir(path, fn, ctx);
+    }
+    if (mem_find_d(path) < 0) return -1;
+    int count = 0;
+    for (int i = 0; i < FS_MAX_DIRS; ++i) {
+        if (directories[i].d_used && fs_is_child(path, directories[i].d_path)) {
+            char name[FS_NAME_MAX + 1];
+            strlcpy(name, directories[i].d_path + strlen(path), sizeof(name));
+            name[strlen(name) - 1] = '\0'; // drop the trailing '/'
+            fn(name, true, 0, ctx);
+            count++;
+        }
+    }
+    for (int i = 0; i < FS_MAX_FILES; ++i) {
+        if (files[i].f_used && StrCompare(files[i].f_path, path)) {
+            fn(files[i].f_name, false, (uint32_t)files[i].f_size, ctx);
+            count++;
+        }
+    }
+    return count;
 }
 
 // delete a file
@@ -478,7 +530,7 @@ static void fs_init_base (void) {
 int fs_init (const char* arg) {
     bool demo = StrCompare(arg, "d");
     if (StrCompare(arg, "n") || demo) {
-        // look for a RENOVATE disk and use it if there is one (demo mode never touches the disks)
+        // look for a AEROS disk and use it if there is one (demo mode never touches the disks)
         // (&& stops early, so in demo mode fat_mount_auto() is never even called)
         if (!demo && fat_mount_auto(fs_disk_status, sizeof(fs_disk_status))) {
             fs_mode = FS_MODE_DISK;
@@ -489,7 +541,7 @@ int fs_init (const char* arg) {
             if (demo) {
                 printf("[INFO] Demo mode: disks are not loaded, files will not be saved\n");
             } else {
-                // fs_disk_status says why, e.g. "no RENOVATE disk found" or "primary master is not labelled RENOVATE"
+                // fs_disk_status says why, e.g. "no AEROS disk found" or "primary master is not labelled AEROS"
                 printf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
             }
             printf("< INIT TMP FS .. >\n");

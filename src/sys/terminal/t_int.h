@@ -2,7 +2,7 @@
 
 /*
     t_int.h
-    The Renovate OS terminal (command line shell). It is started by the "terminal" process
+    The AerOS terminal (command line shell). It is started by the "terminal" process
     at the end of the boot and runs until the computer is rebooted or turned off:
     show the banner, then forever: print the prompt, read a line, run the command.
     Type HELP in it for the list of commands.

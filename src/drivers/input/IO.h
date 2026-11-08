@@ -36,6 +36,8 @@
 #define KEY_HOME   0x84
 #define KEY_END    0x85
 #define KEY_DELETE 0x86
+#define KEY_PGUP   0x87
+#define KEY_PGDN   0x88
 
 // true once init_keyboard() has run, GetChar() refuses to wait for keys before that
 extern bool keyboard_ready;
@@ -48,6 +50,9 @@ void init_keyboard(void);
 // returns true if a key is waiting in the input buffer
 // never blocks, so a program can poll the keyboard while doing something else (e.g. an animation)
 bool kb_haschar(void);
+
+// true (once) if ctrl + C was pressed since the last call, used to stop a running program
+bool kb_take_break(void);
 
 // returns the next pressed key, waiting for one if the buffer is empty
 // (ASCII characters, or one of the KEY_ special values), 0 if there is no keyboard

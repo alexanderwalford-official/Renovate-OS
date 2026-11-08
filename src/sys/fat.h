@@ -2,7 +2,7 @@
     fat.h
     FAT16 / FAT32 file system driver, so files are saved to a real disk.
 
-    - Only a volume labelled "RENOVATE" is used. That stops the OS writing to someone's
+    - Only a volume labelled "AEROS" is used. That stops the OS writing to someone's
       own FAT drive (USB sticks, recovery partitions) when it boots on a real computer.
     - Reads long file names (written by Windows / Linux), creates 8.3 names (e.g. notes.txt).
     - Disk images can be made and filled from Linux with mtools, see the Makefile.
@@ -59,7 +59,7 @@
 #define FS_OK             0  // it worked
 #define FS_ERR_NOT_FOUND -1  // the file, directory or disk is not there
 #define FS_ERR_EXISTS    -2  // something with that name is already there
-#define FS_ERR_BAD_NAME  -3  // the name is not allowed (on disk it must fit 8.3), or the volume is not labelled RENOVATE
+#define FS_ERR_BAD_NAME  -3  // the name is not allowed (on disk it must fit 8.3), or the volume is not labelled AEROS
 #define FS_ERR_FULL      -4  // no free clusters / slots left (or the fixed FAT16 root directory is full)
 #define FS_ERR_NOT_EMPTY -5  // tried to delete a directory that still has something in it
 #define FS_ERR_IO        -6  // the drive reported a read or write error
@@ -67,15 +67,15 @@
 #define FS_ERR_NO_MEMORY -8  // malloc / realloc failed
 
 // the volume label a disk must have before we dare to write to it (compared ignoring case)
-// format one with "mformat -v RENOVATE" (the Makefile does this for disk.img)
-#define FAT_VOLUME_LABEL "RENOVATE"
+// format one with "mformat -v AEROS" (the Makefile does this for disk.img)
+#define FAT_VOLUME_LABEL "AEROS"
 
 // the mounted volume
 // everything we learned from the boot sector, worked out once in fat_mount() so the rest of the
 // driver can turn cluster numbers into sector numbers with a bit of simple arithmetic.
 // all the "_lba" fields are absolute sector numbers on the drive (they already include volume_lba)
 typedef struct {
-    bool mounted;                // true once a RENOVATE volume was found and fully checked
+    bool mounted;                // true once a AEROS volume was found and fully checked
     int bus;                     // IDE bus the drive is on: 0 = primary, 1 = secondary
     int slave;                   // 0 = master drive, 1 = slave drive on that bus
     int type;                    // 16 or 32
@@ -106,7 +106,7 @@ extern fat_volume_t fat_vol;
 // a short English description of an FS_ / FS_ERR_ result code, for error messages in the shell
 const char* fs_strerror (int error);
 
-// look at every IDE drive and mount the first FAT volume labelled RENOVATE
+// look at every IDE drive and mount the first FAT volume labelled AEROS
 // status receives a line for the boot log
 // returns true if a volume was mounted (fat_vol is then filled in), false if none was found
 bool fat_mount_auto (char* status, size_t size);
@@ -121,10 +121,11 @@ bool fat_dir_exists (const char* d_path);
 bool fat_file_exists (const char* f_path, const char* name);
 
 // read a whole file into a new '\0' terminated buffer (free() it when done), NULL if missing or on errors
-char* fat_read_file (const char* f_path, const char* name);
+// size (optional, may be NULL) receives the file's length in bytes
+char* fat_read_file (const char* f_path, const char* name, uint32_t* size);
 
 // create a new file holding contents, name must fit the 8.3 format (FS_ERR_BAD_NAME otherwise)
-int fat_create_file (const char* f_path, const char* name, const char* contents);
+int fat_create_file (const char* f_path, const char* name, const char* contents, uint32_t length);
 
 // replace (append = false) or add to (append = true) the contents of an existing file
 int fat_write_file (const char* f_path, const char* name, const char* text, bool append);
@@ -141,5 +142,11 @@ int fat_delete_dir (const char* d_path);
 // print a directory listing (directories first, then files)
 // returns how many entries were printed, or -1 if the directory does not exist
 int fat_print_dir (const char* d_path);
+
+// called once per entry by fat_list_dir / fs_list: its name, whether it is a directory, its size
+typedef void (*fs_list_fn)(const char* name, bool is_dir, uint32_t size, void* ctx);
+
+// call fn for every file and directory in d_path, returns how many there were (-1 if it doesn't exist)
+int fat_list_dir (const char* d_path, fs_list_fn fn, void* ctx);
 
 #endif /* FAT_H */

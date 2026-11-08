@@ -1,6 +1,6 @@
 /*
     primary_definitions.c
-    The Renovate specific string helpers.
+    The AerOS specific string helpers.
 
     These are small conveniences built on top of ren_string.c, mostly used by the terminal
     (t_int.c) to pick apart what the user typed, and by RenLang (ren_comp.c) to match keywords.

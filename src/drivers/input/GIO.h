@@ -8,7 +8,7 @@
     - Memory mapped I/O (get_byte / set_byte ...): normal memory addresses that are
       wired to a device, such as the VGA text buffer at 0xB8000.
 
-    A bit more detail, because nearly every driver in Renovate OS is built on this file:
+    A bit more detail, because nearly every driver in AerOS is built on this file:
 
     I/O ports
       The CPU has a second, completely separate address space just for talking to hardware.
@@ -20,7 +20,7 @@
       single IN / OUT traps into the emulator), so drivers try not to do more of it than needed.
 
     Memory mapped I/O (MMIO)
-      Some devices instead answer at normal physical memory addresses. Renovate OS runs without
+      Some devices instead answer at normal physical memory addresses. AerOS runs without
       paging, so a physical address can be used directly as a pointer. The pointer has to be
       volatile: otherwise the compiler is allowed to assume memory only changes when our code
       changes it, and may merge, reorder or delete reads and writes that the device depends on.

@@ -27,6 +27,9 @@
 #include "../sys/sys_clck.h"
 #include "../sys/boot.h"
 #include "../sys/recovery.h"
+#include "../sys/splash.h"
+#include "../sys/f_sys.h"
+#include "../lang/renlang.h"
 #include "../sys/p_man.h"
 #include "../sys/terminal/t_int.h"
 
@@ -45,13 +48,8 @@ int comp_handler (char* arg) {
 // gotcha: running it again from the terminal ("run splash_screen") still sets the flag, but nothing
 // looks at it after boot, so pressing X then does nothing
 int splash_screen (void) {
-    clear(BRIGHT);
-    puts(27, 7, BLACK, BRIGHT, "______________________");
-    puts(33, 9, BLACK, BRIGHT, "Renovate OS");
-    puts(28, 10, BLACK, BRIGHT, "Alexander Walford 2026");
-    puts(27, 11, BLACK, BRIGHT, "______________________");
-    puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
-    puts(27, 18, BLACK, BRIGHT, "< X FOR BOOT OPTIONS >");
+    // the orange AerOS boot screen (sys/splash.c)
+    splash_draw();
 
     // wait up to 4 seconds, pressing X opens the boot options
     // throw away anything typed before the logo appeared, so only a key pressed now counts
@@ -60,9 +58,9 @@ int splash_screen (void) {
     // unsigned subtraction still gives the right answer if the millisecond counter wraps around
     while (clck_uptime_ms() - start < 4000) {
         if (!kb_haschar()) {
-            // nothing pressed yet: sleep until the next interrupt (the timer wakes us every 1ms)
-            // instead of spinning the CPU at full speed
-            cpu_idle();
+            // nothing pressed yet: wait a little before checking again. sleep_ms also works when
+            // the timer is dead (a bare "hlt" would then sleep until a key is pressed)
+            sleep_ms(10);
             continue;
         }
         // any other key is read and ignored, the wait carries on
@@ -74,6 +72,8 @@ int splash_screen (void) {
     }
 
     // with no keyboard nothing ever arrives, so we simply wait the full 4 seconds and carry on
+    // then blank the screen and give the palette its normal colours back
+    splash_close();
     return 0;
 }
 
@@ -114,6 +114,13 @@ int error_screen (const char* code) {
 //   terminal            start the terminal, unless it is already running
 //   iso_launch_options  the boot options menu (sys/recovery.c)
 // anything else shows the error screen and returns -1
+// true if the first word of the code names a RenLang program file ("hello.ren", "/bin/x.ren ...")
+static bool is_program (const char* code) {
+    const char* end = strchr(code, ' ');
+    size_t length = end ? (size_t)(end - code) : strlen(code);
+    return length > 4 && strncmp(code + length - 4, ".ren", 4) == 0;
+}
+
 int compile (const char* code) {
     int result = 0;
 
@@ -159,6 +166,16 @@ int compile (const char* code) {
         // gotcha: picking an option after boot only changes boot_option, the file system
         // that init_boot already set up stays as it is
         boot_options_menu();
+    }
+    else if (is_program(code)) {
+        // "<program>.ren [args]": run a RenLang program file, the rest of the line is its args
+        char program[FS_PATH_MAX];
+        const char* space = strchr(code, ' ');
+        size_t length = space ? (size_t)(space - code) : strlen(code);
+        if (length >= sizeof(program)) length = sizeof(program) - 1;
+        memcpy(program, code, length);
+        program[length] = '\0';
+        result = ren_run_file(program, space ? space + 1 : "");
     }
     else {
         // unknown code: show the exception screen (this also beeps and waits 4 seconds)

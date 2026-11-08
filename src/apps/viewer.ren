@@ -1,0 +1,121 @@
+# viewer.ren - look at BMP pictures
+#
+#   viewer              pick a picture from the current directory and /bin/
+#   viewer photo.bmp    open one straight away
+#
+# LEFT / RIGHT show the previous / next picture, ESC goes back
+
+func ends_with(s, tail)
+    return len(s) >= len(tail) and lower(sub(s, len(s) - len(tail))) == tail
+end
+
+# add every .bmp file in a folder to the list
+func find_pictures(folder, found)
+    let names = list_files(folder)
+    if names == nil then return found end
+    for name in names do
+        if ends_with(name, ".bmp") then
+            push(found, folder + name)
+        end
+    end
+    return found
+end
+
+# the list of pictures, returns the one picked or -1 for ESC
+func choose(pictures, selected)
+    while true do
+        color(WHITE, BLACK)
+        cls()
+        print("Picture viewer")
+        color(BRIGHT, BLACK)
+        print("UP / DOWN to choose, ENTER to open, ESC to quit")
+        print("")
+        for i = 0 to len(pictures) - 1 do
+            if i == selected then color(BLACK, BRIGHT) else color(BRIGHT, BLACK) end
+            print(" " + pictures[i] + " ")
+        end
+        color(BRIGHT, BLACK)
+        let k = key()
+        if k == KEY_UP and selected > 0 then selected = selected - 1 end
+        if k == KEY_DOWN and selected < len(pictures) - 1 then selected = selected + 1 end
+        if k == KEY_ENTER then return selected end
+        if k == KEY_ESCAPE then return -1 end
+    end
+end
+
+func show(path)
+    let w = gfx_width()
+    let h = gfx_height()
+    gfx_clear(rgb(24, 24, 24))
+    let data = read_bytes(path)
+    let size = nil
+    if data != nil then size = image_size(data) end
+    if size == nil then
+        text(20, 20, "Can't show " + path + " (it has to be an 8, 24 or 32 bit BMP)", rgb(255, 90, 90))
+        return
+    end
+
+    # fit the picture above the caption, keeping its shape
+    let box_w = w - 40
+    let box_h = h - 80
+    let pw = size[0]
+    let ph = size[1]
+    if pw > box_w or ph > box_h then
+        if pw * box_h > ph * box_w then
+            ph = ph * box_w / pw
+            pw = box_w
+        else
+            pw = pw * box_h / ph
+            ph = box_h
+        end
+    else
+        # small pictures are blown up by a whole number, so they stay sharp
+        let zoom = 1
+        while size[0] * (zoom + 1) <= box_w and size[1] * (zoom + 1) <= box_h do
+            zoom = zoom + 1
+        end
+        pw = size[0] * zoom
+        ph = size[1] * zoom
+    end
+    image(data, (w - pw) / 2, (h - 60 - ph) / 2, pw, ph)
+
+    let caption = path + "   " + str(size[0]) + " x " + str(size[1])
+    text(20, h - 40, caption, rgb(240, 240, 240))
+    text(w - 300, h - 40, "LEFT / RIGHT   ESC = back", rgb(255, 127, 0))
+end
+
+let pictures = []
+if len(args) > 0 then
+    push(pictures, args[0])
+else
+    find_pictures("", pictures)
+    if cwd() != "/bin/" then find_pictures("/bin/", pictures) end
+end
+if len(pictures) == 0 then
+    print("No pictures here. Put some .bmp files in this directory or in /bin/.")
+    exit()
+end
+
+let current = 0
+if len(args) == 0 then current = choose(pictures, 0) end
+
+while current >= 0 do
+    if not gfx_open() then
+        print("The viewer needs a graphics screen, and this one is text only.")
+        exit()
+    end
+    show(pictures[current])
+    let k = key()
+    while k != KEY_ESCAPE and k != KEY_LEFT and k != KEY_RIGHT do
+        k = key()
+    end
+    if k == KEY_LEFT then
+        current = (current + len(pictures) - 1) % len(pictures)
+    elif k == KEY_RIGHT then
+        current = (current + 1) % len(pictures)
+    else
+        gfx_close()
+        if len(args) > 0 then exit() end
+        current = choose(pictures, current)
+    end
+end

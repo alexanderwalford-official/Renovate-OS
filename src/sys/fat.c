@@ -78,7 +78,7 @@
 
     Keeping the disk safe
     ---------------------
-    - We only mount a volume labelled RENOVATE (see fat_mount()).
+    - We only mount a volume labelled AEROS (see fat_mount()).
     - Changes are made in an order where a crash halfway can at worst leave "lost clusters"
       (marked used but owned by nobody, chkdsk / fsck tidy those up), never an entry pointing
       at garbage. E.g. new file data is written before its directory entry, and old data is
@@ -852,18 +852,46 @@ bool fat_file_exists (const char* f_path, const char* name) {
 }
 
 // the whole file in a new buffer (free() it when done), NULL if it isn't there or can't be read
-char* fat_read_file (const char* f_path, const char* name) {
+// size (optional) receives its length, which matters for binary files that contain '\0' bytes
+char* fat_read_file (const char* f_path, const char* name, uint32_t* size) {
     fat_entry_t e;
     if (!fat_find_file(f_path, name, &e)) {
         return NULL;
     }
+    if (size) {
+        *size = e.entry.size;
+    }
     return fat_read_chain(fat_entry_cluster(&e.entry), e.entry.size);
+}
+
+typedef struct {
+    fs_list_fn fn;
+    void* ctx;
+    int count;
+} fat_each_ctx_t;
+
+static bool fat_each_visit (const fat_entry_t* e, void* ctx) {
+    fat_each_ctx_t* each = ctx;
+    each->fn(e->name, (e->entry.attr & FAT_ATTR_DIRECTORY) != 0, e->entry.size, each->ctx);
+    each->count++;
+    return false;
+}
+
+// call fn for every file and directory in d_path, returns how many there were (-1 if it doesn't exist)
+int fat_list_dir (const char* d_path, fs_list_fn fn, void* ctx) {
+    uint32_t dir;
+    if (!fat_resolve_dir(d_path, &dir)) {
+        return -1;
+    }
+    fat_each_ctx_t each = { fn, ctx, 0 };
+    fat_walk_dir(dir, fat_each_visit, &each);
+    return each.count;
 }
 
 // create a new file, the name has to fit 8.3 (we can read long names but not write them)
 // the order matters for crash safety: write the data, find a slot, then write the entry.
 // if anything fails the data clusters are freed again, so nothing is left half made
-int fat_create_file (const char* f_path, const char* name, const char* contents) {
+int fat_create_file (const char* f_path, const char* name, const char* contents, uint32_t length) {
     fat_entry_t existing;
     fat_dirent_t d;
     uint32_t dir, first, lba;
@@ -875,7 +903,6 @@ int fat_create_file (const char* f_path, const char* name, const char* contents)
     memset(&d, 0, sizeof(d));
     if (!fat_make_83(name, d.name, &d.nt_case)) return FS_ERR_BAD_NAME;
 
-    uint32_t length = (uint32_t)strlen(contents);
     int result = fat_write_chain(contents, length, &first);
     if (result != FS_OK) return result;
     if (!fat_free_slot(dir, &lba, &slot)) {
@@ -1146,7 +1173,7 @@ static bool fat_root_label (char* out) {
 }
 
 // try to mount the FAT volume on a drive
-// returns FS_OK, FS_ERR_NOT_FOUND (no FAT volume), FS_ERR_BAD_NAME (not labelled RENOVATE) or FS_ERR_IO
+// returns FS_OK, FS_ERR_NOT_FOUND (no FAT volume), FS_ERR_BAD_NAME (not labelled AEROS) or FS_ERR_IO
 // bus / slave = which IDE drive. Reads the boot sector, works out the layout into fat_vol and only
 // sets fat_vol.mounted once the label check has passed. See the BPB table at the top of this file
 static int fat_mount (int bus, int slave) {
@@ -1235,7 +1262,7 @@ static int fat_mount (int bus, int slave) {
 }
 
 // try the four IDE drive positions in order (primary master, primary slave, secondary master,
-// secondary slave) and keep the first RENOVATE volume. Only ATA hard disks are tried, CD drives
+// secondary slave) and keep the first AEROS volume. Only ATA hard disks are tried, CD drives
 // (ATAPI, where the boot ISO usually is) are skipped.
 // status gets a line for the boot log either way: what was mounted, or why nothing was
 bool fat_mount_auto (char* status, size_t size) {
@@ -1255,7 +1282,7 @@ bool fat_mount_auto (char* status, size_t size) {
                          bus_names[bus], slave ? "slave" : "master", fat_vol.total_sectors / 2048);
                 return true;
             }
-            // remember the first FAT volume that wasn't labelled RENOVATE, so we can tell the user
+            // remember the first FAT volume that wasn't labelled AEROS, so we can tell the user
             if (result == FS_ERR_BAD_NAME && !unlabelled) {
                 unlabelled = true;
                 snprintf(unlabelled_where, sizeof(unlabelled_where), "%s %s", bus_names[bus], slave ? "slave" : "master");

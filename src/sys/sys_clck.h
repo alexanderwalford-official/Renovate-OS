@@ -62,6 +62,10 @@ extern bool clck_ready;
 // are enabled with interrupts_enable()
 void clck_init(void);
 
+// check the timer really ticks (call once interrupts are on), returns false and switches every
+// wait over to busy waiting if it doesn't, which happens when firmware has turned the PIT off
+bool clck_verify(void);
+
 // milliseconds since the timer started
 // (0 before clck_init(), wraps back to 0 after about 49.7 days)
 uint32_t clck_uptime_ms(void);

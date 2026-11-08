@@ -25,6 +25,7 @@
 #define VGA_LINEAR_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // the 16 colours of the standard VGA text palette (inherited from CGA)
 // bit 3 is the "intensity" bit: colours 8-15 are the bright versions of colours 0-7
@@ -70,9 +71,32 @@ extern volatile unsigned int vga_clear_count;
 extern enum color console_fg;
 extern enum color console_bg;
 
-// one-time VGA setup: allow all 16 background colours (instead of blinking text) and show the cursor
-// also clears the screen to light grey on black; it is the very first thing the kernel initialises
-void vga_init(void);
+// a linear framebuffer the bootloader set up for us (UEFI PCs have no VGA text mode)
+typedef struct {
+    uint32_t address;            // physical address of the first pixel (must be below 4GB)
+    uint32_t pitch;              // bytes from one line of pixels to the next
+    uint32_t width, height;      // in pixels
+    uint8_t bpp;                 // bits per pixel: 16, 24 or 32
+    uint8_t red_pos, red_size;   // where each colour sits inside a pixel, and how many bits it has
+    uint8_t green_pos, green_size;
+    uint8_t blue_pos, blue_size;
+} vga_framebuffer_t;
+
+// one-time screen setup, the very first thing the kernel initialises
+// framebuffer = NULL uses VGA text mode (switching blinking off so all 16 background colours work),
+// otherwise the 80 x 25 screen is drawn into the framebuffer (falling back to text mode if it
+// can't be used). Also clears the screen to light grey on black.
+void vga_init(const vga_framebuffer_t* framebuffer);
+
+// true if the screen is a framebuffer drawn by us, false for VGA text mode
+bool vga_framebuffer_active(void);
+
+// copy out the framebuffer's details for drawing graphics, false in VGA text mode
+bool vga_framebuffer_info(vga_framebuffer_t* out);
+
+// forget what the console last drew, so its next output repaints the whole screen
+// (needed after a program has drawn its own graphics over it)
+void vga_invalidate(void);
 
 // show the blinking hardware cursor, using scanlines start..end of the character cell
 // (a cell is 16 scanlines tall: 14..15 is the usual underline, 0..15 a full block)
@@ -83,6 +107,19 @@ void vga_disable_cursor(void);
 
 // move the hardware cursor to column x, row y (it does not check that the position is on screen)
 void vga_move_cursor(uint8_t x, uint8_t y);
+
+// palette: each of the 16 colours above is really an index into the VGA's 256 entry colour table
+// (the DAC), so any of them can be turned into a different colour. r / g / b are 0 - 255, the
+// hardware keeps the top 6 bits of each. Changes show up instantly on everything already on screen.
+void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b);
+void vga_get_palette(enum color color, uint8_t* r, uint8_t* g, uint8_t* b);
+
+// replace the picture of one character in the VGA font with our own 8x16 bitmap
+// (glyph = 16 rows, top first, bit 7 = leftmost pixel). Every cell showing that character changes.
+void vga_set_glyph(uint8_t character, const uint8_t* glyph);
+
+// the font has no copyright sign, so vga_init draws one into this unused character (0x01, a smiley)
+#define VGA_COPYRIGHT "\x01"
 
 // positional drawing, for full screen layouts (splash, error screens)
 

@@ -1,6 +1,6 @@
 ; ============================================================================================
 ; entry.asm
-; The very first Renovate OS code that runs: the multiboot header and the jump into C.
+; The very first AerOS code that runs: the multiboot header and the jump into C.
 ;
 ; Multiboot is a standard contract between a bootloader (GRUB) and a kernel. GRUB looks for a
 ; small "multiboot header" in the first 8KB of the kernel file, checks it, loads the kernel's
@@ -26,6 +26,7 @@
 ; loader is exported so linker.ld's ENTRY(loader) can find it, stack_ptr marks the top of the stack
 global loader
 global stack_ptr
+global stack
 
 ; main() lives in kernel.c
 extern main
@@ -36,9 +37,11 @@ extern main
 ;          multiboot information structure, so the kernel knows how much RAM there is
 ; bit 16 (the "a.out kludge", load addresses in the header) is not needed because GRUB reads
 ; them from our ELF file instead
+;   bit 2  we care about the video mode: the mode fields at the end of the header say what we want
 MODULEALIGN equ 1<<0
 MEMINFO equ 1<<1
-FLAGS equ MODULEALIGN | MEMINFO
+VIDEOMODE equ 1<<2
+FLAGS equ MODULEALIGN | MEMINFO | VIDEOMODE
 ; the magic number GRUB searches the file for (it hands back a different one, 0x2BADB002, in eax)
 MAGIC equ 0x1BADB002
 ; MAGIC + FLAGS + CHECKSUM must add up to 0 (in 32 bits), that is how GRUB knows it found a
@@ -53,12 +56,24 @@ MultiBootHeader:
   dd MAGIC
   dd FLAGS
   dd CHECKSUM
+  ; header_addr, load_addr, load_end_addr, bss_end_addr, entry_addr: only used with bit 16
+  ; (GRUB reads them from the ELF file instead), but they must be here to reach the mode fields
+  dd 0, 0, 0, 0, 0
+  ; video mode: ask for a 1024x768 framebuffer with 32 bits per pixel, so apps can draw graphics
+  ; on every PC. GRUB sets it up through VBE on a BIOS PC or GOP on a UEFI PC (picking the closest
+  ; mode it can if that one isn't there) and tells us where it is (see boot_parse_multiboot).
+  ; The terminal is then drawn into the framebuffer too (VGA_linear.c).
+  dd 0                      ; mode_type: 0 = graphics
+  dd 1024                   ; width in pixels
+  dd 768                    ; height in pixels
+  dd 32                     ; bits per pixel
 
 section .text
 
-; 0x8000 = 32KB of kernel stack, shared by main(), every process and every interrupt handler
+; 0x40000 = 256KB of kernel stack, shared by main(), every process and every interrupt handler
+; (RenLang programs run on it too, and an interpreter recurses for every nested call and expression)
 ; (there is no separate interrupt stack). Recursion or large local arrays eat into it
-STACKSIZE equ 0x8000
+STACKSIZE equ 0x40000
 
 loader:
   cli                       ; no interrupts until the kernel has set up its IDT

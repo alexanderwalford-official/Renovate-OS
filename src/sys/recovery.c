@@ -6,7 +6,7 @@
     through the process manager and the RenLang compiler ("iso_launch_options").
 
     The menu only sets boot_option, it is init_boot() (sys/boot.c) that acts on it:
-        [1] normal -> BOOT_OPT_NORMAL: use a RENOVATE disk if there is one, show the boot log
+        [1] normal -> BOOT_OPT_NORMAL: use a AEROS disk if there is one, show the boot log
         [2] fast   -> BOOT_OPT_FAST:   the same, but skip the pause after the boot log
         [3] demo   -> BOOT_OPT_DEMO:   never touch the disks, files only live in memory (VFS)
         [4] reboot and [5] shut down happen straight away and never come back

@@ -337,6 +337,9 @@ static uint8_t heap_area[HEAP_SIZE] __attribute__((aligned(16)));
 // the first block in the list; NULL until the first malloc sets the heap up
 static heap_block_t* heap_head;
 
+// how many bytes the heap manages: the built-in pool plus any regions added at boot
+static size_t heap_bytes = HEAP_SIZE;
+
 // set the heap up as one big free block covering the whole pool
 // called automatically by the first malloc, so nobody has to remember to initialise it
 static void heap_init(void) {
@@ -349,11 +352,37 @@ static void heap_init(void) {
     heap_head->free = 1;
 }
 
+// give the heap another stretch of free memory (the boot code adds the biggest block of RAM the
+// bootloader reports). It must lie above every earlier region, so the list stays in address order.
+void heap_add_region(void* start, size_t size) {
+    uintptr_t first = ((uintptr_t)start + HEAP_ALIGN - 1) & ~(uintptr_t)(HEAP_ALIGN - 1);
+    size -= first - (uintptr_t)start;
+    size &= ~(size_t)(HEAP_ALIGN - 1);
+    if (size < sizeof(heap_block_t) + HEAP_ALIGN) {
+        return;
+    }
+    if (heap_head == NULL) {
+        heap_init();
+    }
+    heap_block_t* region = (heap_block_t*)first;
+    region->size = size - sizeof(heap_block_t);
+    region->magic = HEAP_MAGIC;
+    region->next = NULL;
+    region->free = 1;
+
+    heap_block_t* last = heap_head;
+    while (last->next) {
+        last = last->next;
+    }
+    last->next = region;
+    heap_bytes += size;
+}
+
 // allocate size bytes, returns a 16 byte aligned pointer or NULL (size 0, too big, or out of memory)
 // the memory is NOT cleared, it may still hold whatever the last owner left there (use calloc for zeros)
 void* malloc(size_t size) {
     // the size check also stops the rounding below from overflowing
-    if (size == 0 || size > HEAP_SIZE) {
+    if (size == 0 || size > heap_bytes) {
         return NULL;
     }
     // lazy initialisation on the very first call
@@ -414,8 +443,11 @@ void free(void* ptr) {
     // just means the first block swallows the second one's header and data:
     //     [hdr A | data A][hdr B | data B]   ->   [hdr A | data A ............. ]
     // We walk the whole list (not just around this block), which keeps the code simple.
+    // (two blocks from different regions are next to each other in the list but not in memory,
+    // so they are only merged when the first one really ends where the second one starts)
     for (heap_block_t* b = heap_head; b != NULL && b->next != NULL;) {
-        if (b->free && b->next->free) {
+        bool touching = (uint8_t*)(b + 1) + b->size == (uint8_t*)b->next;
+        if (b->free && b->next->free && touching) {
             b->size += sizeof(heap_block_t) + b->next->size;
             b->next = b->next->next;
             // don't move on: the block after the one we swallowed might be free too,
@@ -500,7 +532,7 @@ char* strndup(const char* s, size_t n) {
 
 // the size of the whole pool in bytes (headers and free space included), shown at boot
 size_t heap_total(void) {
-    return HEAP_SIZE;
+    return heap_bytes;
 }
 
 // how many bytes are currently in use, counting each used block's header as well as its data

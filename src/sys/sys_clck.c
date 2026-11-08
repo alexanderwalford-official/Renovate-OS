@@ -7,7 +7,7 @@
       the timer   clck_init() programs PIT channel 0 to interrupt 1000 times a second and hooks
                   IRQ0. timer_handler() adds one to "ticks" on every interrupt, so ticks is the
                   uptime in milliseconds. sleep_ms() and clck_hang() wait by watching ticks,
-                  halting the CPU in between so an idle Renovate OS does not spin at 100%.
+                  halting the CPU in between so an idle AerOS does not spin at 100%.
 
       the RTC     rtc_read() reads the battery backed CMOS clock. The awkward part is that the
                   clock updates itself once a second, can store numbers in BCD, can run in
@@ -75,8 +75,11 @@ void clck_init(void) {
 }
 
 // milliseconds since the timer started, see sys_clck.h
+// milliseconds counted by the busy wait in sleep_ms, used instead of ticks when the timer is dead
+static uint32_t busy_ms = 0;
+
 uint32_t clck_uptime_ms(void) {
-    return ticks;
+    return clck_ready ? ticks : busy_ms;
 }
 
 // wait ms milliseconds, see sys_clck.h for when each method is used
@@ -98,8 +101,26 @@ void sleep_ms(uint32_t ms) {
             for (int j = 0; j < 1000; j++) {
                 io_wait();
             }
+            busy_ms++;
         }
     }
+}
+
+// Some newer PCs let the firmware switch the old PIT chip off to save power, and then IRQ0 never
+// comes. Everything that waits on ticks would wait forever, so once interrupts are on we give the
+// timer about 50ms to tick. If it doesn't, clck_ready goes false and every wait becomes a busy wait.
+bool clck_verify(void) {
+    if (!clck_ready || !interrupts_enabled()) {
+        return false;
+    }
+    uint32_t start = ticks;
+    for (int i = 0; i < 50000 && ticks == start; i++) {
+        io_wait();
+    }
+    if (ticks == start) {
+        clck_ready = false;
+    }
+    return clck_ready;
 }
 
 // block thread 0 for time milliseconds, marking it busy while it waits, see sys_clck.h
@@ -121,7 +142,7 @@ typedef struct {
 
 // read CMOS register reg: select it on the index port, give the chip a moment, then read the data
 // port. The selection and the read are two separate steps, so nothing else may touch the CMOS in
-// between (nothing else in Renovate OS uses it, so no lock is needed yet)
+// between (nothing else in AerOS uses it, so no lock is needed yet)
 static uint8_t cmos_read(uint8_t reg) {
     outb(CMOS_ADDRESS, reg);
     io_wait();
