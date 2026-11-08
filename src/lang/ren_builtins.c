@@ -1,8 +1,18 @@
 /*
     ren_builtins.c
     The functions every RenLang program can call: printing and input, strings, lists, byte
-    buffers, files and a few system services. Each one gets its arguments as an array of values
-    (which it must not release) and hands back a new value.
+    buffers, files, encrypted files, sound, graphics and a few system services.
+
+    Each one gets its arguments as an array of values, which it must not release (the caller
+    still owns them), and hands back a new value that the caller will own. A wrong argument is
+    reported with ren_error(), which never returns, so the code after a check can trust it.
+
+    Adding a builtin:
+      1. write  static value_t bi_<name> (int argc, value_t* argv, int line)  in the right section,
+         using int_arg / str_arg / list_arg / file_arg to check and unpack the arguments
+      2. add a line to ren_builtins[] at the bottom: { "name", bi_<name>, fewest args, most args }
+         (the interpreter checks the argument count before calling it)
+      3. add it to docs/RENLANG.md
 */
 
 #include "ren_internal.h"
@@ -380,6 +390,38 @@ static value_t bi_file_exists (int argc, value_t* argv, int line) {
     return ren_bool(fs_file_exists(dir, name));
 }
 
+static value_t bi_delete_file (int argc, value_t* argv, int line) {
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    (void)argc;
+    if (!file_arg(argv, 0, line, "delete_file", dir, name)) return ren_bool(false);
+    return ren_bool(fs_delete_f(dir, name) == FS_OK);
+}
+
+// add one directory entry to the list, directories get a '/' on the end
+static void list_one (const char* name, bool is_dir, uint32_t size, void* ctx) {
+    (void)size;
+    char entry[FS_NAME_MAX + 2];
+    strlcpy(entry, name, sizeof(entry));
+    if (is_dir) strlcat(entry, "/", sizeof(entry));
+    ren_list_push((ren_object_t*)ctx, ren_string(entry, (uint32_t)strlen(entry)));
+}
+
+// the current directory, e.g. "/bin/"
+static value_t bi_cwd (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    return ren_string(cd, (uint32_t)strlen(cd));
+}
+
+static value_t bi_list_files (int argc, value_t* argv, int line) {
+    const char* dir = argc > 0 ? str_arg(argv, 0, line, "list_files")->data.chars : ".";
+    value_t list = ren_list(8);
+    if (fs_list(dir, list_one, list.as.obj) < 0) {
+        ren_release(list);
+        return ren_nil();
+    }
+    return list;
+}
+
 // encrypted files (see sys/fcrypt.h)
 
 static value_t bi_encrypt_file (int argc, value_t* argv, int line) {
@@ -413,38 +455,6 @@ static value_t bi_read_encrypted (int argc, value_t* argv, int line) {
     crypto_wipe(contents, length);
     free(contents);
     return s;
-}
-
-static value_t bi_delete_file (int argc, value_t* argv, int line) {
-    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
-    (void)argc;
-    if (!file_arg(argv, 0, line, "delete_file", dir, name)) return ren_bool(false);
-    return ren_bool(fs_delete_f(dir, name) == FS_OK);
-}
-
-// add one directory entry to the list, directories get a '/' on the end
-static void list_one (const char* name, bool is_dir, uint32_t size, void* ctx) {
-    (void)size;
-    char entry[FS_NAME_MAX + 2];
-    strlcpy(entry, name, sizeof(entry));
-    if (is_dir) strlcat(entry, "/", sizeof(entry));
-    ren_list_push((ren_object_t*)ctx, ren_string(entry, (uint32_t)strlen(entry)));
-}
-
-// the current directory, e.g. "/bin/"
-static value_t bi_cwd (int argc, value_t* argv, int line) {
-    (void)argc; (void)argv; (void)line;
-    return ren_string(cd, (uint32_t)strlen(cd));
-}
-
-static value_t bi_list_files (int argc, value_t* argv, int line) {
-    const char* dir = argc > 0 ? str_arg(argv, 0, line, "list_files")->data.chars : ".";
-    value_t list = ren_list(8);
-    if (fs_list(dir, list_one, list.as.obj) < 0) {
-        ren_release(list);
-        return ren_nil();
-    }
-    return list;
 }
 
 // system

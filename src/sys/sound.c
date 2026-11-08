@@ -10,6 +10,18 @@
 
     8 bit samples are unsigned (128 = silence), wider ones are signed. Everything is turned into
     16 bit by keeping the top 16 bits of each sample.
+
+    The path every sound takes:
+
+        file bytes --+-- "RIFF....WAVE" --> wav_decode --+
+                     |                                    +--> 16 bit stereo (pcm_t)
+                     +-- ID3 / MPEG frame --> mp3_decode -+         |
+                                                                    v
+                                     the card's rate? -- no --> resample (straight lines)
+                                                                    |
+                                                                    v
+                                      PLAY / play(): ac97_play (waits until the end)
+                                      startup sound: ac97_start (plays in the background)
 */
 
 #include "sound.h"
@@ -27,6 +39,7 @@ typedef struct {
     uint32_t rate;
 } pcm_t;
 
+// WAV files are little endian
 static uint16_t read_u16 (const uint8_t* p) {
     return (uint16_t)(p[0] | (p[1] << 8));
 }
@@ -49,6 +62,8 @@ static int16_t wav_sample (const uint8_t* p, uint16_t bits) {
     }
 }
 
+// find the "fmt " and "data" chunks (other chunks, like "LIST" with the title, are skipped)
+// and convert every frame to 16 bit stereo
 static int wav_decode (const uint8_t* data, uint32_t size, pcm_t* out) {
     uint16_t channels = 0, bits = 0, frame_bytes = 0;
     const uint8_t* samples = 0;
@@ -94,7 +109,13 @@ static int wav_decode (const uint8_t* data, uint32_t size, pcm_t* out) {
 }
 
 // change the sample rate by drawing a straight line between neighbouring samples
-// (simple, and good enough for the usual 44100 -> 48000)
+// (simple, and good enough for the usual 44100 -> 48000). For each output frame:
+//
+//     position in the input = output frame * (old rate / new rate)     e.g. 7.25
+//     sample = input[7] + 0.25 * (input[8] - input[7])
+//
+// all in whole numbers: the position is 16.16 fixed point (the top part is the frame, the
+// bottom 16 bits the fraction), so stepping along is one addition per frame
 static int resample (pcm_t* pcm, uint32_t rate) {
     // step through the input in 16.16 fixed point (the position is 64 bit so long sounds don't
     // overflow). The step is worked out in two halves to avoid a 64 bit division, which the

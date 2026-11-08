@@ -20,6 +20,24 @@
         0x1B  CR     (8 bit)  control, bit 0 = run, bit 1 = reset this channel
         0x2C  global control (32 bit), bit 1 = take the codec out of reset
         0x30  global status (32 bit), bit 8 = the codec is ready
+
+    How ac97_play keeps a long sound going with only 32 descriptors. The sound sits in memory
+    as one long array, cut into chunks of CHUNK_FRAMES. The descriptors form a ring:
+
+        descriptor:  0     1     2     3    ...   31
+        points at:   c32   c33   c2    c3   ...   c31      (c = chunk of the sound)
+                      ^           ^
+                 refilled    CIV: the card is playing this one
+
+    The card plays descriptor CIV, moves on to CIV + 1 (wrapping 31 -> 0), and stops after LVI
+    (the "last valid index"). Whenever CIV has moved on from a descriptor, the driver points that
+    descriptor at the next chunk not yet queued and makes it the new LVI. The card never catches
+    up with LVI until the last chunk is queued, then it plays to the end and halts by itself.
+    Nothing is copied: the descriptors point straight into the sound's own buffer.
+
+    ac97_start (for the startup sound) skips the refilling: it gives every descriptor the most a
+    descriptor can hold (32767 stereo frames) and returns, so up to about 21 seconds plays on its
+    own while the OS gets on with booting.
 */
 
 #include "ac97.h"
@@ -65,9 +83,10 @@ typedef struct {
 
 bool ac97_ready = false;
 
-static uint16_t nam, nabm; // the two I/O bases
-static bool variable_rate = false;
-static pci_device_t card;
+static uint16_t nam, nabm;         // the two I/O bases
+static bool variable_rate = false; // the codec can play rates other than 48000 Hz
+static pci_device_t card;          // where the card is on the PCI bus, for ac97_name
+// the descriptor list the card reads by DMA (it must be 8 byte aligned)
 static descriptor_t list[DESCRIPTORS] __attribute__((aligned(8)));
 
 bool ac97_init (void) {
@@ -156,6 +175,7 @@ void ac97_stop (void) {
     if (ac97_ready) reset_channel();
 }
 
+// play the whole sound, refilling the ring as the card moves along it (see the top of the file)
 bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)) {
     if (!ac97_ready || count == 0) return ac97_ready;
     uint32_t chunks = (count + CHUNK_FRAMES - 1) / CHUNK_FRAMES;

@@ -14,6 +14,40 @@
 
     A statement ends at the end of its line, or straight before "end" / "else" / "elif", so short
     blocks can sit on one line:   if x > 3 then print("big") end
+
+    The grammar, one rule per function below ( | = or, [ ] = optional, { } = any number of times):
+
+        program     = block
+        block       = { statement NEWLINE }
+        statement   = "let" NAME "=" expression
+                    | "func" NAME "(" [ NAME { "," NAME } ] ")" block "end"
+                    | "if" expression "then" block { "elif" expression "then" block } [ "else" block ] "end"
+                    | "while" expression "do" block "end"
+                    | "for" NAME "=" expression "to" expression [ "step" expression ] "do" block "end"
+                    | "for" NAME "in" expression "do" block "end"
+                    | "return" [ expression ] | "break" | "continue"
+                    | expression [ "=" expression ]          (assignment to a name or list item)
+        expression  = conjunction { "or" conjunction }
+        conjunction = negation { "and" negation }
+        negation    = "not" negation | comparison
+        comparison  = sum { ( "==" | "!=" | "<" | "<=" | ">" | ">=" ) sum }
+        sum         = product { ( "+" | "-" ) product }
+        product     = unary { ( "*" | "/" | "%" ) unary }
+        unary       = "-" unary | postfix
+        postfix     = primary { "(" [ arguments ] ")" | "[" expression "]" }
+        primary     = NUMBER | STRING | "true" | "false" | "nil" | NAME
+                    | "(" expression ")" | "[" [ expression { "," expression } ] "]"
+
+    For example  let y = a + b * 2  becomes
+
+        N_LET y
+         `-- b: N_BINARY +
+                 |-- a: N_NAME a
+                 `-- b: N_BINARY *
+                         |-- a: N_NAME b
+                         `-- b: N_NUMBER 2
+
+    The tree is made once, before the program starts, and the interpreter walks it as it runs.
 */
 
 #include "ren_internal.h"
@@ -21,6 +55,8 @@
 
 #define MAX_NESTING 64 // deepest expression / block nesting, keeps the kernel stack safe
 
+// where the parser has got to, and what it is inside of (so misplaced break / return are caught
+// here, before the program runs)
 typedef struct {
     token_t* tokens;
     int pos;
@@ -30,6 +66,10 @@ typedef struct {
 } parser_t;
 
 static parser_t P;
+
+// the token helpers: peek looks at the next token, next takes it, check asks what type it is,
+// accept takes it only if it is that type, expect takes it or reports what was missing.
+// Every token list ends in T_EOF, which next() never moves past, so reading can't run off the end
 
 static token_t* peek (void) {
     return &P.tokens[P.pos];
@@ -65,6 +105,7 @@ static void skip_newlines (void) {
     }
 }
 
+// a blank node, with the line it came from for error messages
 static ren_node_t* new_node (node_type_t type, int line) {
     ren_node_t* n = ren_alloc(sizeof(ren_node_t));
     memset(n, 0, sizeof(*n));
@@ -73,6 +114,9 @@ static ren_node_t* new_node (node_type_t type, int line) {
     return n;
 }
 
+// every recursive rule calls enter() first and leave() at the end. Each level of nesting is a
+// few C function calls deep, and the kernel stack is shared by everything, so something like
+// ((((((((... 1000 deep is refused instead of overflowing the stack
 static void enter (void) {
     if (++P.nesting > MAX_NESTING) {
         ren_error(peek()->line, "code is nested too deeply");
@@ -102,6 +146,7 @@ static void push_node (node_list_t* list, ren_node_t* node) {
 
 static ren_node_t* expression (void);
 
+// the smallest pieces: a literal, a name, a (bracketed expression) or a [list]
 static ren_node_t* primary (void) {
     token_t* t = next();
     ren_node_t* n;
@@ -111,6 +156,7 @@ static ren_node_t* primary (void) {
             n->number = t->number;
             return n;
         case T_STRING:
+            // the string value is made now, once, and shared by every run of this line
             n = new_node(N_STRING, t->line);
             n->value = ren_string(t->text, t->length);
             return n;
@@ -146,6 +192,7 @@ static ren_node_t* primary (void) {
     }
 }
 
+// calls and indexing, which can be chained: grid[y][x], make_list()[0], f(1)(2)
 static ren_node_t* postfix (void) {
     ren_node_t* n = primary();
     for (;;) {
@@ -176,6 +223,7 @@ static ren_node_t* postfix (void) {
     }
 }
 
+// a minus in front (-x, --x), it binds tighter than * so -a * b is (-a) * b
 static ren_node_t* unary (void) {
     if (check(T_MINUS)) {
         int line = next()->line;
@@ -190,6 +238,9 @@ static ren_node_t* unary (void) {
 }
 
 // one level of left associative binary operators: operand (op operand)*
+// "left associative" means a - b - c is (a - b) - c: each new operator takes the tree so far as
+// its left side. operand is the rule for the next tighter level, so precedence falls out of
+// which rule calls which (product, sum and comparison below are each one line)
 static ren_node_t* binary (ren_node_t* (*operand)(void), const token_type_t* ops, int op_count) {
     ren_node_t* left = operand();
     for (;;) {
@@ -236,6 +287,8 @@ static ren_node_t* negation (void) {
     return comparison();
 }
 
+// "and" / "or" get their own node types, not N_BINARY, because they don't always evaluate their
+// right side (false and x never looks at x)
 static ren_node_t* conjunction (void) {
     ren_node_t* left = negation();
     while (check(T_AND)) {
@@ -280,6 +333,7 @@ static ren_node_t* block (void) {
     return n;
 }
 
+// a statement must be followed by a line break, or by a word that ends the block it is in
 static void end_of_statement (void) {
     if (accept(T_NEWLINE)) return;
     if (check(T_END) || check(T_ELSE) || check(T_ELIF) || check(T_EOF)) return;
@@ -287,6 +341,8 @@ static void end_of_statement (void) {
 }
 
 // "if" / "elif": the condition, "then", the block, and whatever follows
+// an elif chain becomes nested N_IFs, each one's else (c) being the next:
+//     if a then X elif b then Y else Z end   ->   N_IF(a, X, N_IF(b, Y, Z))
 static ren_node_t* if_rest (int line) {
     ren_node_t* n = new_node(N_IF, line);
     n->a = expression();
@@ -303,6 +359,7 @@ static ren_node_t* if_rest (int line) {
     return n;
 }
 
+// "do" block "end", counting how deep in loops we are so break / continue can be checked
 static ren_node_t* loop_body (void) {
     expect(T_DO, "'do'");
     P.loops++;
@@ -328,6 +385,7 @@ static ren_node_t* statement (void) {
 
         case T_FUNC: {
             next();
+            // functions are global, so defining one inside an if or a loop would be misleading
             if (P.functions > 0 || P.loops > 0 || P.nesting > 1) {
                 ren_error(line, "functions can only be made at the top level");
             }
@@ -396,6 +454,9 @@ static ren_node_t* statement (void) {
             n = new_node(t->type == T_BREAK ? N_BREAK : N_CONTINUE, line);
             break;
 
+        // anything else is an expression (usually a call like print(x)), or an assignment if an
+        // "=" follows. The left side is parsed as an ordinary expression first and then checked,
+        // which is how list[i] = x works without a special rule
         default: {
             ren_node_t* e = expression();
             if (accept(T_ASSIGN)) {
@@ -416,11 +477,13 @@ static ren_node_t* statement (void) {
     return n;
 }
 
+// tokens -> the syntax tree of the whole program (an N_BLOCK of its statements)
 ren_node_t* ren_parse (token_t* tokens, int count) {
     (void)count;
     memset(&P, 0, sizeof(P));
     P.tokens = tokens;
     ren_node_t* program = block();
+    // block() stops at end / else / elif, at the top level that means one too many of them
     if (!check(T_EOF)) {
         token_t* t = peek();
         ren_error(t->line, "'%s' without a matching start", t->type == T_END ? "end" : t->type == T_ELSE ? "else" : "elif");

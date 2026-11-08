@@ -37,15 +37,20 @@ bool auth_required (void);
 // show the login screen until someone logs in (or, the very first time, set up the first account)
 void auth_login (void);
 
+// make a new account, returns AUTH_OK or an AUTH_ERR_ code (name must already be lower case)
 int auth_add (const char* name, const char* password);
+// delete an account (the caller decides who is allowed to, see DELUSER in t_int.c)
 int auth_delete (const char* name);
+// give an existing account a new password (and a new salt)
 int auth_set_password (const char* name, const char* password);
+// is this the right password for this user? Takes as long for unknown users as for real ones
 bool auth_check (const char* name, const char* password);
 bool auth_exists (const char* name);
 
-// call fn with every user name
+// call fn with every user name, ctx is passed through to it
 void auth_list (void (*fn)(const char* name, void* ctx), void* ctx);
 
+// a short description of an AUTH_ result, for messages
 const char* auth_strerror (int error);
 
 #endif /* AUTH_H */

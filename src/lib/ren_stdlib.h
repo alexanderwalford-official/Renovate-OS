@@ -11,8 +11,8 @@
     - integer helpers: abs, itoa / utoa (number to text), strtol / strtoul / atoi (text to number)
     - a small pseudo random number generator: rand / srand
     - qsort, used by the process manager to line its processes up shortest first
-    - the kernel heap: malloc / free / calloc / realloc over a fixed 4MB pool,
-      plus strdup / strndup which copy a string onto the heap
+    - the kernel heap: malloc / free / calloc / realloc over a built-in 4MB pool and the free
+      RAM added at boot, plus strdup / strndup which copy a string onto the heap
     The heap's inner workings are explained at length in ren_stdlib.c.
 
     What's missing compared with a hosted libc: there's no errno (failures are reported

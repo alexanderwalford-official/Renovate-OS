@@ -2,9 +2,28 @@
     ren_interp.c
     Runs a RenLang program by walking its syntax tree.
 
-    eval() works out the value of an expression and exec() carries out a statement. Values that
-    eval() hands back are "owned": the caller has to ren_release() them (or store them somewhere
-    that will). Variables, list items and the syntax tree each own their own references.
+    eval() works out the value of an expression and exec() carries out a statement, each a switch
+    over the node types that calls itself for the node's children.
+
+    Reference counting. Strings, lists and bytes are objects shared by reference, with a count of
+    how many places hold them. The rules every function here follows:
+      - a value_t that eval() returns is "owned": the caller must either ren_release() it or hand
+        it to something that keeps it (a variable, a list item)
+      - storing a value somewhere (scope_set, ren_list_push) takes over the caller's reference
+      - reading a value out of a variable or list without taking it away needs ren_retain()
+    When a count reaches 0 the object is freed at once (and a list releases its items).
+
+    Scopes. There are only two places a name can live: the program's globals, and the locals of
+    the function that is running (no nesting and no closures, a function sees its own variables
+    and the globals). Builtins like print are ordinary globals.
+
+    Control flow. exec() returns what should happen next: EXEC_NEXT (carry on), or EXEC_BREAK /
+    EXEC_CONTINUE / EXEC_RETURN, which every block passes straight back up until a loop or a
+    function call deals with it. So "break" is just a return value, no jumps needed.
+
+    Errors. ren_error() longjmps back to the setjmp in run_program(), straight out of however
+    deep the program was. Everything it allocated is in the ren_alloc list and freed in one go
+    by session_end(), so nothing leaks however the program ends.
 */
 
 #include "ren_internal.h"
@@ -24,7 +43,15 @@ extern char stack[]; // the bottom of the kernel stack (entry.asm)
 
 ren_state_t* ren = 0;
 
-// memory
+// ---- memory -----------------------------------------------------------------------------------
+//
+// Every allocation has a small header in front of it linking it into one list:
+//
+//     blocks -> [header|data] <-> [header|data] <-> [header|data] -> NULL
+//                       ^ the pointer ren_alloc hands out
+//
+// so ren_free_all() can give everything back when the program ends, even after an error left
+// things half built. ren_free() unlinks one block early (used by reference counting).
 
 typedef struct ren_block {
     struct ren_block* prev;
@@ -34,6 +61,7 @@ typedef struct ren_block {
 
 static ren_block_t* blocks = 0; // every allocation of the running program
 
+// out of memory is a RenLang error like any other, so callers never have to check for NULL
 void* ren_alloc (size_t size) {
     ren_block_t* b = malloc(sizeof(ren_block_t) + size);
     if (b == 0) {
@@ -56,6 +84,7 @@ void ren_free (void* ptr) {
     free(b);
 }
 
+// a new block and a copy, rather than the heap's realloc, so the block list stays right
 void* ren_realloc (void* ptr, size_t size) {
     void* bigger = ren_alloc(size);
     if (ptr) {
@@ -75,6 +104,8 @@ void ren_free_all (void) {
 }
 
 // names are stored once, so comparing two names is just comparing pointers
+// a small hash table: hash the name (djb2: hash * 33 + c) to pick one of 128 buckets, each a
+// linked list of the names that landed there
 #define NAME_BUCKETS 128
 
 typedef struct name_entry {
@@ -103,8 +134,9 @@ const char* ren_intern (const char* text, size_t length) {
     return e->text;
 }
 
-// errors
+// ---- errors -----------------------------------------------------------------------------------
 
+// print "Error in <file> on line <n>: <message>" in red, then jump out of the program
 void ren_error (int line, const char* format, ...) {
     va_list ap;
     enum color old_fg = console_fg;
@@ -122,6 +154,8 @@ void ren_error (int line, const char* format, ...) {
     longjmp(ren->error, 1);
 }
 
+// called for every node evaluated: stops deep recursion before it overflows the kernel stack
+// (which everything shares), and notices Ctrl+C so a stuck loop can always be stopped
 static void check_stack (int line) {
     char here;
     if ((uintptr_t)&here < (uintptr_t)stack + STACK_RESERVE) {
@@ -132,8 +166,9 @@ static void check_stack (int line) {
     }
 }
 
-// values
+// ---- values -----------------------------------------------------------------------------------
 
+// a new object with one reference (the caller's)
 static ren_object_t* new_object (value_type_t type) {
     ren_object_t* o = ren_alloc(sizeof(ren_object_t));
     memset(o, 0, sizeof(*o));
@@ -173,6 +208,7 @@ value_t ren_bytes (uint32_t length) {
     return object_value(o);
 }
 
+// add to the end of a list, doubling its array when full (so pushing n items costs about n copies)
 void ren_list_push (ren_object_t* list, value_t item) {
     if (list->length == list->capacity) {
         list->capacity *= 2;
@@ -201,6 +237,7 @@ void ren_release (value_t v) {
     ren_free(o);
 }
 
+// what counts as "true" in if / while / and / or: everything except nil, false and 0
 bool ren_truthy (value_t v) {
     switch (v.type) {
         case V_NIL: return false;
@@ -210,6 +247,7 @@ bool ren_truthy (value_t v) {
     }
 }
 
+// == compares strings by their characters, but lists and bytes by identity (the same object)
 bool ren_equal (value_t a, value_t b) {
     if (a.type != b.type) return false;
     switch (a.type) {
@@ -248,6 +286,7 @@ static void text_add (text_t* t, const char* s, uint32_t length) {
     t->chars[t->length] = '\0';
 }
 
+// add v to t the way print() shows it, depth = how many lists deep we are
 static void text_value (text_t* t, value_t v, int depth) {
     char number[16];
     switch (v.type) {
@@ -296,6 +335,8 @@ value_t ren_to_string (value_t v) {
     return s;
 }
 
+// a string is written character by character (it may contain '\0' or % signs), anything else
+// is turned into text first
 void ren_print_value (value_t v) {
     if (v.type == V_STR) {
         for (uint32_t i = 0; i < v.as.obj->length; i++) {
@@ -309,7 +350,9 @@ void ren_print_value (value_t v) {
     ren_release(s);
 }
 
-// variables
+// ---- variables --------------------------------------------------------------------------------
+// A scope is a plain array searched from the start. Programs have few variables and names are
+// compared by pointer, so this is faster in practice than anything cleverer
 
 static ren_var_t* scope_find (ren_scope_t* scope, const char* name) {
     for (int i = 0; i < scope->count; i++) {
@@ -346,6 +389,7 @@ void ren_define_global (const char* name, value_t value) {
     scope_set(&ren->globals, ren_intern(name, strlen(name)), value);
 }
 
+// the function's own variables first, then the globals
 static ren_var_t* find_variable (const char* name) {
     ren_var_t* var = ren->locals ? scope_find(ren->locals, name) : 0;
     return var ? var : scope_find(&ren->globals, name);
@@ -356,6 +400,7 @@ static void declare (const char* name, value_t value) {
     scope_set(ren->locals ? ren->locals : &ren->globals, name, value);
 }
 
+// the value of a variable, retained because the caller gets its own reference
 static value_t lookup (const char* name, int line) {
     ren_var_t* var = find_variable(name);
     if (var == 0) {
@@ -365,7 +410,7 @@ static value_t lookup (const char* name, int line) {
     return var->value;
 }
 
-// expressions
+// ---- expressions ------------------------------------------------------------------------------
 
 static value_t eval (ren_node_t* n);
 
@@ -374,6 +419,7 @@ static int32_t need_int (value_t v, int line, const char* what) {
     return v.as.i;
 }
 
+// target[index]: a list item, a one character string, or a byte as a number
 static value_t index_get (value_t target, value_t index, int line) {
     if (!is_object(target)) ren_error(line, "can't index a %s", ren_type_name(target));
     int32_t i = need_int(index, line, "an index");
@@ -391,6 +437,7 @@ static value_t index_get (value_t target, value_t index, int line) {
     }
 }
 
+// + on two lists makes a new list, + with a string joins the text of both sides ("n = " + 5)
 static value_t concat (value_t a, value_t b) {
     if (a.type == V_LIST && b.type == V_LIST) {
         value_t list = ren_list(a.as.obj->length + b.as.obj->length);
@@ -411,6 +458,7 @@ static value_t concat (value_t a, value_t b) {
     return s;
 }
 
+// every binary operator (except and / or): joining, equality, string comparison, then numbers
 static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
     if (op == T_PLUS && (a.type == V_STR || b.type == V_STR || (a.type == V_LIST && b.type == V_LIST))) {
         return concat(a, b);
@@ -452,10 +500,14 @@ static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
     }
 }
 
+// what exec() tells its caller to do next (see the top of the file)
 typedef enum { EXEC_NEXT, EXEC_BREAK, EXEC_CONTINUE, EXEC_RETURN } exec_t;
 
 static exec_t exec_block (ren_node_t* block);
 
+// call a builtin (checking its argument count) or a RenLang function: the arguments become the
+// function's local variables, its body runs with those as the local scope, and a "return"
+// leaves its value in ren->return_value for us to pick up
 static value_t call (value_t callee, int argc, value_t* argv, int line) {
     if (callee.type == V_NATIVE) {
         const ren_builtin_t* b = &ren_builtins[callee.as.i];
@@ -494,6 +546,7 @@ static value_t call (value_t callee, int argc, value_t* argv, int line) {
     return value;
 }
 
+// the value of an expression (owned by the caller, see the top of the file)
 static value_t eval (ren_node_t* n) {
     check_stack(n->line);
     switch (n->type) {
@@ -568,8 +621,10 @@ static value_t eval (ren_node_t* n) {
     }
 }
 
-// statements
+// ---- statements -------------------------------------------------------------------------------
 
+// target = value, where target is a variable (which must already exist, made with let) or a
+// list item / byte (list[i] = x). Takes over the reference to value
 static void assign (ren_node_t* target, value_t value) {
     if (target->type == N_NAME) {
         ren_var_t* var = find_variable(target->name);
@@ -602,6 +657,7 @@ static void assign (ren_node_t* target, value_t value) {
 
 static exec_t exec (ren_node_t* n);
 
+// run statements in order until one of them breaks, continues or returns
 static exec_t exec_block (ren_node_t* block) {
     for (int i = 0; i < block->count; i++) {
         exec_t result = exec(block->items[i]);
@@ -621,6 +677,7 @@ static void set_loop_variable (const char* name, value_t value) {
     }
 }
 
+// carry out one statement
 static exec_t exec (ren_node_t* n) {
     check_stack(n->line);
     switch (n->type) {
@@ -668,6 +725,7 @@ static exec_t exec (ren_node_t* n) {
             value_t from = eval(n->a);
             value_t to = eval(n->c);
             value_t step = n->d ? eval(n->d) : ren_int(1);
+            // 64 bit, so "for i = 0 to 2147483647" can't overflow and loop forever
             int64_t i = need_int(from, n->line, "the start of a for loop");
             int64_t last = need_int(to, n->line, "the end of a for loop");
             int64_t by = need_int(step, n->line, "the step of a for loop");
@@ -725,10 +783,12 @@ static void define_functions (ren_node_t* program) {
     }
 }
 
-// running programs
+// ---- running programs -------------------------------------------------------------------------
 
 static ren_state_t state;
 
+// a clean slate for a program: no variables, no allocations, then the builtins, the constants
+// and args (the words typed after the program's name)
 static void session_begin (const char* name, const char* args) {
     memset(&state, 0, sizeof(state));
     memset(names, 0, sizeof(names));
@@ -760,23 +820,36 @@ static void session_begin (const char* name, const char* args) {
     ren_define_global("args", list);
 }
 
+// leave graphics mode if the program used it, and free everything it allocated
 static void session_end (void) {
     ren_builtins_finish();
     ren_free_all();
     ren = 0;
 }
 
-int ren_run_source (const char* source, const char* name, const char* args) {
-    session_begin(name, args);
-    // setjmp returns 1 after an error, 2 after exit()
+// lex, parse and run source. Kept out of run_program (noinline) so none of its local variables
+// share a stack frame with the setjmp, where a longjmp could leave them with stale values
+__attribute__((noinline)) static void parse_and_run (const char* source) {
+    int count;
+    token_t* tokens = ren_lex(source, &count);
+    ren_node_t* program = ren_parse(tokens, count);
+    define_functions(program);
+    exec_block(program);
+}
+
+// run source in the current session. setjmp returns 0 the first time, then 1 if ren_error()
+// jumps back here, or 2 if the program called exit()
+static int run_program (const char* source) {
     int jumped = setjmp(ren->error);
     if (jumped == 0) {
-        int count;
-        token_t* tokens = ren_lex(source, &count);
-        ren_node_t* program = ren_parse(tokens, count);
-        define_functions(program);
-        exec_block(program);
+        parse_and_run(source);
     }
+    return jumped;
+}
+
+int ren_run_source (const char* source, const char* name, const char* args) {
+    session_begin(name, args);
+    int jumped = run_program(source);
     session_end();
     return jumped == 1 ? -1 : 0;
 }
@@ -816,6 +889,8 @@ int ren_run_file (const char* path, const char* args) {
     return result;
 }
 
+// the "ren" prompt: one session for the whole time, so variables and functions typed on one
+// line are still there on the next
 void ren_repl (void) {
     char line[256];
     printf("RenLang - type code to run it, \"exit\" to leave.\n");
@@ -831,13 +906,7 @@ void ren_repl (void) {
         console_set_color(BRIGHT, console_bg);
         GetString(line, sizeof(line));
         if (strcmp(StrTrim(line), "exit") == 0) break;
-        if (setjmp(ren->error) == 0) {
-            int count;
-            token_t* tokens = ren_lex(line, &count);
-            ren_node_t* program = ren_parse(tokens, count);
-            define_functions(program);
-            exec_block(program);
-        }
+        run_program(line);
         ren->locals = 0; // in case an error happened inside a function
     }
     session_end();

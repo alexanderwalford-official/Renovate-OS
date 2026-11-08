@@ -7,8 +7,10 @@
        magic number 0x2BADB002 in eax and the address of a "multiboot information" structure
        in ebx. That structure describes the machine: how much memory there is, the boot
        device, the kernel command line, modules, a full memory map and more. Bit N of its
-       flags field says whether the Nth group of fields is filled in. We only need the memory
-       sizes for now (entry.asm asks GRUB for them with the MEMINFO header flag).
+       flags field says whether the Nth group of fields is filled in. We use three of them:
+       the memory sizes, the memory map (the biggest free stretch of RAM becomes extra heap)
+       and the framebuffer GRUB switched the screen to (entry.asm asks for a 1024 x 768 x 32
+       graphics mode in the multiboot header).
        https://www.gnu.org/software/grub/manual/multiboot/multiboot.html#Boot-information-format
        https://wiki.osdev.org/Multiboot
 
@@ -18,7 +20,9 @@
            [FAIL]  it was not set up (the matching *_ready flag is still false)
            [WARN]  it is missing but we can carry on without it
            [INFO]  just so you know (printed by the file system)
-       then starts the file system and gives the user a moment to read it all.
+       then checks the cryptography against its test vectors, looks for a sound card, starts
+       the file system, copies the built-in apps and files onto it and gives the user a moment
+       to read it all.
 */
 
 #include "boot.h"

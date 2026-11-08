@@ -5,6 +5,16 @@
     bar (row 0), 23 rows of text and a help bar (row 24). Every key press redraws the whole text
     area, which is cheap because the screen driver only repaints cells that actually changed.
     Lines longer than the screen scroll sideways with the cursor.
+
+        row 0    | /bin/hello.ren *                              Line 3, Col 7 |  title bar
+        rows 1   | let name = input("Name? ")                                  |
+        to 23    | print("Hello " + name)                                      |  the text, from
+                 | ~                                                           |  line "top" and
+                 | ~                                                           |  column "left"
+        row 24   | ^S Save   ^R Run   ^Q Quit                                  |  help / status
+
+    The cursor (cx, cy) is a position in the file, not on the screen: draw() scrolls top and left
+    so that it is always visible. .ren files get syntax colouring.
 */
 
 #include "editor.h"
@@ -16,9 +26,14 @@
 #include "../../lang/renlang.h"
 #include "../f_sys.h"
 
-#define TEXT_TOP   1
-#define TEXT_ROWS  (ROWS - 2)
-#define TAB_WIDTH  4
+#define TEXT_TOP   1          // the first screen row of text (row 0 is the title bar)
+#define TEXT_ROWS  (ROWS - 2) // rows of text on screen, between the two bars
+#define TAB_WIDTH  4          // Tab inserts spaces up to the next multiple of this
+
+// the code a key sends with Ctrl held: Ctrl+A is 1, Ctrl+B is 2 ... Ctrl+Q is 17
+#define CTRL(letter) ((letter) - 'A' + 1)
+
+// one line of the file, without its '\n' (text is '\0' terminated, length doesn't count that)
 
 typedef struct {
     char* text;
@@ -26,6 +41,7 @@ typedef struct {
     int capacity;
 } line_t;
 
+// the file being edited, always at least one line (an empty file is one empty line)
 static line_t* lines;
 static int line_count;
 static int line_capacity;
@@ -38,8 +54,9 @@ static char dir[FS_PATH_MAX];
 static char name[FS_NAME_MAX];
 static char status[COLS + 1]; // a message for the help bar, until the next key
 
-// lines
+// ---- lines ------------------------------------------------------------------------------------
 
+// make sure line has room for length characters and the '\0', doubling its buffer as needed
 static void line_reserve (line_t* line, int length) {
     if (length + 1 <= line->capacity) return;
     int capacity = line->capacity ? line->capacity : 16;
@@ -79,6 +96,7 @@ static void free_lines (void) {
     line_count = line_capacity = 0;
 }
 
+// read the file into lines[], or start one empty line for a new file
 static void load (void) {
     char* text = fs_read_f(dir, name);
     if (text == 0) {
@@ -98,6 +116,7 @@ static void load (void) {
     free(text);
 }
 
+// join the lines back up with '\n' between them and write the file (the status bar says how it went)
 static void save (void) {
     int total = 0;
     for (int i = 0; i < line_count; i++) {
@@ -126,8 +145,10 @@ static void save (void) {
     free(text);
 }
 
-// editing
+// ---- editing ----------------------------------------------------------------------------------
+// each of these works at the cursor and marks the file modified
 
+// type a character, the rest of the line moves right (the + 1 in the memmove carries the '\0')
 static void insert_char (char c) {
     line_t* line = &lines[cy];
     line_reserve(line, line->length + 1);
@@ -172,6 +193,7 @@ static void join_next (void) {
     modified = true;
 }
 
+// delete the character before the cursor, or at the start of a line join it onto the one above
 static void backspace (void) {
     if (cx > 0) {
         line_t* line = &lines[cy];
@@ -186,6 +208,7 @@ static void backspace (void) {
     }
 }
 
+// delete the character under the cursor, or at the end of a line pull the next one up
 static void delete_forward (void) {
     line_t* line = &lines[cy];
     if (cx < line->length) {
@@ -197,8 +220,9 @@ static void delete_forward (void) {
     }
 }
 
-// drawing
+// ---- drawing ----------------------------------------------------------------------------------
 
+// is this word a RenLang keyword? (the same words as the table in lang/ren_lexer.c, keep them in step)
 static bool is_keyword (const char* word, int length) {
     static const char* const keywords[] = {
         "let", "func", "return", "if", "then", "elif", "else", "end", "while", "do", "for", "to",
@@ -210,7 +234,9 @@ static bool is_keyword (const char* word, int length) {
     return false;
 }
 
-// the colour of every character of a line (RenLang files only, everything else is plain)
+// the colour of every character of a line (RenLang files only, everything else is plain):
+// comments grey, strings green, numbers yellow, keywords cyan, everything else light grey.
+// A quick scan of the line on its own, not a full lexer, which is plenty for colouring
 static void colour_line (const line_t* line, enum color* colours) {
     for (int i = 0; i < line->length; i++) colours[i] = BRIGHT;
     if (!is_renlang) return;
@@ -242,6 +268,7 @@ static void colour_line (const line_t* line, enum color* colours) {
     }
 }
 
+// redraw the title bar, the visible lines and the help bar, then place the cursor
 static void draw (void) {
     // keep the cursor on screen
     if (cy < top) top = cy;
@@ -257,6 +284,7 @@ static void draw (void) {
     puts(0, 0, BLACK, BRIGHT, bar);
     puts((uint8_t)(COLS - strlen(position)), 0, BLACK, BRIGHT, position);
 
+    // colours for one line, lines longer than this are just shown uncoloured
     enum color colours[COLS + 512];
     for (int row = 0; row < TEXT_ROWS; row++) {
         int index = top + row;
@@ -304,6 +332,7 @@ static void run_program (void) {
     status[0] = '\0';
 }
 
+// the editor's main loop: draw, wait for a key, act on it, until Ctrl+Q
 void editor_open (const char* path) {
     if (!fs_split_path(path, dir, sizeof(dir), name, sizeof(name)) || !fs_dir_exists(dir)) {
         printf("Can't edit %s\n", path);
@@ -326,7 +355,7 @@ void editor_open (const char* path) {
         line_t* line = &lines[cy];
 
         switch (key) {
-            case 17: // ctrl + Q
+            case CTRL('Q'): // quit, asking twice if there are unsaved changes
                 if (modified && !quit_warned) {
                     snprintf(status, sizeof(status), "Unsaved changes! Ctrl+Q again to quit without saving");
                     quit_warned = true;
@@ -334,8 +363,8 @@ void editor_open (const char* path) {
                 }
                 free_lines();
                 return;
-            case 19: save(); break;                          // ctrl + S
-            case 18: if (is_renlang) run_program(); break;  // ctrl + R
+            case CTRL('S'): save(); break;
+            case CTRL('R'): if (is_renlang) run_program(); break; // save and run
             case '\n': new_line(); break;
             case '\b': backspace(); break;
             case KEY_DELETE: delete_forward(); break;

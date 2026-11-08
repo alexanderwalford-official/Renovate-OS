@@ -4,14 +4,19 @@
     t_int.c - the AerOS terminal
 
     This is where the user spends their time once the boot has finished. kernel.c creates a
-    process called "terminal", the compiler turns that into cli_init(0), and from then on
+    process called "terminal", the compiler turns that into cli_init(1), and from then on
     the terminal loop below is the OS:
 
-        cli_rend_main()            draw the banner once
         while the terminal is up:
-            cli_prompt()           e.g. "0//sys/: "
-            GetString()            read a line (the keyboard driver echoes it and keeps history)
-            HandleInput()          find the command in cli_commands[] and run it
+            auth_login()               the login screen (DISK mode only, sys/accounts/auth.h)
+            cli_rend_main()            draw the banner
+            until LOGOUT:
+                cli_prompt()           e.g. "alex@0//sys/: "
+                GetString()            read a line (the keyboard driver echoes it and keeps history)
+                HandleInput()          find the command in cli_commands[] and run it
+
+    The commands are grouped in this file roughly as HELP lists them: files, system, encrypted
+    files (sys/fcrypt.h), sound (sys/sound.h), apps and RenLang, then accounts.
 
     Because the terminal is itself a RUNNING process, the RUN command (which runs a line of
     RenLang as a new process) works by nesting: the new process is run from inside the

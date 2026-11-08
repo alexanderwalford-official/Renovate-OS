@@ -15,10 +15,11 @@
 #include "VGA_linear.h"
 #include "font8x16.h"
 
-static vga_framebuffer_t fb;
-static uint32_t fb_bytes; // bytes per pixel
-static bool active = false;
+static vga_framebuffer_t fb; // where the framebuffer is and how its pixels are laid out
+static uint32_t fb_bytes;    // bytes per pixel
+static bool active = false;  // between gfx_begin and gfx_end, every drawing call checks it
 
+// take the screen over from the text console (false in VGA text mode, there are no pixels)
 bool gfx_begin(void) {
     if (!vga_framebuffer_info(&fb)) {
         return false;
@@ -31,6 +32,7 @@ bool gfx_begin(void) {
     return true;
 }
 
+// give the screen back: the console redraws all of its text the next time it is used
 void gfx_end(void) {
     if (!active) {
         return;
@@ -48,6 +50,10 @@ uint32_t gfx_height(void) {
     return active ? fb.height : 0;
 }
 
+// turn 0xRRGGBB into the framebuffer's own pixel format. Each colour is cut down to however
+// many bits the screen has for it and moved to where the screen keeps it, e.g.
+//     32 bit (8:8:8)   red at bit 16, green at 8, blue at 0      -> 0x00RRGGBB
+//     16 bit (5:6:5)   red at bit 11, green at 5, blue at 0      -> rrrrrggggggbbbbb
 static uint32_t pack(uint32_t rgb) {
     uint32_t r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
     return ((r >> (8 - fb.red_size)) << fb.red_pos) |
@@ -65,6 +71,7 @@ static void put(uint32_t x, uint32_t y, uint32_t pixel) {
     }
 }
 
+// every public drawing call clips to the screen, so apps can draw partly (or wholly) off it
 void gfx_pixel(int x, int y, uint32_t rgb) {
     if (active && x >= 0 && y >= 0 && (uint32_t)x < fb.width && (uint32_t)y < fb.height) {
         put((uint32_t)x, (uint32_t)y, pack(rgb));
@@ -109,6 +116,7 @@ void gfx_line(int x0, int y0, int x1, int y1, uint32_t rgb) {
     }
 }
 
+// text in the console's 8 x 16 font, each font pixel drawn as a scale x scale square
 void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale) {
     if (scale < 1) scale = 1;
     for (; *text; text++, x += 8 * scale) {
@@ -123,8 +131,17 @@ void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale) {
     }
 }
 
-// BMP pictures
+// ---- BMP pictures -----------------------------------------------------------------------------
+//
+// The header fields read here (all little endian):
+//     offset  0  "BM"                      offset 22  height (negative = rows stored top down)
+//     offset 10  where the pixels start    offset 28  bits per pixel (8, 24 or 32 here)
+//     offset 14  info header size (40+)    offset 30  compression (0, or 3 for 32 bit)
+//     offset 18  width                     offset 46  palette entries (8 bit, 0 means 256)
+// The palette (8 bit pictures only) follows the info header, 4 bytes per colour: blue, green,
+// red, unused.
 
+// a picture checked by bmp_open, with everything needed to find any pixel
 typedef struct {
     const uint8_t* data;
     int width;
@@ -140,6 +157,8 @@ typedef struct {
 static uint32_t u16(const uint8_t* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
 static uint32_t u32(const uint8_t* p) { return u16(p) | (u16(p + 2) << 16); }
 
+// read and check the headers, false for anything that isn't a BMP we can draw, or that claims
+// more pixels than the file holds (so a damaged file can't make us read past its end)
 static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
     if (d == 0 || length < 54 || d[0] != 'B' || d[1] != 'M') return false;
     uint32_t header = u32(d + 14);
@@ -158,6 +177,7 @@ static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
     // 0 = plain, 3 = "bitfields", which for 32 bit pictures is the usual blue, green, red, alpha order
     if (compression != 0 && !(compression == 3 && b->bpp == 32)) return false;
 
+    // each row is padded to a whole number of 4 byte words
     b->stride = (((uint32_t)width * b->bpp + 31) / 32) * 4;
     if ((uint64_t)b->pixels + (uint64_t)b->stride * (uint32_t)b->height > length) return false;
 

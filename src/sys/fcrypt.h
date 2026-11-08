@@ -4,13 +4,19 @@
 
     An encrypted file keeps its name, only its contents change. They become:
 
-        offset  size
-             0     8   "AERENC01", so we can tell an encrypted file from any other
-             8     4   PBKDF2 rounds (little endian)
-            12    16   salt, random for every encryption
-            28     8   nonce for AES-256-CTR
-            36     n   the contents, encrypted (same length as the original)
-          36+n    32   tag: HMAC-SHA-256 of everything before it
+        0        8        12                28       36                      36+n      36+n+32
+        +--------+--------+-----------------+--------+-----------------------+---------+
+        | magic  | rounds | salt            | nonce  | encrypted contents    | tag     |
+        +--------+--------+-----------------+--------+-----------------------+---------+
+         8 bytes  4 bytes  16 bytes          8 bytes  n bytes (same as before) 32 bytes
+
+        magic     "AERENC01", so an encrypted file can be told from any other
+        rounds    PBKDF2 rounds used for this file (little endian)
+        salt      random for every encryption, so the same password gives different keys
+        nonce     random, the first half of every AES-CTR counter block
+        tag       HMAC-SHA-256 of everything before it (header and encrypted contents)
+
+    So an encrypted file is exactly 68 bytes longer than the original.
 
     The password and salt go through PBKDF2 to make a master key, and two keys are made from
     that: one for AES (scrambles the contents) and one for the HMAC (detects any change). On

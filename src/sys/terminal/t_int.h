@@ -19,7 +19,8 @@ extern bool cli_active; // true while the terminal is running
 // are already done (so times - lc flashes happen). Blocks while it flashes, returns 0
 int flash_pointer (int times, int lc);
 
-// start the terminal and run its loop, ent = 0 skips the login (there are no accounts yet)
+// start the terminal and run its loop, ent = 1 shows the login screen first (in DISK mode),
+// ent = 0 skips it and runs as guest
 // only returns if cli_active is ever cleared, which nothing does yet
 int cli_init (int ent);
 
