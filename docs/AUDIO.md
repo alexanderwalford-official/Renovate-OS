@@ -18,7 +18,7 @@ speakers, and how to change or extend it.
 | Where | How |
 | --- | --- |
 | terminal | `PLAY song.mp3`, `PLAY /sys/startup.wav` (Esc or Ctrl+C stops it) |
-| RenLang | `play("song.mp3")` waits until it finishes, false if it can't be played |
+| AerLang | `play("song.mp3")` waits until it finishes, false if it can't be played |
 | boot | `/sys/startup.wav` plays while the splash screen is up |
 | QEMU | `make run` adds an AC'97 card played through PulseAudio. Use `make run AUDIO=none` if that isn't available |
 
@@ -150,6 +150,6 @@ crossings) is how every format and sample rate above was tested.
   `pci_find_class(0x04, 0x03, ...)`.
 * **Another file format.** Add a `*_detect` / `*_decode` pair that produces 16-bit stereo, and
   one more branch in `decode()` in `sound.c`.
-* **Background music for games.** `ac97_start` already plays without blocking. A RenLang
+* **Background music for games.** `ac97_start` already plays without blocking. An AerLang
   `play_async(path)` would only need to decode, call `ac97_start` and keep the buffer
   (`background` in `sound.c`) until the next sound.

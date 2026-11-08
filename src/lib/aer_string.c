@@ -1,11 +1,11 @@
 /*
-    ren_string.c
+    aer_string.c
     String and memory functions (freestanding replacement for <string.h>).
 
-    This is the code behind ren_string.h. Nearly everything in the kernel leans on it:
+    This is the code behind aer_string.h. Nearly everything in the kernel leans on it:
     the terminal parses commands with strcmp / split, the file systems copy names
     around with strlcpy, printf measures strings with strlen, and GCC itself quietly
-    calls memcpy / memset whenever it copies or clears a struct (see ren_string.h).
+    calls memcpy / memset whenever it copies or clears a struct (see aer_string.h).
 
     Design choices:
     - Everything works one byte at a time. A real libc would copy 4 or 8 bytes per step,
@@ -23,8 +23,8 @@
         https://wiki.osdev.org/C_Library
         https://en.cppreference.com/w/c/string/byte
 */
-#include "ren_string.h"
-#include "ren_ctype.h"
+#include "aer_string.h"
+#include "aer_ctype.h"
 
 // fill count bytes starting at dest with value, returns dest
 // value is an int for historical reasons, only its low 8 bits are written (memset(p, 0x1FF, n) writes 0xFF)
@@ -168,7 +168,7 @@ int strncmp(const char* a, const char* b, size_t n) {
 // the terminal uses this to look up commands, and the FAT driver uses it because FAT file
 // names are case-insensitive ("README.TXT" and "readme.txt" are the same file)
 int strcasecmp(const char* a, const char* b) {
-    // the casts to unsigned char keep tolower's argument in range (see ren_ctype.h)
+    // the casts to unsigned char keep tolower's argument in range (see aer_ctype.h)
     while (*a && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
         a++;
         b++;

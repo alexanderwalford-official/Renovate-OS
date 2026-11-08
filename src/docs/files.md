@@ -5,11 +5,11 @@
 | Folder | Holds |
 | --- | --- |
 | `/acc/` | the accounts file, `users` |
-| `/bin/` | the apps: `hello.ren`, `read.ren`, pictures... |
+| `/bin/` | the apps: `hello.aer`, `read.aer`, pictures... |
 | `/docs/` | this manual |
 | `/sys/` | system files, like `startup.wav` |
 | `/sys/cache/`, `/sys/tmp/` | room for the system to work in |
-| `/conf.ren` | settings (not used much yet) |
+| `/conf.aer` | settings (not used much yet) |
 
 The apps and this manual are built into AerOS and copied onto the disk when it starts, so
 they are there even with no disk at all. If you change an app in `/bin/` your version is
@@ -17,12 +17,12 @@ kept. The manual is always refreshed.
 
 ## Paths
 
-A path says where a file is. It can start from the top (`/bin/hello.ren`) or from the folder
+A path says where a file is. It can start from the top (`/bin/hello.aer`) or from the folder
 you are in (`notes.txt`, `../readme.md`):
 
 ```
 /                  the top folder
-/bin/hello.ren     hello.ren in the bin folder
+/bin/hello.aer     hello.aer in the bin folder
 .                  the folder you are in
 ..                 the folder above it
 ```

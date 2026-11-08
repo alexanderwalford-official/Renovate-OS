@@ -1,5 +1,5 @@
 /*
-    ren_ctype.h
+    aer_ctype.h
     Character classification (freestanding replacement for <ctype.h>).
 
     Why do we need our own?
@@ -27,8 +27,8 @@
         48..57 '0'..'9'      65..90 'A'..'Z'      97..122 'a'..'z'
         127    DEL (another control character)
 */
-#ifndef REN_CTYPE_H
-#define REN_CTYPE_H
+#ifndef AER_CTYPE_H
+#define AER_CTYPE_H
 
 // '0'..'9', digits are stored one after another in ASCII so a range check is enough
 static inline int isdigit(int c)  { return c >= '0' && c <= '9'; }
@@ -59,4 +59,4 @@ static inline int toupper(int c)  { return islower(c) ? c - 'a' + 'A' : c; }
 // upper case to lower case, anything else comes back unchanged
 static inline int tolower(int c)  { return isupper(c) ? c - 'A' + 'a' : c; }
 
-#endif /* REN_CTYPE_H */
+#endif /* AER_CTYPE_H */

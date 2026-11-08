@@ -1,7 +1,7 @@
 # The AerOS manual
 
 Welcome to AerOS, a small operating system written to be read and changed. This manual lives
-in `/docs/` on your computer and is shown by the reader app, `/bin/read.ren`.
+in `/docs/` on your computer and is shown by the reader app, `/bin/read.aer`.
 
 **Moving around:** the arrow keys and Page Up / Page Down scroll. **Tab** picks the next link
 (shown in blue), **Enter** opens it, and **Backspace** comes back. **Q** leaves the reader.
@@ -14,7 +14,7 @@ in `/docs/` on your computer and is shown by the reader app, `/bin/read.ren`.
 
 ## Making things
 
-- [RenLang](renlang.md): the built-in programming language
+- [AerLang](aerlang.md): the built-in programming language
 - [The editor](editor.md): writing files and programs with EDIT
 - [The reader](reader.md): this app, and the Markdown and HTML it understands
 
@@ -30,7 +30,7 @@ The reader opens any Markdown (`.md`), HTML (`.htm`) or text file:
 
 ```
 read notes.md
-read /bin/hello.ren
+read /bin/hello.aer
 read /docs/sample.htm
 ```
 

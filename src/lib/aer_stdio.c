@@ -1,5 +1,5 @@
 /*
-    ren_stdio.c
+    aer_stdio.c
     Formatted output (freestanding replacement for the output half of <stdio.h>).
     Every printf style function feeds the same formatting engine, only the place
     the characters end up (console or buffer) differs.
@@ -20,7 +20,7 @@
     output function.
 
     The format string grammar (flags, width, precision, length, conversion) is
-    described in ren_stdio.h.
+    described in aer_stdio.h.
 
     Printing 64 bit numbers on a 32 bit CPU needs a trick, see divmod64 below.
 
@@ -29,11 +29,11 @@
         https://wiki.osdev.org/Printing_To_Screen
         https://wiki.osdev.org/Libgcc
 */
-#include "ren_stdio.h"
+#include "aer_stdio.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "ren_ctype.h"
-#include "ren_string.h"
+#include "aer_ctype.h"
+#include "aer_string.h"
 #include "../drivers/video/VGA_linear.h"
 
 // an "output function": vformat calls it once for every character it produces

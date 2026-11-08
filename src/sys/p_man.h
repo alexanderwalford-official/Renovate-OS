@@ -7,9 +7,9 @@
     p_man.h - the AerOS process manager
 
     A "process" in AerOS is not a separate program with its own memory and registers
-    like on Linux or Windows. It is a line of RenLang code (e.g. "splash_screen", "terminal",
+    like on Linux or Windows. It is a line of AerLang code (e.g. "splash_screen", "terminal",
     "s:hello") sitting in a slot on the process stack, waiting to be handed to the compiler
-    (lib/ren_comp.c), which runs it. Everything is single threaded and cooperative: a process
+    (lib/aer_comp.c), which runs it. Everything is single threaded and cooperative: a process
     runs from start to finish before the next one gets a go, and there is no timer driven
     switching between processes yet.
 
@@ -54,7 +54,7 @@ typedef struct process {
     unsigned int p_et; // process execution time (ms), 10ms per character of code, 0 once it has run
     signed int p_rs; // process runstate, see P_DEAD / P_LIVE / P_FROZEN / P_RUNNING
     unsigned int p_t; // process ticket - when it will be executed, defined by the process stack (0 = none)
-    char p_inst[P_INST_MAX]; // process instructions (the RenLang code handed to compile())
+    char p_inst[P_INST_MAX]; // process instructions (the AerLang code handed to compile())
     bool p_used; // this slot of the process stack holds a process
 } process_t;
 

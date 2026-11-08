@@ -1,19 +1,22 @@
-# RenLang
+# AerLang
 
-RenLang is the programming language built into AerOS. A program is a text file ending in
-`.ren`. Every app in `/bin/`, including this reader, is a RenLang program you can open with
+AerLang is the programming language built into AerOS. A program is a text file ending in
+`.aer`. Every app in `/bin/`, including this reader, is an AerLang program you can open with
 `read` and change with `edit`.
 
 ## Running programs
 
 | Type | To |
 | --- | --- |
-| `hello` | run `hello.ren` from here, or from `/bin/` |
-| `hello.ren a b` | the same, with `args` set to `["a", "b"]` |
-| `ren` | the prompt: type code and see the result, `exit` to leave |
-| `edit app.ren` then Ctrl+R | write a program and run it |
+| `hello` | run `hello.aer` from here, or from `/bin/` |
+| `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
+| `aer` | the prompt: type code and see the result, `exit` to leave |
+| `edit app.aer` then Ctrl+R | write a program and run it |
 
 **Ctrl+C** stops a program that is stuck.
+
+Programs from before AerLang got its name end in `.ren`. They still run if you type the
+extension too: `old.ren`.
 
 ## The language
 
@@ -118,7 +121,7 @@ key()
 
 | File | Shows |
 | --- | --- |
-| `/bin/hello.ren` | input, functions, lists, loops |
-| `/bin/guess.ren` | random numbers and a game loop |
-| `/bin/viewer.ren` | graphics, pictures and a menu |
-| `/bin/read.ren` | this reader: text handling, a whole app |
+| `/bin/hello.aer` | input, functions, lists, loops |
+| `/bin/guess.aer` | random numbers and a game loop |
+| `/bin/viewer.aer` | graphics, pictures and a menu |
+| `/bin/read.aer` | this reader: text handling, a whole app |

@@ -1,5 +1,5 @@
 /*
-    ren_stdio.h
+    aer_stdio.h
     Formatted output (freestanding replacement for the output half of <stdio.h>).
 
     printf / putchar write to the console (scrolling terminal at the cursor position).
@@ -40,8 +40,8 @@
         https://en.cppreference.com/w/c/io/fprintf
         https://wiki.osdev.org/Printing_To_Screen
 */
-#ifndef REN_STDIO_H
-#define REN_STDIO_H
+#ifndef AER_STDIO_H
+#define AER_STDIO_H
 
 #include <stdarg.h>
 #include <stddef.h>
@@ -77,4 +77,4 @@ int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap);
 // print one character to the console and move the cursor, returns the character (as 0..255)
 int putchar(int c);
 
-#endif /* REN_STDIO_H */
+#endif /* AER_STDIO_H */

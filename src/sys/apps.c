@@ -25,10 +25,10 @@
 #define FILE_ENTRY(dir, name, symbol, refresh) \
     { dir, name, _binary_##symbol##_start, _binary_##symbol##_end, refresh }
 
-EMBEDDED(apps_hello_ren)
-EMBEDDED(apps_guess_ren)
-EMBEDDED(apps_viewer_ren)
-EMBEDDED(apps_read_ren)
+EMBEDDED(apps_hello_aer)
+EMBEDDED(apps_guess_aer)
+EMBEDDED(apps_viewer_aer)
+EMBEDDED(apps_read_aer)
 EMBEDDED(apps_aeros_bmp)
 EMBEDDED(apps_colours_bmp)
 EMBEDDED(apps_startup_wav)
@@ -37,7 +37,7 @@ EMBEDDED(docs_start_md)
 EMBEDDED(docs_commands_md)
 EMBEDDED(docs_files_md)
 EMBEDDED(docs_editor_md)
-EMBEDDED(docs_renlang_md)
+EMBEDDED(docs_aerlang_md)
 EMBEDDED(docs_reader_md)
 EMBEDDED(docs_security_md)
 EMBEDDED(docs_sound_md)
@@ -51,10 +51,10 @@ static const struct {
     const char* end;
     bool refresh; // replace the copy on the disk when it differs from the built-in one
 } files[] = {
-    FILE_ENTRY("/bin/", "hello.ren", apps_hello_ren, false),
-    FILE_ENTRY("/bin/", "guess.ren", apps_guess_ren, false),
-    FILE_ENTRY("/bin/", "viewer.ren", apps_viewer_ren, false),
-    FILE_ENTRY("/bin/", "read.ren", apps_read_ren, false),
+    FILE_ENTRY("/bin/", "hello.aer", apps_hello_aer, false),
+    FILE_ENTRY("/bin/", "guess.aer", apps_guess_aer, false),
+    FILE_ENTRY("/bin/", "viewer.aer", apps_viewer_aer, false),
+    FILE_ENTRY("/bin/", "read.aer", apps_read_aer, false),
     FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),
     FILE_ENTRY("/bin/", "colours.bmp", apps_colours_bmp, false),
     FILE_ENTRY("/sys/", "startup.wav", apps_startup_wav, false),
@@ -63,7 +63,7 @@ static const struct {
     FILE_ENTRY("/docs/", "commands.md", docs_commands_md, true),
     FILE_ENTRY("/docs/", "files.md", docs_files_md, true),
     FILE_ENTRY("/docs/", "editor.md", docs_editor_md, true),
-    FILE_ENTRY("/docs/", "renlang.md", docs_renlang_md, true),
+    FILE_ENTRY("/docs/", "aerlang.md", docs_aerlang_md, true),
     FILE_ENTRY("/docs/", "reader.md", docs_reader_md, true),
     FILE_ENTRY("/docs/", "security.md", docs_security_md, true),
     FILE_ENTRY("/docs/", "sound.md", docs_sound_md, true),

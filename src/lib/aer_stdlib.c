@@ -1,5 +1,5 @@
 /*
-    ren_stdlib.c
+    aer_stdlib.c
     General utilities (freestanding replacement for <stdlib.h>):
     number conversion, random numbers, sorting and a kernel heap (malloc / free).
 
@@ -14,7 +14,7 @@
     - We never use 64 bit division here. On 32 bit x86, dividing a 64 bit number makes GCC
       call helper functions (__udivdi3 and friends) that live in libgcc, and we don't link
       libgcc. Everything in this file sticks to 32 bit maths (long is 32 bits on i386).
-      ren_stdio.c shows how printf gets around this for 64 bit numbers.
+      aer_stdio.c shows how printf gets around this for 64 bit numbers.
     - Nothing here is protected against being interrupted half way through. That's fine
       while only normal kernel code calls these, but an interrupt handler must not call
       malloc / free / rand while the main code might be in the middle of one.
@@ -24,11 +24,11 @@
         https://wiki.osdev.org/Memory_Allocation
         https://wiki.osdev.org/Libgcc
 */
-#include "ren_stdlib.h"
+#include "aer_stdlib.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "ren_ctype.h"
-#include "ren_string.h"
+#include "aer_ctype.h"
+#include "aer_string.h"
 
 // ---------------------------------------------------------------------------------------
 // integers

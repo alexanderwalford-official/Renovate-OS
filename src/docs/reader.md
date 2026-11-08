@@ -56,7 +56,7 @@ know are left out. Open the [HTML sample](sample.htm) to see it.
 
 ## How it works
 
-The reader is a RenLang program, `/bin/read.ren`, about 1200 lines with comments. It works in
+The reader is an AerLang program, `/bin/read.aer`, about 1200 lines with comments. It works in
 three steps:
 
 ```
@@ -68,5 +68,5 @@ file --parse--> blocks --layout--> screen lines --view--> what you see
 2. **layout**: the blocks are word wrapped into lines of coloured pieces of text.
 3. **view**: the lines are drawn a screen at a time, and the keys move around them.
 
-Because it is a normal RenLang program, you can change it: `edit /bin/read.ren`. The
+Because it is a normal AerLang program, you can change it: `edit /bin/read.aer`. The
 colours are at the top of the file.

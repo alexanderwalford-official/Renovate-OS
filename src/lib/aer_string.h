@@ -1,5 +1,5 @@
 /*
-    ren_string.h
+    aer_string.h
     String and memory functions (freestanding replacement for <string.h>).
 
     NOTE: GCC may emit calls to memcpy / memset / memmove / memcmp by itself (for example
@@ -32,8 +32,8 @@
         https://wiki.osdev.org/C_Library
         https://en.cppreference.com/w/c/string/byte
 */
-#ifndef REN_STRING_H
-#define REN_STRING_H
+#ifndef AER_STRING_H
+#define AER_STRING_H
 
 #include <stddef.h>
 
@@ -113,4 +113,4 @@ char* strupr(char* s);
 // make every letter in s lower case, returns s
 char* strlwr(char* s);
 
-#endif /* REN_STRING_H */
+#endif /* AER_STRING_H */

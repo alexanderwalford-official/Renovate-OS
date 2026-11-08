@@ -1,25 +1,25 @@
 /*
-    ren_builtins.c
-    The functions every RenLang program can call: printing and input, strings, lists, byte
+    aer_builtins.c
+    The functions every AerLang program can call: printing and input, strings, lists, byte
     buffers, files, encrypted files, sound, graphics and a few system services.
 
     Each one gets its arguments as an array of values, which it must not release (the caller
     still owns them), and hands back a new value that the caller will own. A wrong argument is
-    reported with ren_error(), which never returns, so the code after a check can trust it.
+    reported with aer_error(), which never returns, so the code after a check can trust it.
 
     Adding a builtin:
       1. write  static value_t bi_<name> (int argc, value_t* argv, int line)  in the right section,
          using int_arg / str_arg / list_arg / file_arg to check and unpack the arguments
-      2. add a line to ren_builtins[] at the bottom: { "name", bi_<name>, fewest args, most args }
+      2. add a line to aer_builtins[] at the bottom: { "name", bi_<name>, fewest args, most args }
          (the interpreter checks the argument count before calling it)
-      3. add it to docs/RENLANG.md
+      3. add it to docs/AERLANG.md
 */
 
-#include "ren_internal.h"
-#include "../lib/ren_string.h"
-#include "../lib/ren_stdlib.h"
-#include "../lib/ren_stdio.h"
-#include "../lib/ren_ctype.h"
+#include "aer_internal.h"
+#include "../lib/aer_string.h"
+#include "../lib/aer_stdlib.h"
+#include "../lib/aer_stdio.h"
+#include "../lib/aer_ctype.h"
 #include "../drivers/video/VGA_linear.h"
 #include "../drivers/video/gfx.h"
 #include "../drivers/input/IO.h"
@@ -34,28 +34,28 @@
 
 static int32_t int_arg (value_t* argv, int i, int line, const char* fn) {
     if (argv[i].type != V_INT) {
-        ren_error(line, "%s() needs a number for argument %d, not a %s", fn, i + 1, ren_type_name(argv[i]));
+        aer_error(line, "%s() needs a number for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
     }
     return argv[i].as.i;
 }
 
-static ren_object_t* str_arg (value_t* argv, int i, int line, const char* fn) {
+static aer_object_t* str_arg (value_t* argv, int i, int line, const char* fn) {
     if (argv[i].type != V_STR) {
-        ren_error(line, "%s() needs a string for argument %d, not a %s", fn, i + 1, ren_type_name(argv[i]));
+        aer_error(line, "%s() needs a string for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
     }
     return argv[i].as.obj;
 }
 
-static ren_object_t* list_arg (value_t* argv, int i, int line, const char* fn) {
+static aer_object_t* list_arg (value_t* argv, int i, int line, const char* fn) {
     if (argv[i].type != V_LIST) {
-        ren_error(line, "%s() needs a list for argument %d, not a %s", fn, i + 1, ren_type_name(argv[i]));
+        aer_error(line, "%s() needs a list for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
     }
     return argv[i].as.obj;
 }
 
 // split a path typed by a program into directory and file name
 static bool file_arg (value_t* argv, int i, int line, const char* fn, char* dir, char* name) {
-    ren_object_t* path = str_arg(argv, i, line, fn);
+    aer_object_t* path = str_arg(argv, i, line, fn);
     return fs_split_path(path->data.chars, dir, FS_PATH_MAX, name, FS_NAME_MAX);
 }
 
@@ -64,7 +64,7 @@ static bool file_arg (value_t* argv, int i, int line, const char* fn, char* dir,
 static void print_values (int argc, value_t* argv) {
     for (int i = 0; i < argc; i++) {
         if (i > 0) console_putchar_raw(' ');
-        ren_print_value(argv[i]);
+        aer_print_value(argv[i]);
     }
 }
 
@@ -72,31 +72,31 @@ static value_t bi_print (int argc, value_t* argv, int line) {
     (void)line;
     print_values(argc, argv);
     console_putchar('\n');
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_write (int argc, value_t* argv, int line) {
     (void)line;
     print_values(argc, argv);
     console_update_cursor();
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_input (int argc, value_t* argv, int line) {
     char buffer[256];
-    if (argc > 0) ren_print_value(argv[0]);
+    if (argc > 0) aer_print_value(argv[0]);
     (void)line;
     GetString(buffer, sizeof(buffer));
-    return ren_string(buffer, (uint32_t)strlen(buffer));
+    return aer_string(buffer, (uint32_t)strlen(buffer));
 }
 
 // like input(), but shows * for each character (for passwords)
 static value_t bi_input_secret (int argc, value_t* argv, int line) {
     char buffer[256];
-    if (argc > 0) ren_print_value(argv[0]);
+    if (argc > 0) aer_print_value(argv[0]);
     (void)line;
     GetSecret(buffer, sizeof(buffer));
-    value_t s = ren_string(buffer, (uint32_t)strlen(buffer));
+    value_t s = aer_string(buffer, (uint32_t)strlen(buffer));
     crypto_wipe(buffer, sizeof(buffer));
     return s;
 }
@@ -104,30 +104,30 @@ static value_t bi_input_secret (int argc, value_t* argv, int line) {
 static value_t bi_cls (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
     console_clear();
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_color (int argc, value_t* argv, int line) {
     int32_t fg = int_arg(argv, 0, line, "color");
     int32_t bg = argc > 1 ? int_arg(argv, 1, line, "color") : (int32_t)console_bg;
     console_set_color((enum color)(fg & 15), (enum color)(bg & 15));
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_at (int argc, value_t* argv, int line) {
     (void)argc;
     console_set_cursor((uint8_t)int_arg(argv, 0, line, "at"), (uint8_t)int_arg(argv, 1, line, "at"));
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_key (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return ren_int(GetChar());
+    return aer_int(GetChar());
 }
 
 static value_t bi_haskey (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return ren_bool(kb_haschar());
+    return aer_bool(kb_haschar());
 }
 
 // strings and conversions
@@ -135,68 +135,68 @@ static value_t bi_haskey (int argc, value_t* argv, int line) {
 static value_t bi_len (int argc, value_t* argv, int line) {
     (void)argc;
     if (argv[0].type != V_STR && argv[0].type != V_LIST && argv[0].type != V_BYTES) {
-        ren_error(line, "len() needs a string, list or bytes, not a %s", ren_type_name(argv[0]));
+        aer_error(line, "len() needs a string, list or bytes, not a %s", aer_type_name(argv[0]));
     }
-    return ren_int((int32_t)argv[0].as.obj->length);
+    return aer_int((int32_t)argv[0].as.obj->length);
 }
 
 static value_t bi_str (int argc, value_t* argv, int line) {
     (void)argc; (void)line;
-    return ren_to_string(argv[0]);
+    return aer_to_string(argv[0]);
 }
 
 static value_t bi_int (int argc, value_t* argv, int line) {
     (void)argc; (void)line;
     switch (argv[0].type) {
         case V_INT: return argv[0];
-        case V_BOOL: return ren_int(argv[0].as.i);
+        case V_BOOL: return aer_int(argv[0].as.i);
         case V_STR: {
             char* end;
             const char* text = argv[0].as.obj->data.chars;
             long value = strtol(text, &end, 0);
             while (isspace((unsigned char)*end)) end++;
-            if (end == text || *end != '\0') return ren_nil(); // not a number
-            return ren_int((int32_t)value);
+            if (end == text || *end != '\0') return aer_nil(); // not a number
+            return aer_int((int32_t)value);
         }
-        default: return ren_nil();
+        default: return aer_nil();
     }
 }
 
 static value_t bi_chr (int argc, value_t* argv, int line) {
     (void)argc;
     char c = (char)int_arg(argv, 0, line, "chr");
-    return ren_string(&c, 1);
+    return aer_string(&c, 1);
 }
 
 static value_t bi_ord (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* s = str_arg(argv, 0, line, "ord");
-    if (s->length == 0) ren_error(line, "ord() needs a string with at least one character");
-    return ren_int((uint8_t)s->data.chars[0]);
+    aer_object_t* s = str_arg(argv, 0, line, "ord");
+    if (s->length == 0) aer_error(line, "ord() needs a string with at least one character");
+    return aer_int((uint8_t)s->data.chars[0]);
 }
 
 static value_t bi_sub (int argc, value_t* argv, int line) {
-    ren_object_t* s = str_arg(argv, 0, line, "sub");
+    aer_object_t* s = str_arg(argv, 0, line, "sub");
     int32_t start = int_arg(argv, 1, line, "sub");
     int32_t count = argc > 2 ? int_arg(argv, 2, line, "sub") : (int32_t)s->length;
     if (start < 0) start = 0;
     if ((uint32_t)start > s->length) start = (int32_t)s->length;
     if (count < 0) count = 0;
     if ((uint32_t)count > s->length - (uint32_t)start) count = (int32_t)(s->length - (uint32_t)start);
-    return ren_string(s->data.chars + start, (uint32_t)count);
+    return aer_string(s->data.chars + start, (uint32_t)count);
 }
 
 static value_t bi_find (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* s = str_arg(argv, 0, line, "find");
-    ren_object_t* needle = str_arg(argv, 1, line, "find");
+    aer_object_t* s = str_arg(argv, 0, line, "find");
+    aer_object_t* needle = str_arg(argv, 1, line, "find");
     char* found = strstr(s->data.chars, needle->data.chars);
-    return ren_int(found ? (int32_t)(found - s->data.chars) : -1);
+    return aer_int(found ? (int32_t)(found - s->data.chars) : -1);
 }
 
 static value_t change_case (value_t* argv, int line, const char* fn, bool upper) {
-    ren_object_t* s = str_arg(argv, 0, line, fn);
-    value_t result = ren_string(s->data.chars, s->length);
+    aer_object_t* s = str_arg(argv, 0, line, fn);
+    value_t result = aer_string(s->data.chars, s->length);
     for (uint32_t i = 0; i < s->length; i++) {
         char* c = &result.as.obj->data.chars[i];
         *c = (char)(upper ? toupper((unsigned char)*c) : tolower((unsigned char)*c));
@@ -216,12 +216,12 @@ static value_t bi_lower (int argc, value_t* argv, int line) {
 
 // split("a,b,c", ",") is ["a", "b", "c"], without a separator it splits on spaces
 static value_t bi_split (int argc, value_t* argv, int line) {
-    ren_object_t* s = str_arg(argv, 0, line, "split");
+    aer_object_t* s = str_arg(argv, 0, line, "split");
     const char* sep = argc > 1 ? str_arg(argv, 1, line, "split")->data.chars : 0;
     size_t sep_length = sep ? strlen(sep) : 0;
-    if (sep && sep_length == 0) ren_error(line, "split() needs a separator that isn't empty");
+    if (sep && sep_length == 0) aer_error(line, "split() needs a separator that isn't empty");
 
-    value_t list = ren_list(4);
+    value_t list = aer_list(4);
     const char* p = s->data.chars;
     const char* end = p + s->length;
     if (!sep) {
@@ -229,35 +229,35 @@ static value_t bi_split (int argc, value_t* argv, int line) {
             while (p < end && *p == ' ') p++;
             const char* start = p;
             while (p < end && *p != ' ') p++;
-            if (p > start) ren_list_push(list.as.obj, ren_string(start, (uint32_t)(p - start)));
+            if (p > start) aer_list_push(list.as.obj, aer_string(start, (uint32_t)(p - start)));
         }
         return list;
     }
     for (;;) {
         const char* hit = strstr(p, sep);
         if (hit == 0) {
-            ren_list_push(list.as.obj, ren_string(p, (uint32_t)(end - p)));
+            aer_list_push(list.as.obj, aer_string(p, (uint32_t)(end - p)));
             return list;
         }
-        ren_list_push(list.as.obj, ren_string(p, (uint32_t)(hit - p)));
+        aer_list_push(list.as.obj, aer_string(p, (uint32_t)(hit - p)));
         p = hit + sep_length;
     }
 }
 
 static value_t bi_join (int argc, value_t* argv, int line) {
-    ren_object_t* list = list_arg(argv, 0, line, "join");
+    aer_object_t* list = list_arg(argv, 0, line, "join");
     const char* sep = argc > 1 ? str_arg(argv, 1, line, "join")->data.chars : "";
     uint32_t sep_length = (uint32_t)strlen(sep);
 
     // turn every item into a string first, so the total length is known
-    value_t* pieces = ren_alloc((list->length ? list->length : 1) * sizeof(value_t));
+    value_t* pieces = aer_alloc((list->length ? list->length : 1) * sizeof(value_t));
     uint32_t total = 0;
     for (uint32_t i = 0; i < list->length; i++) {
-        pieces[i] = ren_to_string(list->data.items[i]);
+        pieces[i] = aer_to_string(list->data.items[i]);
         total += pieces[i].as.obj->length + (i > 0 ? sep_length : 0);
     }
-    value_t result = ren_string("", 0);
-    result.as.obj->data.chars = ren_realloc(result.as.obj->data.chars, total + 1);
+    value_t result = aer_string("", 0);
+    result.as.obj->data.chars = aer_realloc(result.as.obj->data.chars, total + 1);
     char* out = result.as.obj->data.chars;
     for (uint32_t i = 0; i < list->length; i++) {
         if (i > 0) {
@@ -266,11 +266,11 @@ static value_t bi_join (int argc, value_t* argv, int line) {
         }
         memcpy(out, pieces[i].as.obj->data.chars, pieces[i].as.obj->length);
         out += pieces[i].as.obj->length;
-        ren_release(pieces[i]);
+        aer_release(pieces[i]);
     }
     *out = '\0';
     result.as.obj->length = total;
-    ren_free(pieces);
+    aer_free(pieces);
     return result;
 }
 
@@ -278,48 +278,48 @@ static value_t bi_join (int argc, value_t* argv, int line) {
 
 static value_t bi_list (int argc, value_t* argv, int line) {
     int32_t count = int_arg(argv, 0, line, "list");
-    if (count < 0 || count > 1000000) ren_error(line, "list() size must be 0 to 1000000");
-    value_t fill = argc > 1 ? argv[1] : ren_nil();
-    value_t list = ren_list((uint32_t)count);
+    if (count < 0 || count > 1000000) aer_error(line, "list() size must be 0 to 1000000");
+    value_t fill = argc > 1 ? argv[1] : aer_nil();
+    value_t list = aer_list((uint32_t)count);
     for (int32_t i = 0; i < count; i++) {
-        ren_retain(fill);
-        ren_list_push(list.as.obj, fill);
+        aer_retain(fill);
+        aer_list_push(list.as.obj, fill);
     }
     return list;
 }
 
 static value_t bi_push (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* list = list_arg(argv, 0, line, "push");
-    ren_retain(argv[1]);
-    ren_list_push(list, argv[1]);
-    return ren_nil();
+    aer_object_t* list = list_arg(argv, 0, line, "push");
+    aer_retain(argv[1]);
+    aer_list_push(list, argv[1]);
+    return aer_nil();
 }
 
 static value_t bi_pop (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* list = list_arg(argv, 0, line, "pop");
-    if (list->length == 0) return ren_nil();
+    aer_object_t* list = list_arg(argv, 0, line, "pop");
+    if (list->length == 0) return aer_nil();
     return list->data.items[--list->length]; // the list's reference passes to the caller
 }
 
 static value_t bi_insert (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* list = list_arg(argv, 0, line, "insert");
+    aer_object_t* list = list_arg(argv, 0, line, "insert");
     int32_t at = int_arg(argv, 1, line, "insert");
-    if (at < 0 || (uint32_t)at > list->length) ren_error(line, "insert() position %d is out of range", at);
-    ren_retain(argv[2]);
-    ren_list_push(list, ren_nil()); // make room
+    if (at < 0 || (uint32_t)at > list->length) aer_error(line, "insert() position %d is out of range", at);
+    aer_retain(argv[2]);
+    aer_list_push(list, aer_nil()); // make room
     memmove(&list->data.items[at + 1], &list->data.items[at], (list->length - 1 - (uint32_t)at) * sizeof(value_t));
     list->data.items[at] = argv[2];
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_remove (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* list = list_arg(argv, 0, line, "remove");
+    aer_object_t* list = list_arg(argv, 0, line, "remove");
     int32_t at = int_arg(argv, 1, line, "remove");
-    if (at < 0 || (uint32_t)at >= list->length) ren_error(line, "remove() position %d is out of range", at);
+    if (at < 0 || (uint32_t)at >= list->length) aer_error(line, "remove() position %d is out of range", at);
     value_t item = list->data.items[at];
     memmove(&list->data.items[at], &list->data.items[at + 1], (list->length - 1 - (uint32_t)at) * sizeof(value_t));
     list->length--;
@@ -329,8 +329,8 @@ static value_t bi_remove (int argc, value_t* argv, int line) {
 static value_t bi_bytes (int argc, value_t* argv, int line) {
     (void)argc;
     int32_t length = int_arg(argv, 0, line, "bytes");
-    if (length < 0 || length > 64 * 1024 * 1024) ren_error(line, "bytes() size must be 0 to 64MB");
-    return ren_bytes((uint32_t)length);
+    if (length < 0 || length > 64 * 1024 * 1024) aer_error(line, "bytes() size must be 0 to 64MB");
+    return aer_bytes((uint32_t)length);
 }
 
 // files
@@ -338,10 +338,10 @@ static value_t bi_bytes (int argc, value_t* argv, int line) {
 static value_t bi_read_file (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
-    if (!file_arg(argv, 0, line, "read_file", dir, name)) return ren_nil();
+    if (!file_arg(argv, 0, line, "read_file", dir, name)) return aer_nil();
     char* text = fs_read_f(dir, name);
-    if (text == 0) return ren_nil();
-    value_t s = ren_string(text, (uint32_t)strlen(text));
+    if (text == 0) return aer_nil();
+    value_t s = aer_string(text, (uint32_t)strlen(text));
     free(text);
     return s;
 }
@@ -350,10 +350,10 @@ static value_t bi_read_bytes (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
     (void)argc;
-    if (!file_arg(argv, 0, line, "read_bytes", dir, name)) return ren_nil();
+    if (!file_arg(argv, 0, line, "read_bytes", dir, name)) return aer_nil();
     char* data = fs_read_bytes(dir, name, &size);
-    if (data == 0) return ren_nil();
-    value_t b = ren_bytes(size);
+    if (data == 0) return aer_nil();
+    value_t b = aer_bytes(size);
     memcpy(b.as.obj->data.bytes, data, size);
     free(data);
     return b;
@@ -361,16 +361,16 @@ static value_t bi_read_bytes (int argc, value_t* argv, int line) {
 
 static value_t save_file (value_t* argv, int line, const char* fn, bool append) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
-    if (!file_arg(argv, 0, line, fn, dir, name)) return ren_bool(false);
-    value_t text = ren_to_string(argv[1]);
+    if (!file_arg(argv, 0, line, fn, dir, name)) return aer_bool(false);
+    value_t text = aer_to_string(argv[1]);
     int result;
     if (fs_file_exists(dir, name)) {
         result = fs_write_f(dir, name, text.as.obj->data.chars, append);
     } else {
         result = fs_create_f(dir, name, text.as.obj->data.chars);
     }
-    ren_release(text);
-    return ren_bool(result >= 0);
+    aer_release(text);
+    return aer_bool(result >= 0);
 }
 
 static value_t bi_write_file (int argc, value_t* argv, int line) {
@@ -386,15 +386,15 @@ static value_t bi_append_file (int argc, value_t* argv, int line) {
 static value_t bi_file_exists (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
-    if (!file_arg(argv, 0, line, "file_exists", dir, name)) return ren_bool(false);
-    return ren_bool(fs_file_exists(dir, name));
+    if (!file_arg(argv, 0, line, "file_exists", dir, name)) return aer_bool(false);
+    return aer_bool(fs_file_exists(dir, name));
 }
 
 static value_t bi_delete_file (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
-    if (!file_arg(argv, 0, line, "delete_file", dir, name)) return ren_bool(false);
-    return ren_bool(fs_delete_f(dir, name) == FS_OK);
+    if (!file_arg(argv, 0, line, "delete_file", dir, name)) return aer_bool(false);
+    return aer_bool(fs_delete_f(dir, name) == FS_OK);
 }
 
 // add one directory entry to the list, directories get a '/' on the end
@@ -403,21 +403,21 @@ static void list_one (const char* name, bool is_dir, uint32_t size, void* ctx) {
     char entry[FS_NAME_MAX + 2];
     strlcpy(entry, name, sizeof(entry));
     if (is_dir) strlcat(entry, "/", sizeof(entry));
-    ren_list_push((ren_object_t*)ctx, ren_string(entry, (uint32_t)strlen(entry)));
+    aer_list_push((aer_object_t*)ctx, aer_string(entry, (uint32_t)strlen(entry)));
 }
 
 // the current directory, e.g. "/bin/"
 static value_t bi_cwd (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return ren_string(cd, (uint32_t)strlen(cd));
+    return aer_string(cd, (uint32_t)strlen(cd));
 }
 
 static value_t bi_list_files (int argc, value_t* argv, int line) {
     const char* dir = argc > 0 ? str_arg(argv, 0, line, "list_files")->data.chars : ".";
-    value_t list = ren_list(8);
+    value_t list = aer_list(8);
     if (fs_list(dir, list_one, list.as.obj) < 0) {
-        ren_release(list);
-        return ren_nil();
+        aer_release(list);
+        return aer_nil();
     }
     return list;
 }
@@ -428,19 +428,19 @@ static value_t bi_encrypt_file (int argc, value_t* argv, int line) {
     (void)argc;
     const char* path = str_arg(argv, 0, line, "encrypt_file")->data.chars;
     const char* password = str_arg(argv, 1, line, "encrypt_file")->data.chars;
-    return ren_bool(fcrypt_encrypt_file(path, password) == FCRYPT_OK);
+    return aer_bool(fcrypt_encrypt_file(path, password) == FCRYPT_OK);
 }
 
 static value_t bi_decrypt_file (int argc, value_t* argv, int line) {
     (void)argc;
     const char* path = str_arg(argv, 0, line, "decrypt_file")->data.chars;
     const char* password = str_arg(argv, 1, line, "decrypt_file")->data.chars;
-    return ren_bool(fcrypt_decrypt_file(path, password) == FCRYPT_OK);
+    return aer_bool(fcrypt_decrypt_file(path, password) == FCRYPT_OK);
 }
 
 static value_t bi_is_encrypted (int argc, value_t* argv, int line) {
     (void)argc;
-    return ren_bool(fcrypt_file_is_encrypted(str_arg(argv, 0, line, "is_encrypted")->data.chars));
+    return aer_bool(fcrypt_file_is_encrypted(str_arg(argv, 0, line, "is_encrypted")->data.chars));
 }
 
 // the contents of an encrypted file as a string, without changing the file (nil if it can't be read)
@@ -450,8 +450,8 @@ static value_t bi_read_encrypted (int argc, value_t* argv, int line) {
     const char* password = str_arg(argv, 1, line, "read_encrypted")->data.chars;
     uint8_t* contents;
     uint32_t length;
-    if (fcrypt_read_file(path, password, &contents, &length) != FCRYPT_OK) return ren_nil();
-    value_t s = ren_string((const char*)contents, length);
+    if (fcrypt_read_file(path, password, &contents, &length) != FCRYPT_OK) return aer_nil();
+    value_t s = aer_string((const char*)contents, length);
     crypto_wipe(contents, length);
     free(contents);
     return s;
@@ -467,8 +467,8 @@ static value_t bi_sleep (int argc, value_t* argv, int line) {
         sleep_ms(ms > 20 ? 20 : (uint32_t)ms);
         ms -= 20;
     }
-    if (ms > 0) ren_error(line, "stopped (Ctrl+C)");
-    return ren_nil();
+    if (ms > 0) aer_error(line, "stopped (Ctrl+C)");
+    return aer_nil();
 }
 
 // play() stops on Ctrl+C, and then the program stops too (like sleep)
@@ -484,60 +484,60 @@ static value_t bi_play (int argc, value_t* argv, int line) {
     (void)argc;
     play_interrupted = false;
     int result = sound_play_file(str_arg(argv, 0, line, "play")->data.chars, play_should_stop);
-    if (play_interrupted) ren_error(line, "stopped (Ctrl+C)");
-    return ren_bool(result == SOUND_OK);
+    if (play_interrupted) aer_error(line, "stopped (Ctrl+C)");
+    return aer_bool(result == SOUND_OK);
 }
 
 static value_t bi_time (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return ren_int((int32_t)clck_uptime_ms());
+    return aer_int((int32_t)clck_uptime_ms());
 }
 
 static value_t bi_random (int argc, value_t* argv, int line) {
     (void)argc;
     int32_t range = int_arg(argv, 0, line, "random");
-    if (range <= 0) ren_error(line, "random() needs a number above 0");
-    return ren_int(rand() % range);
+    if (range <= 0) aer_error(line, "random() needs a number above 0");
+    return aer_int(rand() % range);
 }
 
 static value_t bi_beep (int argc, value_t* argv, int line) {
     beep(argc > 0 ? int_arg(argv, 0, line, "beep") : 0);
-    return ren_nil();
+    return aer_nil();
 }
 
 // graphics
 
 static void need_graphics (int line, const char* fn) {
-    if (!ren->graphics) ren_error(line, "%s() needs graphics, call gfx_open() first", fn);
+    if (!aer->graphics) aer_error(line, "%s() needs graphics, call gfx_open() first", fn);
 }
 
 static value_t bi_gfx_open (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    if (!ren->graphics) {
-        ren->graphics = gfx_begin();
+    if (!aer->graphics) {
+        aer->graphics = gfx_begin();
     }
-    return ren_bool(ren->graphics);
+    return aer_bool(aer->graphics);
 }
 
 static value_t bi_gfx_close (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    if (ren->graphics) {
+    if (aer->graphics) {
         gfx_end();
-        ren->graphics = false;
+        aer->graphics = false;
     }
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_gfx_width (int argc, value_t* argv, int line) {
     (void)argc; (void)argv;
     need_graphics(line, "gfx_width");
-    return ren_int((int32_t)gfx_width());
+    return aer_int((int32_t)gfx_width());
 }
 
 static value_t bi_gfx_height (int argc, value_t* argv, int line) {
     (void)argc; (void)argv;
     need_graphics(line, "gfx_height");
-    return ren_int((int32_t)gfx_height());
+    return aer_int((int32_t)gfx_height());
 }
 
 static value_t bi_rgb (int argc, value_t* argv, int line) {
@@ -545,20 +545,20 @@ static value_t bi_rgb (int argc, value_t* argv, int line) {
     int32_t r = int_arg(argv, 0, line, "rgb") & 0xFF;
     int32_t g = int_arg(argv, 1, line, "rgb") & 0xFF;
     int32_t b = int_arg(argv, 2, line, "rgb") & 0xFF;
-    return ren_int((r << 16) | (g << 8) | b);
+    return aer_int((r << 16) | (g << 8) | b);
 }
 
 static value_t bi_gfx_clear (int argc, value_t* argv, int line) {
     need_graphics(line, "gfx_clear");
     gfx_clear(argc > 0 ? (uint32_t)int_arg(argv, 0, line, "gfx_clear") : 0);
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_pixel (int argc, value_t* argv, int line) {
     (void)argc;
     need_graphics(line, "pixel");
     gfx_pixel(int_arg(argv, 0, line, "pixel"), int_arg(argv, 1, line, "pixel"), (uint32_t)int_arg(argv, 2, line, "pixel"));
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_rect (int argc, value_t* argv, int line) {
@@ -566,7 +566,7 @@ static value_t bi_rect (int argc, value_t* argv, int line) {
     need_graphics(line, "rect");
     gfx_rect(int_arg(argv, 0, line, "rect"), int_arg(argv, 1, line, "rect"), int_arg(argv, 2, line, "rect"),
              int_arg(argv, 3, line, "rect"), (uint32_t)int_arg(argv, 4, line, "rect"));
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_line (int argc, value_t* argv, int line) {
@@ -574,43 +574,43 @@ static value_t bi_line (int argc, value_t* argv, int line) {
     need_graphics(line, "line");
     gfx_line(int_arg(argv, 0, line, "line"), int_arg(argv, 1, line, "line"), int_arg(argv, 2, line, "line"),
              int_arg(argv, 3, line, "line"), (uint32_t)int_arg(argv, 4, line, "line"));
-    return ren_nil();
+    return aer_nil();
 }
 
 static value_t bi_text (int argc, value_t* argv, int line) {
     need_graphics(line, "text");
-    value_t s = ren_to_string(argv[2]);
+    value_t s = aer_to_string(argv[2]);
     int scale = argc > 4 ? int_arg(argv, 4, line, "text") : 1;
     gfx_text(int_arg(argv, 0, line, "text"), int_arg(argv, 1, line, "text"), s.as.obj->data.chars,
              (uint32_t)int_arg(argv, 3, line, "text"), scale);
-    ren_release(s);
-    return ren_nil();
+    aer_release(s);
+    return aer_nil();
 }
 
-static ren_object_t* bytes_arg (value_t* argv, int i, int line, const char* fn) {
+static aer_object_t* bytes_arg (value_t* argv, int i, int line, const char* fn) {
     if (argv[i].type != V_BYTES) {
-        ren_error(line, "%s() needs bytes (from read_bytes) for argument %d, not a %s", fn, i + 1, ren_type_name(argv[i]));
+        aer_error(line, "%s() needs bytes (from read_bytes) for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
     }
     return argv[i].as.obj;
 }
 
 static value_t bi_image (int argc, value_t* argv, int line) {
     need_graphics(line, "image");
-    ren_object_t* data = bytes_arg(argv, 0, line, "image");
+    aer_object_t* data = bytes_arg(argv, 0, line, "image");
     int max_w = argc > 3 ? int_arg(argv, 3, line, "image") : 0;
     int max_h = argc > 4 ? int_arg(argv, 4, line, "image") : 0;
-    return ren_bool(gfx_image(data->data.bytes, data->length, int_arg(argv, 1, line, "image"),
+    return aer_bool(gfx_image(data->data.bytes, data->length, int_arg(argv, 1, line, "image"),
                               int_arg(argv, 2, line, "image"), max_w, max_h));
 }
 
 static value_t bi_image_size (int argc, value_t* argv, int line) {
     (void)argc;
-    ren_object_t* data = bytes_arg(argv, 0, line, "image_size");
+    aer_object_t* data = bytes_arg(argv, 0, line, "image_size");
     int w, h;
-    if (!gfx_image_size(data->data.bytes, data->length, &w, &h)) return ren_nil();
-    value_t size = ren_list(2);
-    ren_list_push(size.as.obj, ren_int(w));
-    ren_list_push(size.as.obj, ren_int(h));
+    if (!gfx_image_size(data->data.bytes, data->length, &w, &h)) return aer_nil();
+    value_t size = aer_list(2);
+    aer_list_push(size.as.obj, aer_int(w));
+    aer_list_push(size.as.obj, aer_int(h));
     return size;
 }
 
@@ -618,12 +618,12 @@ static value_t bi_exit (int argc, value_t* argv, int line) {
     (void)argc; (void)argv;
     // leaving by the error route, but quietly: there is nothing wrong
     (void)line;
-    longjmp(ren->error, 2);
+    longjmp(aer->error, 2);
 }
 
-const ren_builtin_t ren_builtins[] = {
-    { "print", bi_print, 0, REN_MAX_ARGS },
-    { "write", bi_write, 0, REN_MAX_ARGS },
+const aer_builtin_t aer_builtins[] = {
+    { "print", bi_print, 0, AER_MAX_ARGS },
+    { "write", bi_write, 0, AER_MAX_ARGS },
     { "input", bi_input, 0, 1 },
     { "input_secret", bi_input_secret, 0, 1 },
     { "cls", bi_cls, 0, 0 },
@@ -680,9 +680,9 @@ const ren_builtin_t ren_builtins[] = {
     { "image_size", bi_image_size, 1, 1 },
 };
 
-const int ren_builtin_count = sizeof(ren_builtins) / sizeof(ren_builtins[0]);
+const int aer_builtin_count = sizeof(aer_builtins) / sizeof(aer_builtins[0]);
 
-void ren_define_constants (void) {
+void aer_define_constants (void) {
     static const struct { const char* name; int32_t value; } constants[] = {
         { "KEY_UP", KEY_UP }, { "KEY_DOWN", KEY_DOWN }, { "KEY_LEFT", KEY_LEFT },
         { "KEY_RIGHT", KEY_RIGHT }, { "KEY_HOME", KEY_HOME }, { "KEY_END", KEY_END },
@@ -695,15 +695,15 @@ void ren_define_constants (void) {
         { "YELLOW", YELLOW }, { "WHITE", WHITE },
     };
     for (size_t i = 0; i < sizeof(constants) / sizeof(constants[0]); i++) {
-        ren_define_global(constants[i].name, ren_int(constants[i].value));
+        aer_define_global(constants[i].name, aer_int(constants[i].value));
     }
     srand(clck_uptime_ms()); // a different random() sequence every run
 }
 
 // a program that ends (or crashes) in graphics mode gets the terminal back automatically
-void ren_builtins_finish (void) {
-    if (ren->graphics) {
+void aer_builtins_finish (void) {
+    if (aer->graphics) {
         gfx_end();
-        ren->graphics = false;
+        aer->graphics = false;
     }
 }

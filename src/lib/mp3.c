@@ -6,7 +6,7 @@
 */
 
 #include "mp3.h"
-#include "ren_stdlib.h"
+#include "aer_stdlib.h"
 
 #define MINIMP3_IMPLEMENTATION
 #define MINIMP3_NO_SIMD // plain C only, SSE isn't turned on in AerOS

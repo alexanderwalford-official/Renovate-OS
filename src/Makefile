@@ -94,7 +94,7 @@ clean-disk:
 disk-ls: $(DISK)
 	mdir -i $(DISK) -/ ::
 
-# copy a file onto the disk, e.g. "make disk-put FILE=hello.ren" (DIR=/bin to put it in a folder)
+# copy a file onto the disk, e.g. "make disk-put FILE=hello.aer" (DIR=/bin to put it in a folder)
 disk-put: $(DISK)
 	mcopy -i $(DISK) -o '$(FILE)' ::$(DIR)/
 

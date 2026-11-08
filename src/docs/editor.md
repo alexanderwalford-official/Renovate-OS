@@ -4,7 +4,7 @@
 save.
 
 ```
- /bin/hello.ren *                                           Line 3, Col 7
+ /bin/hello.aer *                                           Line 3, Col 7
  let name = input("Name? ")
  print("Hello " + name)
  ~
@@ -18,7 +18,7 @@ The top bar shows the file (a `*` means there are unsaved changes) and where the
 | Key | Does |
 | --- | --- |
 | Ctrl+S | save |
-| Ctrl+R | save, then run the program (RenLang files only) |
+| Ctrl+R | save, then run the program (AerLang files only) |
 | Ctrl+Q | quit, press it twice to throw away unsaved changes |
 | arrows | move around |
 | Home / End | start / end of the line |
@@ -26,7 +26,7 @@ The top bar shows the file (a `*` means there are unsaved changes) and where the
 | Tab | spaces up to the next multiple of 4 |
 | Enter | new line, keeping the indentation of the one above |
 
-RenLang files (`.ren`) are coloured in: keywords, strings, numbers and comments each get
+AerLang files (`.aer`) are coloured in: keywords, strings, numbers and comments each get
 their own colour.
 
 Encrypted files can't be edited, because changing them would break their seal. `decrypt`

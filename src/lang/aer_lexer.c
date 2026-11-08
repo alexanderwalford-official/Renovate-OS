@@ -1,5 +1,5 @@
 /*
-    ren_lexer.c
+    aer_lexer.c
     Turns the source text into tokens: numbers, strings, names, keywords and symbols.
 
     For example the line
@@ -8,7 +8,7 @@
 
     becomes the tokens  T_LET  T_NAME "total"  T_ASSIGN  T_NAME "price"  T_STAR  T_NUMBER 2  T_NEWLINE
 
-    Lines matter in RenLang (a statement ends at the end of its line), so the lexer emits a
+    Lines matter in AerLang (a statement ends at the end of its line), so the lexer emits a
     T_NEWLINE token for each line break. Inside ( ) or [ ] they are skipped, which lets a long
     call or list carry on over several lines.
 
@@ -16,11 +16,11 @@
     is reported before anything runs. Each token remembers its line number for error messages.
 */
 
-#include "ren_internal.h"
-#include "../lib/ren_ctype.h"
-#include "../lib/ren_string.h"
+#include "aer_internal.h"
+#include "../lib/aer_ctype.h"
+#include "../lib/aer_string.h"
 
-// the words that mean something to RenLang, and so can't be used as variable names
+// the words that mean something to AerLang, and so can't be used as variable names
 static const struct {
     const char* word;
     token_type_t type;
@@ -42,7 +42,7 @@ typedef struct {
 static token_t* add_token (token_list_t* list, token_type_t type, int line) {
     if (list->count == list->capacity) {
         list->capacity = list->capacity ? list->capacity * 2 : 256;
-        list->tokens = ren_realloc(list->tokens, (size_t)list->capacity * sizeof(token_t));
+        list->tokens = aer_realloc(list->tokens, (size_t)list->capacity * sizeof(token_t));
     }
     token_t* t = &list->tokens[list->count++];
     memset(t, 0, sizeof(*t));
@@ -58,7 +58,7 @@ static int hex_value (char c) {
 }
 
 // the whole source text -> an array of tokens ending in T_EOF, *count says how many
-token_t* ren_lex (const char* src, int* count) {
+token_t* aer_lex (const char* src, int* count) {
     token_list_t list = { 0, 0, 0 };
     int line = 1;
     int depth = 0; // how many ( or [ are open
@@ -93,19 +93,19 @@ token_t* ren_lex (const char* src, int* count) {
             uint32_t value = 0;
             if (c == '0' && (p[1] == 'x' || p[1] == 'X')) {
                 p += 2;
-                if (!isxdigit((unsigned char)*p)) ren_error(line, "expected hex digits after 0x");
+                if (!isxdigit((unsigned char)*p)) aer_error(line, "expected hex digits after 0x");
                 while (isxdigit((unsigned char)*p)) {
-                    if (value > 0x0FFFFFFF) ren_error(line, "number is too big");
+                    if (value > 0x0FFFFFFF) aer_error(line, "number is too big");
                     value = value * 16 + (uint32_t)hex_value(*p++);
                 }
             } else {
                 while (isdigit((unsigned char)*p)) {
                     uint32_t digit = (uint32_t)(*p++ - '0');
-                    if (value > (0x7FFFFFFFu - digit) / 10) ren_error(line, "number is too big");
+                    if (value > (0x7FFFFFFFu - digit) / 10) aer_error(line, "number is too big");
                     value = value * 10 + digit;
                 }
             }
-            if (isalpha((unsigned char)*p) || *p == '_') ren_error(line, "bad number"); // e.g. 12abc
+            if (isalpha((unsigned char)*p) || *p == '_') aer_error(line, "bad number"); // e.g. 12abc
             add_token(&list, T_NUMBER, line)->number = (int32_t)value;
             continue;
         }
@@ -118,10 +118,10 @@ token_t* ren_lex (const char* src, int* count) {
                 if (*p == '\\' && p[1]) p++;
                 p++;
             }
-            if (*p != '"') ren_error(line, "string is missing its closing \"");
+            if (*p != '"') aer_error(line, "string is missing its closing \"");
             // then copy it, decoding the escapes. The text can only get shorter (\n is 2
             // characters in the source and 1 in the string), so the source length is enough room
-            char* text = ren_alloc((size_t)(p - start) + 1);
+            char* text = aer_alloc((size_t)(p - start) + 1);
             uint32_t length = 0;
             for (const char* s = start; s < p; s++) {
                 if (*s != '\\') {
@@ -135,7 +135,7 @@ token_t* ren_lex (const char* src, int* count) {
                     case '0': text[length++] = '\0'; break;
                     case '\\': text[length++] = '\\'; break;
                     case '"': text[length++] = '"'; break;
-                    default: ren_error(line, "unknown escape \\%c in a string", *s);
+                    default: aer_error(line, "unknown escape \\%c in a string", *s);
                 }
             }
             text[length] = '\0';
@@ -162,7 +162,7 @@ token_t* ren_lex (const char* src, int* count) {
             if (type == T_NAME) {
                 // interned: every use of the same name shares one copy, so the interpreter
                 // can compare names by pointer instead of character by character
-                t->text = ren_intern(start, length);
+                t->text = aer_intern(start, length);
             }
             continue;
         }
@@ -191,8 +191,8 @@ token_t* ren_lex (const char* src, int* count) {
                 case '[': type = T_LBRACKET; depth++; break;
                 case ']': type = T_RBRACKET; if (depth > 0) depth--; break;
                 default:
-                    if (isprint((unsigned char)c)) ren_error(line, "unexpected character '%c'", c);
-                    ren_error(line, "unexpected character (code %d)", (unsigned char)c);
+                    if (isprint((unsigned char)c)) aer_error(line, "unexpected character '%c'", c);
+                    aer_error(line, "unexpected character (code %d)", (unsigned char)c);
             }
         }
         add_token(&list, type, line);

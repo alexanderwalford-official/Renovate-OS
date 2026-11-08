@@ -14,7 +14,7 @@ play song.mp3
 play /sys/startup.wav
 ```
 
-Esc or Ctrl+C stops it. In RenLang, `play("song.mp3")` plays a file and waits until it
+Esc or Ctrl+C stops it. In AerLang, `play("song.mp3")` plays a file and waits until it
 ends (it gives `false` if it couldn't be played).
 
 | Format | Plays |

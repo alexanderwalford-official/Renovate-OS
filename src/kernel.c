@@ -19,8 +19,8 @@
       descriptor tables (GDT / IDT), the timer and the keyboard. Only once every interrupt
       has somewhere to go do we switch interrupts on.
     - Startup processes: everything after that runs as a "process" through the process manager
-      (sys/p_man.c). A process is just a line of RenLang code (e.g. "splash_screen") that the
-      compiler (lib/ren_comp.c) turns into a function call. The boot goes:
+      (sys/p_man.c). A process is just a line of AerLang code (e.g. "splash_screen") that the
+      compiler (lib/aer_comp.c) turns into a function call. The boot goes:
           splash_screen -> (boot options, if X was pressed) -> init_boot -> terminal
     - The terminal never returns in practice. Reboot and shut down are done from inside it
       (see sys/power.c), so the last few lines of main() are a safety net.

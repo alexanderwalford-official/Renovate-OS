@@ -60,10 +60,10 @@ almost no power sitting at the prompt.
 | the terminal and its commands | `src/sys/terminal/t_int.c` |
 | files: disk (FAT) or memory | `src/sys/f_sys.c`, `src/sys/fat.c` |
 | accounts and encryption | `src/sys/accounts/`, `src/sys/fcrypt.c` |
-| RenLang | `src/lang/` |
+| AerLang | `src/lang/` |
 | drivers | `src/drivers/` |
 | apps and this manual | `src/apps/`, `src/docs/` |
 
 Every source file starts with an explanation of what it does. The full guide, with recipes
-for adding commands, RenLang functions and drivers, is `docs/ARCHITECTURE.md` in the AerOS
+for adding commands, AerLang functions and drivers, is `docs/ARCHITECTURE.md` in the AerOS
 source.

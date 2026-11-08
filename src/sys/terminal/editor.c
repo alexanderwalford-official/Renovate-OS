@@ -6,7 +6,7 @@
     area, which is cheap because the screen driver only repaints cells that actually changed.
     Lines longer than the screen scroll sideways with the cursor.
 
-        row 0    | /bin/hello.ren *                              Line 3, Col 7 |  title bar
+        row 0    | /bin/hello.aer *                              Line 3, Col 7 |  title bar
         rows 1   | let name = input("Name? ")                                  |
         to 23    | print("Hello " + name)                                      |  the text, from
                  | ~                                                           |  line "top" and
@@ -14,7 +14,7 @@
         row 24   | ^S Save   ^R Run   ^Q Quit                                  |  help / status
 
     The cursor (cx, cy) is a position in the file, not on the screen: draw() scrolls top and left
-    so that it is always visible. .ren files get syntax colouring.
+    so that it is always visible. .aer files get syntax colouring.
 */
 
 #include "editor.h"
@@ -23,7 +23,7 @@
 #include "../../lib/primary_definitions.h"
 #include "../../drivers/video/VGA_linear.h"
 #include "../../drivers/input/IO.h"
-#include "../../lang/renlang.h"
+#include "../../lang/aerlang.h"
 #include "../f_sys.h"
 
 #define TEXT_TOP   1          // the first screen row of text (row 0 is the title bar)
@@ -49,7 +49,7 @@ static int line_capacity;
 static int cx, cy;      // the cursor: column and line in the file
 static int top, left;   // the first line and column on screen
 static bool modified;
-static bool is_renlang; // colour the code in
+static bool is_aerlang; // colour the code in
 static char dir[FS_PATH_MAX];
 static char name[FS_NAME_MAX];
 static char status[COLS + 1]; // a message for the help bar, until the next key
@@ -222,7 +222,7 @@ static void delete_forward (void) {
 
 // ---- drawing ----------------------------------------------------------------------------------
 
-// is this word a RenLang keyword? (the same words as the table in lang/ren_lexer.c, keep them in step)
+// is this word an AerLang keyword? (the same words as the table in lang/aer_lexer.c, keep them in step)
 static bool is_keyword (const char* word, int length) {
     static const char* const keywords[] = {
         "let", "func", "return", "if", "then", "elif", "else", "end", "while", "do", "for", "to",
@@ -234,12 +234,12 @@ static bool is_keyword (const char* word, int length) {
     return false;
 }
 
-// the colour of every character of a line (RenLang files only, everything else is plain):
+// the colour of every character of a line (AerLang files only, everything else is plain):
 // comments grey, strings green, numbers yellow, keywords cyan, everything else light grey.
 // A quick scan of the line on its own, not a full lexer, which is plenty for colouring
 static void colour_line (const line_t* line, enum color* colours) {
     for (int i = 0; i < line->length; i++) colours[i] = BRIGHT;
-    if (!is_renlang) return;
+    if (!is_aerlang) return;
 
     int i = 0;
     while (i < line->length) {
@@ -303,7 +303,7 @@ static void draw (void) {
         }
     }
 
-    const char* help = is_renlang ? " ^S Save   ^R Run   ^Q Quit" : " ^S Save   ^Q Quit";
+    const char* help = is_aerlang ? " ^S Save   ^R Run   ^Q Quit" : " ^S Save   ^Q Quit";
     for (int x = 0; x < COLS; x++) putc((uint8_t)x, ROWS - 1, BLACK, BRIGHT, ' ');
     puts(0, ROWS - 1, BLACK, BRIGHT, status[0] ? status : help);
     if (status[0]) {
@@ -323,7 +323,7 @@ static void run_program (void) {
     snprintf(path, sizeof(path), "%s%s", dir, name);
     console_set_color(BRIGHT, BLACK);
     console_clear();
-    ren_run_file(path, "");
+    aer_run_file(path, "");
     console_set_color(DARK_GRAY, BLACK);
     printf("\n-- press any key to go back to the editor --");
     GetChar();
@@ -339,7 +339,7 @@ void editor_open (const char* path) {
         return;
     }
     size_t length = strlen(name);
-    is_renlang = length > 4 && strcasecmp(name + length - 4, ".ren") == 0;
+    is_aerlang = aer_is_program_name(name, length);
     cx = cy = top = left = 0;
     modified = false;
     status[0] = '\0';
@@ -364,7 +364,7 @@ void editor_open (const char* path) {
                 free_lines();
                 return;
             case CTRL('S'): save(); break;
-            case CTRL('R'): if (is_renlang) run_program(); break; // save and run
+            case CTRL('R'): if (is_aerlang) run_program(); break; // save and run
             case '\n': new_line(); break;
             case '\b': backspace(); break;
             case KEY_DELETE: delete_forward(); break;

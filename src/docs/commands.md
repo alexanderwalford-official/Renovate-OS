@@ -42,8 +42,8 @@ See [Accounts and encryption](security.md).
 
 | Command | Does |
 | --- | --- |
-| `<app> [args]` | run `/bin/<app>.ren`, e.g. `hello` or `guess` |
-| `ren` | the RenLang prompt |
+| `<app> [args]` | run `/bin/<app>.aer`, e.g. `hello` or `guess` |
+| `aer` | the AerLang prompt |
 | `run <code>` | run code as a process: `run s:hi` |
 | `pman` | show the process stack |
 

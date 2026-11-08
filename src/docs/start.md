@@ -56,6 +56,6 @@ The up and down arrows bring back earlier commands.
 | `viewer` | look at the pictures in `/bin/` |
 | `play /sys/startup.wav` | hear the startup sound again |
 | `edit notes.txt` | write a file |
-| `ren` | try RenLang, type `exit` to leave |
+| `aer` | try AerLang, type `exit` to leave |
 
 Next: [Terminal commands](commands.md)

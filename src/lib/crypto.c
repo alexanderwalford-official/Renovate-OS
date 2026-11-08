@@ -19,7 +19,7 @@
 */
 
 #include "crypto.h"
-#include "ren_string.h"
+#include "aer_string.h"
 
 // ---- small helpers ----------------------------------------------------------------------------
 

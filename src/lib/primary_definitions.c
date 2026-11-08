@@ -2,8 +2,8 @@
     primary_definitions.c
     The AerOS specific string helpers.
 
-    These are small conveniences built on top of ren_string.c, mostly used by the terminal
-    (t_int.c) to pick apart what the user typed, and by RenLang (ren_comp.c) to match keywords.
+    These are small conveniences built on top of aer_string.c, mostly used by the terminal
+    (t_int.c) to pick apart what the user typed, and by AerLang (aer_comp.c) to match keywords.
     They are written to be forgiving: a NULL string is treated as "nothing" instead of
     crashing, which suits code that deals with whatever the user happened to type.
 

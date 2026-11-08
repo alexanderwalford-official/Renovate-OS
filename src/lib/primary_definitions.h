@@ -1,19 +1,19 @@
 /*
     primary_definitions.h
     The core helper library. Including this gives you the freestanding C library
-    replacements (ren_ctype / ren_string / ren_stdlib / ren_stdio) plus the AerOS
+    replacements (aer_ctype / aer_string / aer_stdlib / aer_stdio) plus the AerOS
     specific helpers below.
 
     Think of this as the kernel's "include everything" header. Most modules (the terminal,
-    the process manager, the file system, RenLang) include just this one file and get:
+    the process manager, the file system, AerLang) include just this one file and get:
     - the fixed size integer types (uint8_t, uint32_t...), bool / true / false, size_t / NULL
     - the whole of our little C library: strings, memory, number conversion, malloc, printf
     - the VGA console functions, so anything can draw on the screen
     - the AerOS string helpers below, which predate the C library and give the kernel a
       slightly friendlier, Python flavoured way of handling strings (contains, split, remove...)
 
-    Why lib/ has its own C library at all is explained at the top of ren_ctype.h and
-    ren_string.h.
+    Why lib/ has its own C library at all is explained at the top of aer_ctype.h and
+    aer_string.h.
 */
 #ifndef SYS_PRIMARY_DEFINITIONS_H
 #define SYS_PRIMARY_DEFINITIONS_H
@@ -24,10 +24,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 // our own C library replacements
-#include "ren_ctype.h"
-#include "ren_string.h"
-#include "ren_stdlib.h"
-#include "ren_stdio.h"
+#include "aer_ctype.h"
+#include "aer_string.h"
+#include "aer_stdlib.h"
+#include "aer_stdio.h"
 // the text mode screen and console
 #include "../drivers/video/VGA_linear.h"
 

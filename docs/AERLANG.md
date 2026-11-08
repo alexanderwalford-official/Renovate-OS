@@ -1,22 +1,25 @@
-# RenLang
+# AerLang
 
-RenLang is the programming language built into AerOS. Programs are text files ending in `.ren`.
+AerLang is the programming language built into AerOS. Programs are text files ending in `.aer`.
 The interpreter runs inside the kernel, so a program can use the screen, keyboard and files directly.
 
 ## Running programs
 
 | You type | What happens |
 | --- | --- |
-| `hello` | runs `hello.ren` from the current directory, or from `/bin/` |
-| `hello.ren a b` | the same, with `args` set to `["a", "b"]` |
-| `run hello.ren` | runs it through the process manager like any other RenLang instruction |
-| `ren` | the RenLang prompt: type code and see the result straight away, `exit` to leave |
+| `hello` | runs `hello.aer` from the current directory, or from `/bin/` |
+| `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
+| `run hello.aer` | runs it through the process manager like any other AerLang instruction |
+| `aer` | the AerLang prompt: type code and see the result straight away, `exit` to leave |
 
 Press **Ctrl+C** to stop a program that is stuck in a loop.
 
+AerLang used to be called RenLang, and its programs ended in `.ren`. Those still run if you
+type the name with its extension (`old.ren`), and the editor still colours them in.
+
 ## Writing programs on AerOS
 
-`edit myapp.ren` opens the editor (the file is made when you first save it). RenLang code is
+`edit myapp.aer` opens the editor (the file is made when you first save it). AerLang code is
 coloured in, and a new line keeps the indentation of the one above.
 
 | Key | |
@@ -27,7 +30,7 @@ coloured in, and a new line keeps the indentation of the one above.
 | arrows, Home, End, Page Up / Down | move around |
 
 Programs can also be written on another computer and copied onto the AerOS disk with
-`make disk-put FILE=myapp.ren` (see `src/README.md`).
+`make disk-put FILE=myapp.aer` (see `src/README.md`).
 
 The apps in `src/apps/` are built into AerOS and copied to `/bin/` when it starts.
 
@@ -145,6 +148,6 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
-`/bin/viewer.ren` is a complete app built from these: a picture picker and viewer.
-`/bin/read.ren` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
-own parsers, word wrapping and link navigation, all in RenLang.
+`/bin/viewer.aer` is a complete app built from these: a picture picker and viewer.
+`/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
+own parsers, word wrapping and link navigation, all in AerLang.

@@ -1,4 +1,4 @@
-# read.ren - the AerOS reader, for Markdown (.md), HTML (.htm) and plain text files
+# read.aer - the AerOS reader, for Markdown (.md), HTML (.htm) and plain text files
 #
 #     read <file>       open a file
 #     read              open the AerOS documentation (/docs/index.md), the same as DOCS
@@ -62,7 +62,7 @@ let SELECTED = -1       # the link picked with Tab, -1 for none
 let MESSAGE = ""        # shown in the help bar until the next key
 let HISTORY = []        # where Backspace goes: [file, top] for each page we came from
 
-# used while parsing and wrapping (RenLang functions can't share local variables)
+# used while parsing and wrapping (AerLang functions can't share local variables)
 let BLOCKS = []
 let PENDING = nil
 let W_CUR = []

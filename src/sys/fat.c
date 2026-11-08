@@ -90,10 +90,10 @@
 #include "fat.h"
 #include "sys_clck.h"
 #include "../drivers/storage/ata.h"
-#include "../lib/ren_ctype.h"
-#include "../lib/ren_string.h"
-#include "../lib/ren_stdlib.h"
-#include "../lib/ren_stdio.h"
+#include "../lib/aer_ctype.h"
+#include "../lib/aer_string.h"
+#include "../lib/aer_stdlib.h"
+#include "../lib/aer_stdio.h"
 
 #define FAT_SECTOR_SIZE        512   // the only sector size we handle (drive_is_fat_boot_sector() checks it)
 #define FAT_ENTRIES_PER_SECTOR (FAT_SECTOR_SIZE / 32)  // 16 directory entries of 32 bytes per sector
