@@ -36,6 +36,8 @@
 #define KEY_HOME   0x84
 #define KEY_END    0x85
 #define KEY_DELETE 0x86
+#define KEY_PGUP   0x87
+#define KEY_PGDN   0x88
 
 // true once init_keyboard() has run, GetChar() refuses to wait for keys before that
 extern bool keyboard_ready;

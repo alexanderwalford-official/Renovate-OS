@@ -14,6 +14,21 @@ The interpreter runs inside the kernel, so a program can use the screen, keyboar
 
 Press **Ctrl+C** to stop a program that is stuck in a loop.
 
+## Writing programs on AerOS
+
+`edit myapp.ren` opens the editor (the file is made when you first save it). RenLang code is
+coloured in, and a new line keeps the indentation of the one above.
+
+| Key | |
+| --- | --- |
+| Ctrl+S | save |
+| Ctrl+R | save and run the program, then press a key to come back |
+| Ctrl+Q | quit (press it twice to throw away unsaved changes) |
+| arrows, Home, End, Page Up / Down | move around |
+
+Programs can also be written on another computer and copied onto the AerOS disk with
+`make disk-put FILE=myapp.ren` (see `src/README.md`).
+
 The apps in `src/apps/` are built into AerOS and copied to `/bin/` when it starts.
 
 ## The language

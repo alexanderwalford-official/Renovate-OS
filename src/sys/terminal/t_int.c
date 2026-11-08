@@ -41,6 +41,7 @@
 #include "../power.h"
 #include "../p_man.h"
 #include "../../lang/renlang.h"
+#include "editor.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -417,6 +418,14 @@ static void cli_ren (char* args) {
     ren_repl();
 }
 
+static void cli_edit (char* args) {
+    if (*args == '\0') {
+        printf("Usage: EDIT <file>   (e.g. edit hello.ren)\n");
+        return;
+    }
+    editor_open(args);
+}
+
 // is there a program file with this name, here or in /bin/?
 static bool program_exists (const char* file) {
     char dir[FS_PATH_MAX];
@@ -482,6 +491,7 @@ static const struct cli_command {
     { "beep",     cli_beep,           "BEEP [HZ]       - PLAY A BEEP ON THE PC SPEAKER" },
     { "reboot",   cli_reboot,         "REBOOT          - RESTART THE COMPUTER" },
     { "shutdown", cli_shutdown,       "SHUTDOWN        - TURN OFF THE COMPUTER" },
+    { "edit",     cli_edit,           "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
     { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
     { "",         0,                  "<APP> [ARGS]    - RUN A RENLANG PROGRAM, e.g. HELLO (/bin/hello.ren)" },
 };

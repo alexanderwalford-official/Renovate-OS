@@ -156,6 +156,8 @@ static void kb_process_extended(uint8_t code, bool released) {
         case 0x47: kb_push(KEY_HOME); break;
         case 0x4F: kb_push(KEY_END); break;
         case 0x53: kb_push(KEY_DELETE); break;
+        case 0x49: kb_push(KEY_PGUP); break;
+        case 0x51: kb_push(KEY_PGDN); break;
         case 0x1C: kb_push('\n'); break; // keypad enter
         case 0x35: kb_push('/'); break;  // keypad slash
     }
