@@ -31,6 +31,7 @@
 #include "f_sys.h"
 #include "apps.h"
 #include "../lib/crypto.h"
+#include "../drivers/audio/ac97.h"
 
 // the value a multiboot bootloader leaves in eax (not the same as the 0x1BADB002 in our header)
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -196,7 +197,13 @@ int init_boot (void) {
     char now[FS_DATETIME_MAX];
     printf("[ OK ] Real time clock: %s\n", rtc_datetime(now, sizeof(now)));
     // check SHA-256, HMAC, PBKDF2 and AES against published test vectors before trusting them with passwords
-    printf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
+    printf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
+    // a missing sound card isn't a problem, only PLAY needs one
+    if (ac97_init()) {
+        printf("[ OK ] Sound: %s\n\n", ac97_name());
+    } else {
+        printf("[WARN] No sound card found (AerOS supports AC'97), PLAY won't work\n\n");
+    }
 
     // initialise the file system (the disk, or the temporary one if there is no disk)
     // "n" = normal: mount a FAT disk labelled AEROS if there is one, otherwise use the VFS

@@ -46,6 +46,7 @@
 #include "../../lib/crypto.h"
 #include "../accounts/auth.h"
 #include "../fcrypt.h"
+#include "../sound.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -504,6 +505,24 @@ static void cli_beep (char* args) {
     beep(atoi(args));
 }
 
+// while PLAY is playing: Esc or Ctrl+C stops it (other keys are ignored)
+static bool cli_play_should_stop (void) {
+    return kb_take_break() || (kb_haschar() && GetChar() == KEY_ESCAPE);
+}
+
+// PLAY <file>: play a WAV or MP3 file on the sound card
+static void cli_play (char* args) {
+    if (*args == '\0') {
+        printf("Usage: PLAY <file>   (a .wav or .mp3 file)\n");
+        return;
+    }
+    printf("Playing %s, press Esc to stop...\n", args);
+    int result = sound_play_file(args, cli_play_should_stop);
+    if (result != SOUND_OK) {
+        printf("Can't play %s: %s\n", args, sound_strerror(result));
+    }
+}
+
 // REBOOT: restart the computer, never returns
 static void cli_reboot (char* args) {
     (void)args;
@@ -775,7 +794,8 @@ static const struct cli_command {
     { "mem",      cli_memory,         "MEM             - MEMORY USAGE" },
     { "drv",      cli_drives,         "DRV             - LIST IDE / ATA DRIVES" },
     { "beep",     cli_beep,           "BEEP [HZ]       - PLAY A BEEP ON THE PC SPEAKER" },
-    { "reboot",   cli_reboot,         "REBOOT          - RESTART THE COMPUTER" },
+    { "play",     cli_play,           "PLAY <FILE>     - PLAY A .WAV OR .MP3 FILE (ESC TO STOP)" },
+    { "reboot",   cli_reboot,        "REBOOT          - RESTART THE COMPUTER" },
     { "shutdown", cli_shutdown,       "SHUTDOWN        - TURN OFF THE COMPUTER" },
     { "res",      cli_resolution,     "RES [WxH]       - SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)" },
     { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },

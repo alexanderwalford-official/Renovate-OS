@@ -122,7 +122,8 @@ one side is a string: `"Score: " + 10`.
 `cwd()` the current directory, e.g. `"/bin/"`
 
 **System**
-`sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` · `exit()`
+`sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
+`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()`
 
 `args` is the list of words typed after the program's name.
 

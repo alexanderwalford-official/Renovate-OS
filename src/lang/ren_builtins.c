@@ -17,6 +17,7 @@
 #include "../sys/sys_clck.h"
 #include "../sys/f_sys.h"
 #include "../sys/fcrypt.h"
+#include "../sys/sound.h"
 #include "../lib/crypto.h"
 
 // argument checks
@@ -460,6 +461,23 @@ static value_t bi_sleep (int argc, value_t* argv, int line) {
     return ren_nil();
 }
 
+// play() stops on Ctrl+C, and then the program stops too (like sleep)
+static bool play_interrupted;
+
+static bool play_should_stop (void) {
+    if (kb_take_break()) play_interrupted = true;
+    return play_interrupted;
+}
+
+// play a WAV or MP3 file and wait for it to finish, false if it couldn't be played
+static value_t bi_play (int argc, value_t* argv, int line) {
+    (void)argc;
+    play_interrupted = false;
+    int result = sound_play_file(str_arg(argv, 0, line, "play")->data.chars, play_should_stop);
+    if (play_interrupted) ren_error(line, "stopped (Ctrl+C)");
+    return ren_bool(result == SOUND_OK);
+}
+
 static value_t bi_time (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
     return ren_int((int32_t)clck_uptime_ms());
@@ -636,6 +654,7 @@ const ren_builtin_t ren_builtins[] = {
     { "time", bi_time, 0, 0 },
     { "random", bi_random, 1, 1 },
     { "beep", bi_beep, 0, 1 },
+    { "play", bi_play, 1, 1 },
     { "exit", bi_exit, 0, 0 },
     { "gfx_open", bi_gfx_open, 0, 0 },
     { "gfx_close", bi_gfx_close, 0, 0 },

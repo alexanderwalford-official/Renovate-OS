@@ -36,5 +36,8 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Process management.
 - [x] Programming interface. (RenLang: an interpreter, a prompt and a text editor, see docs/RENLANG.md)
 - [x] Graphics driver. (framebuffer console, pixels, shapes, text and BMP pictures for apps)
+- [x] User accounts. (login screen, passwords stored as salted PBKDF2 hashes)
+- [x] File encryption. (ENCRYPT / DECRYPT, AES-256 with an HMAC tag)
+- [x] Audio. (AC'97 sound card, PLAY for WAV and MP3 files using minimp3)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..
