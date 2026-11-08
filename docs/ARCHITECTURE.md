@@ -81,7 +81,8 @@ src/
     ren_interp.c          walks the tree; memory, values, variables
     ren_builtins.c        print, read_file, play, gfx_... (every function a program can call)
 
-  apps/                 built-in files, linked into the kernel and copied to /bin/ or /sys/ at boot
+  apps/                 built-in apps and files, linked into the kernel and copied to /bin/ or /sys/
+  docs/                 the in-OS manual (Markdown and HTML), copied to /docs/ and shown by DOCS
   iso/boot/grub/grub.cfg  GRUB's menu: loads main.elf, restores the saved screen resolution
 ```
 
@@ -134,8 +135,9 @@ There is no paging, so these are the real physical addresses:
 
 * **The stack** (256 KB) is shared by everything, including interrupt handlers. Code that might
   recurse deeply (the RenLang parser and interpreter) checks how much is left.
-* **The heap** (`malloc` / `free` in `lib/ren_stdlib.c`) is first-fit with a header per block,
-  merging free neighbours. It starts with the 4 MB pool inside the kernel and grows by the free
+* **The heap** (`malloc` / `free` in `lib/ren_stdlib.c`) is "next fit" with a 16-byte header
+  per block. `malloc` carries on searching from where it last allocated, and `free` merges a
+  block with its free neighbours in constant time. It starts with the 4 MB pool inside the kernel and grows by the free
   RAM found at boot, about 250 MB on a 256 MB machine.
 * **DMA** (the sound card) works with ordinary heap pointers, because without paging every
   address the CPU sees is the address the hardware sees.
@@ -167,8 +169,21 @@ Users can type relative paths with `.` and `..`, and `fs_split_path` / `fs_resol
 them into that form. On disk, new names must fit 8.3 (`NOTES.TXT`). Existing long names can be
 read.
 
-The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/sys/` (system files:
-`startup.wav`, `cache/`, `tmp/`) and `/conf.ren`.
+The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
+`/sys/` (system files: `startup.wav`, `cache/`, `tmp/`) and `/conf.ren`.
+
+## The manual inside AerOS
+
+`src/docs/` holds the manual that ships inside the OS: short Markdown pages written for an
+80-column screen, plus an HTML sample. They are linked into the kernel like the apps and
+copied to `/docs/` at boot. Unlike the apps, which are only copied when missing so your own
+changes are kept, each page is **replaced whenever it differs** from the built-in copy, so the
+manual always matches the version that is running.
+
+`DOCS [topic]` opens it in the reader, `/bin/read.ren`. The reader is a RenLang app that shows
+Markdown, HTML and plain text with colours, word wrapping, tables and links (Tab picks a link,
+Enter opens it, Backspace goes back). To change a page, edit it in `src/docs/` and rebuild. To
+add one, also add it to the table in `src/sys/apps.c` and link to it from `index.md`.
 
 ## The terminal
 
@@ -254,9 +269,10 @@ arguments), and list it in [RENLANG.md](RENLANG.md).
 
 ### Add a built-in app or file
 
-Put the file in `src/apps/`, then add two lines to `src/sys/apps.c`: `APP(name_ext)` and a table
-entry saying which folder it goes in. The Makefile links it into the kernel automatically, and
-it is copied to the disk at boot if it isn't there.
+Put the file in `src/apps/` (or `src/docs/` for a manual page), then add two lines to
+`src/sys/apps.c`: `EMBEDDED(apps_name_ext)` and a `FILE_ENTRY` saying which folder it goes in
+and whether to refresh it when it changes. The Makefile links it into the kernel automatically.
+On a disk, new names must fit 8.3 (`sample.htm`, not `sample.html`).
 
 ### Add a driver
 

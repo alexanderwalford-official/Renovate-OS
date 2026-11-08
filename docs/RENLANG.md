@@ -97,7 +97,9 @@ one side is a string: `"Score: " + 10`.
 `cls()` clear the screen ·
 `color(fg, bg)` text colours (`BLACK` ... `WHITE`) ·
 `at(x, y)` move the cursor ·
-`key()` wait for a key and return its code (`KEY_UP`, `KEY_ENTER`, `KEY_ESCAPE`, or a character code) ·
+`key()` wait for a key and return its code: a character code, or one of `KEY_UP`, `KEY_DOWN`,
+`KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`,
+`KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`, `KEY_ESCAPE` ·
 `haskey()` true if a key is waiting
 
 **Text**
@@ -111,15 +113,12 @@ one side is a string: `"Score: " + 10`.
 **Files** (paths can be relative or absolute)
 `read_file(path)` (nil if missing) · `read_bytes(path)` · `write_file(path, text)` ·
 `append_file(path, text)` · `file_exists(path)` · `delete_file(path)` ·
-`list_files(dir)` (directories end in `/`)
+`list_files(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
 
 **Encrypted files** (AES-256 with a password, the file keeps its name)
 `encrypt_file(path, password)` · `decrypt_file(path, password)` (both true if it worked) ·
 `is_encrypted(path)` · `read_encrypted(path, password)` the contents, without changing the file
 (nil if the password is wrong)
-
-**Files** (continued)
-`cwd()` the current directory, e.g. `"/bin/"`
 
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
@@ -146,4 +145,6 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
-`/bin/viewer.ren` is a complete app built from these: a picture picker and viewer in about 100 lines.
+`/bin/viewer.ren` is a complete app built from these: a picture picker and viewer.
+`/bin/read.ren` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
+own parsers, word wrapping and link navigation, all in RenLang.

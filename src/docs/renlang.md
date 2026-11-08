@@ -1,0 +1,124 @@
+# RenLang
+
+RenLang is the programming language built into AerOS. A program is a text file ending in
+`.ren`. Every app in `/bin/`, including this reader, is a RenLang program you can open with
+`read` and change with `edit`.
+
+## Running programs
+
+| Type | To |
+| --- | --- |
+| `hello` | run `hello.ren` from here, or from `/bin/` |
+| `hello.ren a b` | the same, with `args` set to `["a", "b"]` |
+| `ren` | the prompt: type code and see the result, `exit` to leave |
+| `edit app.ren` then Ctrl+R | write a program and run it |
+
+**Ctrl+C** stops a program that is stuck.
+
+## The language
+
+```
+# a comment runs to the end of the line
+let name = "AerOS"              # make a variable
+name = name + "!"               # change it
+print("Hello", name)            # Hello AerOS!
+
+if len(name) > 3 then
+    print("long")
+elif len(name) == 3 then
+    print("three")
+else
+    print("short")
+end
+
+for i = 1 to 10 do              # add "step 2" to count in twos
+    if i % 2 == 0 then continue end
+    print(i)
+end
+
+for colour in ["red", "green"] do
+    print(colour)
+end
+
+let n = 0
+while n < 3 do
+    n = n + 1
+end
+
+func area(w, h)
+    return w * h
+end
+print(area(3, 4))               # 12
+```
+
+- A statement ends at the end of its line. Short blocks fit on one line:
+  `if x then print(x) end`
+- Variables are made with `let`. Using a name that was never made is an error, which
+  catches typing mistakes.
+- Variables made with `let` inside a function belong to it. Everything else is global.
+- Functions are made at the top level and can be used before the line that makes them.
+
+## Values
+
+| Type | Examples | Notes |
+| --- | --- | --- |
+| number | `42`, `-7`, `0xFF` | whole numbers, `/` drops the remainder |
+| string | `"hi\n"` | `s[0]` is the first character |
+| list | `[1, "two", [3]]` | `l[0] = 5` changes an item |
+| bytes | `bytes(100)` | raw bytes, e.g. from `read_bytes` |
+| bool | `true`, `false` | |
+| nil | `nil` | nothing |
+
+`nil`, `false` and `0` count as false. `and` / `or` give back one of their sides, so
+`input("Name? ") or "friend"` works. `+` joins strings: `"Score: " + 10`.
+
+## Built-in functions
+
+**Screen and keys:** `print(...)`, `write(...)` (no new line), `input(prompt)`,
+`input_secret(prompt)` (shows `*`), `cls()`, `color(fg, bg)`, `at(x, y)`, `key()` (waits,
+gives the key's code), `haskey()`.
+
+Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGHT`,
+`DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`, `LIGHT_CYAN`, `LIGHT_RED`, `LIGHT_PURPLE`,
+`YELLOW`, `WHITE`. Keys: `KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`,
+`KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`, `KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`,
+`KEY_ESCAPE`.
+
+**Text:** `len(x)`, `str(x)`, `int("42")` (nil if not a number), `chr(65)`, `ord("A")`,
+`sub(s, start, count)`, `find(s, part)` (-1 if missing), `upper(s)`, `lower(s)`,
+`split(s, sep)`, `join(list, sep)`.
+
+**Lists:** `list(n, fill)`, `push(l, x)`, `pop(l)`, `insert(l, i, x)`, `remove(l, i)`,
+`bytes(n)`.
+
+**Files:** `read_file(path)` (nil if missing), `read_bytes(path)`, `write_file(path, text)`,
+`append_file(path, text)`, `file_exists(path)`, `delete_file(path)`, `list_files(dir)`,
+`cwd()`.
+
+**Encrypted files:** `encrypt_file(path, password)`, `decrypt_file(path, password)`,
+`is_encrypted(path)`, `read_encrypted(path, password)` (nil if the password is wrong).
+
+**System:** `sleep(ms)`, `time()` (ms since start), `random(n)` (0 to n - 1), `beep(hz)`,
+`play(path)`, `exit()`. `args` is the list of words typed after the program's name.
+
+**Graphics:** `gfx_open()` takes over the screen and `gfx_close()` gives it back.
+Colours are numbers like `0xFF7F00` or `rgb(255, 127, 0)`.
+`gfx_width()`, `gfx_height()`, `gfx_clear(c)`, `pixel(x, y, c)`, `rect(x, y, w, h, c)`,
+`line(x1, y1, x2, y2, c)`, `text(x, y, s, c, size)`, `image(bytes, x, y, w, h)` (a BMP
+picture), `image_size(bytes)`.
+
+```
+gfx_open()
+image(read_bytes("/bin/aeros.bmp"), 0, 0)
+text(10, 320, "Press a key", 0xFFFFFF, 2)
+key()
+```
+
+## Programs to learn from
+
+| File | Shows |
+| --- | --- |
+| `/bin/hello.ren` | input, functions, lists, loops |
+| `/bin/guess.ren` | random numbers and a game loop |
+| `/bin/viewer.ren` | graphics, pictures and a menu |
+| `/bin/read.ren` | this reader: text handling, a whole app |

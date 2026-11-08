@@ -1,51 +1,100 @@
 /*
     apps.c - the apps and files that come with AerOS
 
-    The Makefile wraps every file in apps/ in an object file with "ld -b binary". The linker then
-    gives us two symbols per file, _binary_apps_<name>_start and _end, marking where its bytes
-    sit inside the kernel. To add a file: put it in apps/ and add a line to the table below, with
-    the folder it should be copied into.
+    The Makefile wraps every file in apps/ and docs/ in an object file with "ld -b binary". The
+    linker then gives us two symbols per file, _binary_<folder>_<name>_start and _end (with
+    the dots and slashes of the path turned into _), marking where its bytes sit inside the
+    kernel. To add a file: put it in apps/ or docs/, add an EMBEDDED() line and a table entry.
+
+    When AerOS starts, apps_install() copies each file to the disk (or the VFS):
+      - apps and system files only when they are missing, so your own changes are kept
+      - the manual in /docs/ whenever the built-in copy is different, so it always describes
+        the version of AerOS that is running
 */
 
 #include "apps.h"
 #include "f_sys.h"
 #include "../lib/primary_definitions.h"
 
-#define APP(symbol) \
-    extern const char _binary_apps_##symbol##_start[]; \
-    extern const char _binary_apps_##symbol##_end[];
+// declare the start and end symbols the linker made for one built-in file
+#define EMBEDDED(symbol) \
+    extern const char _binary_##symbol##_start[]; \
+    extern const char _binary_##symbol##_end[];
 
-APP(hello_ren)
-APP(guess_ren)
-APP(viewer_ren)
-APP(aeros_bmp)
-APP(colours_bmp)
-APP(startup_wav)
+// a table entry: the folder and name it is copied to, where it is, and whether to refresh it
+#define FILE_ENTRY(dir, name, symbol, refresh) \
+    { dir, name, _binary_##symbol##_start, _binary_##symbol##_end, refresh }
+
+EMBEDDED(apps_hello_ren)
+EMBEDDED(apps_guess_ren)
+EMBEDDED(apps_viewer_ren)
+EMBEDDED(apps_read_ren)
+EMBEDDED(apps_aeros_bmp)
+EMBEDDED(apps_colours_bmp)
+EMBEDDED(apps_startup_wav)
+EMBEDDED(docs_index_md)
+EMBEDDED(docs_start_md)
+EMBEDDED(docs_commands_md)
+EMBEDDED(docs_files_md)
+EMBEDDED(docs_editor_md)
+EMBEDDED(docs_renlang_md)
+EMBEDDED(docs_reader_md)
+EMBEDDED(docs_security_md)
+EMBEDDED(docs_sound_md)
+EMBEDDED(docs_inside_md)
+EMBEDDED(docs_sample_htm)
 
 static const struct {
     const char* dir;
     const char* name;
     const char* start;
     const char* end;
-} apps[] = {
-    { "/bin/", "hello.ren", _binary_apps_hello_ren_start, _binary_apps_hello_ren_end },
-    { "/bin/", "guess.ren", _binary_apps_guess_ren_start, _binary_apps_guess_ren_end },
-    { "/bin/", "viewer.ren", _binary_apps_viewer_ren_start, _binary_apps_viewer_ren_end },
-    { "/bin/", "aeros.bmp", _binary_apps_aeros_bmp_start, _binary_apps_aeros_bmp_end },
-    { "/bin/", "colours.bmp", _binary_apps_colours_bmp_start, _binary_apps_colours_bmp_end },
-    { "/sys/", "startup.wav", _binary_apps_startup_wav_start, _binary_apps_startup_wav_end },
+    bool refresh; // replace the copy on the disk when it differs from the built-in one
+} files[] = {
+    FILE_ENTRY("/bin/", "hello.ren", apps_hello_ren, false),
+    FILE_ENTRY("/bin/", "guess.ren", apps_guess_ren, false),
+    FILE_ENTRY("/bin/", "viewer.ren", apps_viewer_ren, false),
+    FILE_ENTRY("/bin/", "read.ren", apps_read_ren, false),
+    FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),
+    FILE_ENTRY("/bin/", "colours.bmp", apps_colours_bmp, false),
+    FILE_ENTRY("/sys/", "startup.wav", apps_startup_wav, false),
+    FILE_ENTRY("/docs/", "index.md", docs_index_md, true),
+    FILE_ENTRY("/docs/", "start.md", docs_start_md, true),
+    FILE_ENTRY("/docs/", "commands.md", docs_commands_md, true),
+    FILE_ENTRY("/docs/", "files.md", docs_files_md, true),
+    FILE_ENTRY("/docs/", "editor.md", docs_editor_md, true),
+    FILE_ENTRY("/docs/", "renlang.md", docs_renlang_md, true),
+    FILE_ENTRY("/docs/", "reader.md", docs_reader_md, true),
+    FILE_ENTRY("/docs/", "security.md", docs_security_md, true),
+    FILE_ENTRY("/docs/", "sound.md", docs_sound_md, true),
+    FILE_ENTRY("/docs/", "inside.md", docs_inside_md, true),
+    FILE_ENTRY("/docs/", "sample.htm", docs_sample_htm, true),
 };
 
-#define APP_COUNT (sizeof(apps) / sizeof(apps[0]))
+#define FILE_COUNT (sizeof(files) / sizeof(files[0]))
+
+// is the copy on the disk exactly the built-in one?
+static bool same_as_disk (unsigned int i, uint32_t length) {
+    uint32_t size = 0;
+    char* data = fs_read_bytes(files[i].dir, files[i].name, &size);
+    bool same = data && size == length && memcmp(data, files[i].start, length) == 0;
+    free(data);
+    return same;
+}
 
 int apps_install (void) {
     int installed = 0;
-    for (unsigned int i = 0; i < APP_COUNT; i++) {
-        if (fs_file_exists(apps[i].dir, apps[i].name)) {
-            continue;
+    for (unsigned int i = 0; i < FILE_COUNT; i++) {
+        uint32_t length = (uint32_t)(files[i].end - files[i].start);
+        int result;
+        if (!fs_file_exists(files[i].dir, files[i].name)) {
+            result = fs_create_bytes(files[i].dir, files[i].name, files[i].start, length);
+        } else if (files[i].refresh && !same_as_disk(i, length)) {
+            result = fs_write_bytes(files[i].dir, files[i].name, files[i].start, length, false);
+        } else {
+            continue; // already there (and the user's to change)
         }
-        uint32_t length = (uint32_t)(apps[i].end - apps[i].start);
-        if (fs_create_bytes(apps[i].dir, apps[i].name, apps[i].start, length) == FS_OK) {
+        if (result == FS_OK) {
             installed++;
         }
     }
@@ -53,10 +102,10 @@ int apps_install (void) {
 }
 
 const void* apps_builtin (const char* name, uint32_t* size) {
-    for (unsigned int i = 0; i < APP_COUNT; i++) {
-        if (StrCompare(apps[i].name, name)) {
-            *size = (uint32_t)(apps[i].end - apps[i].start);
-            return apps[i].start;
+    for (unsigned int i = 0; i < FILE_COUNT; i++) {
+        if (StrCompare(files[i].name, name)) {
+            *size = (uint32_t)(files[i].end - files[i].start);
+            return files[i].start;
         }
     }
     return 0;

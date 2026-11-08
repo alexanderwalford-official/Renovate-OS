@@ -541,6 +541,7 @@ static void fs_init_base (void) {
     }
     created += fs_ensure_d("/acc/", "accounts");
     created += fs_ensure_d("/bin/", "bin");
+    created += fs_ensure_d("/docs/", "the manual");
     created += fs_ensure_d("/sys/", "system");
     created += fs_ensure_d("/sys/cache/", "system cache");
     created += fs_ensure_d("/sys/tmp/", "system temp");

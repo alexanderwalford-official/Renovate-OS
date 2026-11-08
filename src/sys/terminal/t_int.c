@@ -127,7 +127,7 @@ int cli_rend_main (void) {
     }
     // the normal terminal colours (light grey on black) for everything after the banner
     console_set_color(BRIGHT, BLACK);
-    printf("Type HELP for a list of commands.\n\n");
+    printf("Type HELP for a list of commands, or DOCS to read the manual.\n\n");
     // forget any keys pressed while something else had the screen (e.g. the splash screen or a menu),
     // so they don't turn up at the start of the next command
     ClearInputbuffer();
@@ -609,6 +609,17 @@ static void cli_edit (char* args) {
     editor_open(args);
 }
 
+// DOCS [topic]: the manual in the reader app, "docs sound" opens /docs/sound.md
+static void cli_docs (char* args) {
+    char path[FS_PATH_MAX];
+    if (*args == '\0') {
+        strlcpy(path, "/docs/index.md", sizeof(path));
+    } else {
+        snprintf(path, sizeof(path), "/docs/%s%s", args, strchr(args, '.') ? "" : ".md");
+    }
+    ren_run_file("/bin/read.ren", path);
+}
+
 // is there a program file with this name, here or in /bin/?
 static bool program_exists (const char* file) {
     char dir[FS_PATH_MAX];
@@ -805,6 +816,7 @@ static const struct cli_command {
     { "res",      cli_resolution,     "RES [WxH]       - SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)" },
     { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
     { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
+    { "docs",     cli_docs,           "DOCS [TOPIC]    - READ THE MANUAL (e.g. DOCS SOUND), READ <FILE> FOR ANY FILE" },
     { "encrypt",  cli_encrypt,        "ENCRYPT <FILE>  - LOCK A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW THE FILE)" },
     { "decrypt",  cli_decrypt,        "DECRYPT <FILE>  - UNLOCK AN ENCRYPTED FILE" },
     { "whoami",   cli_whoami,        "WHOAMI          - PRINT WHO IS LOGGED IN" },

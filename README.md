@@ -47,5 +47,6 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] User accounts. (login screen, passwords stored as salted PBKDF2 hashes)
 - [x] File encryption. (ENCRYPT / DECRYPT, AES-256 with an HMAC tag)
 - [x] Audio. (AC'97 sound card, PLAY for WAV and MP3 files using minimp3, and a startup sound in /sys/startup.wav that you can replace)
+- [x] A manual inside the OS. (DOCS opens /docs/ in a Markdown / HTML / text reader written in RenLang)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

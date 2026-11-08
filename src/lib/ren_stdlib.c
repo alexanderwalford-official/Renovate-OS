@@ -280,8 +280,9 @@ void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, co
 // ---------------------------------------------------------------------------------------
 
 /*
-    A simple first-fit allocator over one or more stretches ("regions") of memory.
-    Every allocation is preceded by a small header, neighbouring free blocks are merged on free().
+    A "next fit" allocator over one or more stretches ("regions") of memory.
+    Every allocation is preceded by a small header, and free blocks are merged with their
+    neighbours as soon as they are freed.
 
     Where the memory comes from:
     heap_area is just a big static array, so it lives in the kernel's .bss section, which GRUB
@@ -292,26 +293,32 @@ void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, co
     physical memory manager involved, the regions are used exactly where they are.
 
     How it is laid out:
-    The pool is chopped into blocks that sit one after another in memory. Each block starts
-    with a heap_block_t header, and the bytes after the header are what malloc hands out.
-    The headers form a linked list in address order, so "the next block in the list" is
-    always "the block right after this one in memory":
+    The memory is chopped into blocks that sit one after another. Each block starts with a
+    heap_block_t header, and the bytes after the header are what malloc hands out. The headers
+    form a list in address order, linked both ways, so a block's neighbours in the list are its
+    neighbours in memory (except where one region ends and the next begins):
 
         heap_area
         +--------+-----------+--------+-----------+--------+---------------------------+
         | header | 32 bytes  | header | 16 bytes  | header | the rest (free)           |
-        | in use |           | free   |           | free?  |                           |
+        | used   |           | free   |           | used   |                           |
         +--------+-----------+--------+-----------+--------+---------------------------+
-            |       ^ malloc     |                    ^
-            +--next-+------------+--next--------------+         last block: next = NULL
-                    returns this
+          <-prev--next-->      <-prev--next-->      <-prev--next--> NULL
+                    ^ malloc returned this
 
-    malloc  walks the list from the start and takes the FIRST free block big enough ("first fit").
-            If that block is much bigger than needed, it is SPLIT: the front part is handed out
-            and a new header is written just after it to make the leftover its own free block.
-    free    marks the block free again, then MERGES (or "coalesces") any free blocks that sit
-            next to each other into one big block, so the pool doesn't break up into lots of
-            little pieces that are each too small to use.
+    malloc  "next fit": searches from where the last allocation was made (the rover) towards
+            the end, then wraps round to the start. New allocations come straight off the big
+            free area at the end without walking past everything already in use, and holes
+            left by free() are reused once the rover comes round again. If the block found is
+            much bigger than needed it is SPLIT: the front part is handed out and a new header
+            just after it makes the leftover its own free block.
+    free    marks the block free and MERGES it with the block before and the block after if
+            they are free too, so the heap doesn't break up into pieces too small to use. That
+            only looks at two neighbours, so free takes the same time however big the heap is.
+
+    The magic number in each header says whether the block is in use or free. Anything else
+    means the pointer passed to free() didn't come from malloc (or has already been freed and
+    merged away), and is quietly ignored instead of wrecking the heap.
 
     Alignment: the header is 16 bytes on 32 bit x86 (four 4 byte fields), the pool starts on a
     16 byte boundary, and every size is rounded up to a multiple of 16. So every pointer malloc
@@ -324,22 +331,24 @@ void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, co
 #define HEAP_SIZE  (4u * 1024u * 1024u)
 // every allocation is rounded up to a multiple of this (must be a power of two for the mask trick in malloc)
 #define HEAP_ALIGN 16u
-// a recognisable number written into every header ("coffee"), so free() can tell a real
-// block from a random pointer
-#define HEAP_MAGIC 0xC0FFEE42u
+// recognisable numbers written into every header, saying whether the block is in use
+#define HEAP_USED  0xC0FFEE42u
+#define HEAP_FREE  0xF2EEB10Cu
 
 // the header in front of every block, free or in use
 typedef struct heap_block {
     size_t size;              // usable bytes after this header
-    uint32_t magic;           // HEAP_MAGIC, used to catch bad pointers passed to free()
-    struct heap_block* next;  // next block in memory
-    uint32_t free;            // 1 = free, 0 = in use
+    uint32_t magic;           // HEAP_USED or HEAP_FREE
+    struct heap_block* next;  // the next block in memory (NULL for the last one)
+    struct heap_block* prev;  // the block before it (NULL for the first one)
 } heap_block_t;
 
 // the pool itself (in .bss, so it costs nothing in the kernel file on disk)
 static uint8_t heap_area[HEAP_SIZE] __attribute__((aligned(16)));
 // the first block in the list; NULL until the first malloc sets the heap up
 static heap_block_t* heap_head;
+// where malloc's next search starts
+static heap_block_t* heap_rover;
 
 // how many bytes the heap manages: the built-in pool plus any regions added at boot
 static size_t heap_bytes = HEAP_SIZE;
@@ -347,13 +356,12 @@ static size_t heap_bytes = HEAP_SIZE;
 // set the heap up as one big free block covering the whole pool
 // called automatically by the first malloc, so nobody has to remember to initialise it
 static void heap_init(void) {
-    // the very first header sits at the start of the pool
     heap_head = (heap_block_t*)heap_area;
-    // everything after that header is free space
     heap_head->size = HEAP_SIZE - sizeof(heap_block_t);
-    heap_head->magic = HEAP_MAGIC;
+    heap_head->magic = HEAP_FREE;
     heap_head->next = NULL;
-    heap_head->free = 1;
+    heap_head->prev = NULL;
+    heap_rover = heap_head;
 }
 
 // give the heap another stretch of free memory (the boot code adds the biggest block of RAM the
@@ -368,18 +376,37 @@ void heap_add_region(void* start, size_t size) {
     if (heap_head == NULL) {
         heap_init();
     }
-    heap_block_t* region = (heap_block_t*)first;
-    region->size = size - sizeof(heap_block_t);
-    region->magic = HEAP_MAGIC;
-    region->next = NULL;
-    region->free = 1;
-
     heap_block_t* last = heap_head;
     while (last->next) {
         last = last->next;
     }
+    heap_block_t* region = (heap_block_t*)first;
+    region->size = size - sizeof(heap_block_t);
+    region->magic = HEAP_FREE;
+    region->next = NULL;
+    region->prev = last;
     last->next = region;
     heap_bytes += size;
+}
+
+// does block a end exactly where block b starts? (false across the gap between two regions)
+static bool heap_touching(const heap_block_t* a, const heap_block_t* b) {
+    return (const uint8_t*)(a + 1) + a->size == (const uint8_t*)b;
+}
+
+// block swallows the free block right after it:
+//     [hdr A | data A][hdr B | data B]   ->   [hdr A | data A ............. ]
+static void heap_merge_next(heap_block_t* block) {
+    heap_block_t* gone = block->next;
+    block->size += sizeof(heap_block_t) + gone->size;
+    block->next = gone->next;
+    if (gone->next) {
+        gone->next->prev = block;
+    }
+    gone->magic = 0; // no longer a header, so a stale pointer to it is ignored by free()
+    if (heap_rover == gone) {
+        heap_rover = block;
+    }
 }
 
 // allocate size bytes, returns a 16 byte aligned pointer or NULL (size 0, too big, or out of memory)
@@ -398,32 +425,37 @@ void* malloc(size_t size) {
     // e.g. 1 -> 16, 16 -> 16, 17 -> 32
     size = (size + HEAP_ALIGN - 1) & ~(size_t)(HEAP_ALIGN - 1);
 
-    // first fit: take the first free block that is big enough
-    for (heap_block_t* block = heap_head; block != NULL; block = block->next) {
-        if (!block->free || block->size < size) {
-            continue;
+    // next fit: from the rover to the end of the list, then from the start back to the rover
+    heap_block_t* block = heap_rover;
+    do {
+        if (block->magic == HEAP_FREE && block->size >= size) {
+            // split the block if the remainder is big enough to be useful
+            // (it has to hold a new header plus at least one 16 byte chunk, otherwise we just hand
+            // out the whole block and the few spare bytes ride along with it)
+            if (block->size >= size + sizeof(heap_block_t) + HEAP_ALIGN) {
+                // block + 1 is pointer maths on heap_block_t, so it means "just past the header",
+                // which is where the caller's data starts. The new header goes right after their data
+                heap_block_t* rest = (heap_block_t*)((uint8_t*)(block + 1) + size);
+                rest->size = block->size - size - sizeof(heap_block_t);
+                rest->magic = HEAP_FREE;
+                // slot the new block into the list between this block and the one after it
+                rest->next = block->next;
+                rest->prev = block;
+                if (block->next) {
+                    block->next->prev = rest;
+                }
+                block->next = rest;
+                block->size = size;
+            }
+            block->magic = HEAP_USED;
+            // the next search starts just after this block, usually the free leftover
+            heap_rover = block->next ? block->next : heap_head;
+            // hand out the memory just after the header
+            return block + 1;
         }
-        // split the block if the remainder is big enough to be useful
-        // (it has to hold a new header plus at least one 16 byte chunk, otherwise we just hand
-        // out the whole block and the few spare bytes ride along with it)
-        if (block->size >= size + sizeof(heap_block_t) + HEAP_ALIGN) {
-            // block + 1 is pointer maths on heap_block_t, so it means "just past the header",
-            // which is where the caller's data starts. The new header goes right after their data.
-            heap_block_t* rest = (heap_block_t*)((uint8_t*)(block + 1) + size);
-            // the leftover is what remains once our data and the new header are taken out
-            rest->size = block->size - size - sizeof(heap_block_t);
-            rest->magic = HEAP_MAGIC;
-            // slot the new block into the list between this block and the one after it
-            rest->next = block->next;
-            rest->free = 1;
-            block->size = size;
-            block->next = rest;
-        }
-        block->free = 0;
-        // hand out the memory just after the header
-        return block + 1;
-    }
-    return NULL; // out of memory
+        block = block->next ? block->next : heap_head;
+    } while (block != heap_rover);
+    return NULL; // went all the way round: out of memory
 }
 
 // give a block back to the heap
@@ -435,30 +467,19 @@ void free(void* ptr) {
     }
     // the header sits immediately before the pointer malloc handed out
     heap_block_t* block = (heap_block_t*)ptr - 1;
-    // a random pointer is very unlikely to have HEAP_MAGIC just in front of it, so this catches
+    // a random pointer is very unlikely to have HEAP_USED just in front of it, so this catches
     // most bad pointers. It can't catch everything (e.g. a pointer into the middle of a block).
-    if (block->magic != HEAP_MAGIC || block->free) {
+    if (block->magic != HEAP_USED) {
         return; // not from malloc, or freed twice
     }
-    block->free = 1;
+    block->magic = HEAP_FREE;
 
-    // merge neighbouring free blocks
-    // because the list is in address order, a block and its next are touching in memory, so merging
-    // just means the first block swallows the second one's header and data:
-    //     [hdr A | data A][hdr B | data B]   ->   [hdr A | data A ............. ]
-    // We walk the whole list (not just around this block), which keeps the code simple.
-    // (two blocks from different regions are next to each other in the list but not in memory,
-    // so they are only merged when the first one really ends where the second one starts)
-    for (heap_block_t* b = heap_head; b != NULL && b->next != NULL;) {
-        bool touching = (uint8_t*)(b + 1) + b->size == (uint8_t*)b->next;
-        if (b->free && b->next->free && touching) {
-            b->size += sizeof(heap_block_t) + b->next->size;
-            b->next = b->next->next;
-            // don't move on: the block after the one we swallowed might be free too,
-            // so a run of three or more free blocks all collapse into one
-        } else {
-            b = b->next;
-        }
+    // merge with the neighbours if they are free too (and really next to it in memory)
+    if (block->next && block->next->magic == HEAP_FREE && heap_touching(block, block->next)) {
+        heap_merge_next(block);
+    }
+    if (block->prev && block->prev->magic == HEAP_FREE && heap_touching(block->prev, block)) {
+        heap_merge_next(block->prev);
     }
 }
 
@@ -492,7 +513,7 @@ void* realloc(void* ptr, size_t size) {
     }
     heap_block_t* block = (heap_block_t*)ptr - 1;
     // not a heap block, we can't know how big it is so we can't safely copy it
-    if (block->magic != HEAP_MAGIC) {
+    if (block->magic != HEAP_USED) {
         return NULL;
     }
     // the block is already big enough (thanks to rounding it often has a few bytes spare)
@@ -545,7 +566,7 @@ size_t heap_total(void) {
 size_t heap_used(void) {
     size_t used = 0;
     for (heap_block_t* b = heap_head; b != NULL; b = b->next) {
-        if (!b->free) {
+        if (b->magic == HEAP_USED) {
             used += b->size + sizeof(heap_block_t);
         }
     }

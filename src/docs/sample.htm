@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>HTML in the AerOS reader</title>
+<style>body { font-family: sans-serif; }</style>
+</head>
+<body>
+
+<h1>HTML in the AerOS reader</h1>
+
+<p>This page is plain <b>HTML</b>, the language web pages are written in. The reader turns
+its tags into the same headings, lists and colours it uses for Markdown, so the two look
+alike on screen.</p>
+
+<h2>Text</h2>
+
+<p>Words can be <strong>strong</strong>, <em>emphasised</em> or <code>code</code>.
+Characters like &lt;, &gt; and &amp; are written with entities.<br>
+A <code>&lt;br&gt;</code> starts a new line without a gap.</p>
+
+<blockquote>A blockquote is shown with a bar down its side, like a quote in Markdown.</blockquote>
+
+<h2>Lists</h2>
+
+<ul>
+  <li>a bulleted list</li>
+  <li>with a second item
+    <ol>
+      <li>and a numbered list</li>
+      <li>inside it</li>
+    </ol>
+  </li>
+</ul>
+
+<h2>Code</h2>
+
+<pre>
+for i = 1 to 3 do
+    print("line " + i)
+end
+</pre>
+
+<h2>Tables</h2>
+
+<table>
+  <tr><th>Tag</th><th>Shown as</th></tr>
+  <tr><td>&lt;h1&gt; to &lt;h6&gt;</td><td>headings</td></tr>
+  <tr><td>&lt;ul&gt;, &lt;ol&gt;, &lt;li&gt;</td><td>lists</td></tr>
+  <tr><td>&lt;pre&gt;</td><td>code, exactly as written</td></tr>
+</table>
+
+<hr>
+
+<p>Links work too: back to <a href="reader.md">the reader's page</a> or
+<a href="index.md">the start of the manual</a>.</p>
+
+<script>document.write("scripts are skipped");</script>
+</body>
+</html>
