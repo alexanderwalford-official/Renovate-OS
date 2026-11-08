@@ -79,6 +79,7 @@ static bool kb_shift = false;
 static bool kb_ctrl = false;
 static bool kb_caps = false;
 static bool kb_extended = false;
+static volatile bool kb_break = false; // ctrl + C was pressed
 
 // US QWERTY, scancode set 1 (index = scancode)
 // written as a row of the keyboard per line. "\0" marks keys with no character (ctrl, shift, alt),
@@ -212,7 +213,18 @@ static void kb_process_scancode(uint8_t scancode) {
     if (kb_ctrl && isalpha(c)) {
         c = (char)(toupper(c) - 'A' + 1); // ctrl + letter = control code 1-26
     }
+    // ctrl + C doesn't go in the buffer: it asks the running program to stop (see kb_take_break)
+    if (c == 3) {
+        kb_break = true;
+        return;
+    }
     kb_push((uint8_t)c);
+}
+
+bool kb_take_break(void) {
+    bool pressed = kb_break;
+    kb_break = false;
+    return pressed;
 }
 
 // IRQ1 handler

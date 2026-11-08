@@ -121,10 +121,11 @@ bool fat_dir_exists (const char* d_path);
 bool fat_file_exists (const char* f_path, const char* name);
 
 // read a whole file into a new '\0' terminated buffer (free() it when done), NULL if missing or on errors
-char* fat_read_file (const char* f_path, const char* name);
+// size (optional, may be NULL) receives the file's length in bytes
+char* fat_read_file (const char* f_path, const char* name, uint32_t* size);
 
 // create a new file holding contents, name must fit the 8.3 format (FS_ERR_BAD_NAME otherwise)
-int fat_create_file (const char* f_path, const char* name, const char* contents);
+int fat_create_file (const char* f_path, const char* name, const char* contents, uint32_t length);
 
 // replace (append = false) or add to (append = true) the contents of an existing file
 int fat_write_file (const char* f_path, const char* name, const char* text, bool append);
@@ -141,5 +142,11 @@ int fat_delete_dir (const char* d_path);
 // print a directory listing (directories first, then files)
 // returns how many entries were printed, or -1 if the directory does not exist
 int fat_print_dir (const char* d_path);
+
+// called once per entry by fat_list_dir / fs_list: its name, whether it is a directory, its size
+typedef void (*fs_list_fn)(const char* name, bool is_dir, uint32_t size, void* ctx);
+
+// call fn for every file and directory in d_path, returns how many there were (-1 if it doesn't exist)
+int fat_list_dir (const char* d_path, fs_list_fn fn, void* ctx);
 
 #endif /* FAT_H */

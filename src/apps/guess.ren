@@ -1,0 +1,22 @@
+# guess.ren - guess the number
+
+print("I'm thinking of a number from 1 to 100.")
+let secret = random(100) + 1
+let tries = 0
+
+while true do
+    let guess = int(input("Your guess: "))
+    if guess == nil then
+        print("That isn't a number.")
+        continue
+    end
+    tries = tries + 1
+    if guess < secret then
+        print("Higher!")
+    elif guess > secret then
+        print("Lower!")
+    else
+        print("You got it in " + str(tries) + " tries!")
+        break
+    end
+end

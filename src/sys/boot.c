@@ -29,6 +29,7 @@
 #include "interrupts.h"
 #include "sys_clck.h"
 #include "f_sys.h"
+#include "apps.h"
 
 // the value a multiboot bootloader leaves in eax (not the same as the 0x1BADB002 in our header)
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -148,6 +149,12 @@ int init_boot (void) {
     // "n" = normal: mount a FAT disk labelled AEROS if there is one, otherwise use the VFS
     // "d" = demo: go straight to the VFS without probing the disks at all
     fs_init(boot_option == BOOT_OPT_DEMO ? "d" : "n");
+
+    // the apps that come with AerOS, copied into /bin/ unless they are already there
+    int installed = apps_install();
+    if (installed > 0) {
+        printf("< APPS .. > %d app file(s) added to /bin/\n", installed);
+    }
 
     // beep once
     //beep(0);

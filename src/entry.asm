@@ -26,6 +26,7 @@
 ; loader is exported so linker.ld's ENTRY(loader) can find it, stack_ptr marks the top of the stack
 global loader
 global stack_ptr
+global stack
 
 ; main() lives in kernel.c
 extern main
@@ -68,9 +69,10 @@ MultiBootHeader:
 
 section .text
 
-; 0x8000 = 32KB of kernel stack, shared by main(), every process and every interrupt handler
+; 0x40000 = 256KB of kernel stack, shared by main(), every process and every interrupt handler
+; (RenLang programs run on it too, and an interpreter recurses for every nested call and expression)
 ; (there is no separate interrupt stack). Recursion or large local arrays eat into it
-STACKSIZE equ 0x8000
+STACKSIZE equ 0x40000
 
 loader:
   cli                       ; no interrupts until the kernel has set up its IDT

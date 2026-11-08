@@ -14,8 +14,11 @@ CFLAGS = -m32 -march=i686 -std=gnu99 -ffreestanding -fno-builtin -fno-stack-prot
 LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
 # every .c file is compiled on its own into obj/, then linked together
-SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c)
-OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES))
+SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
+# the built-in apps (apps/*.ren and their files) are linked into the kernel as raw data,
+# sys/apps.c copies them into /bin/ when the OS starts
+APP_FILES = $(wildcard apps/*)
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(APP_FILES))
 
 QEMU = qemu-system-i386
 
@@ -47,6 +50,12 @@ obj/entry.o: entry.asm
 obj/%.o: %.c
 	@mkdir -p '$(dir $@)'
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
+
+# a built-in app: "ld -b binary" wraps the file's bytes in an object file, with the symbols
+# _binary_apps_<name>_start / _end marking where they are (see sys/apps.c)
+obj/apps/%.o: apps/%
+	@mkdir -p obj/apps
+	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
 
 # header dependencies written by -MMD
 -include $(OBJECTS:.o=.d)

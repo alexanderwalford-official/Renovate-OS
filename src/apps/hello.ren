@@ -1,0 +1,35 @@
+# hello.ren - a first RenLang program
+# run it from the terminal by typing: hello
+
+print("Hello from RenLang!")
+print("")
+
+let name = input("What's your name? ")
+if name == "" then
+    name = "friend"
+end
+print("Nice to meet you, " + name + ".")
+
+# functions
+func square(n)
+    return n * n
+end
+
+write("Squares:")
+for i = 1 to 5 do
+    write(" " + str(square(i)))
+end
+print("")
+
+# lists
+let colours = ["red", "green", "blue"]
+push(colours, "orange")
+print("I know", len(colours), "colours:", join(colours, ", "))
+
+# a while loop
+let count = 3
+while count > 0 do
+    print(str(count) + "...")
+    count = count - 1
+end
+print("Lift off!")

@@ -40,6 +40,7 @@
 #include "../boot.h"
 #include "../power.h"
 #include "../p_man.h"
+#include "../../lang/renlang.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -410,6 +411,49 @@ static void cli_shutdown (char* args) {
     sys_shutdown();
 }
 
+// the interactive RenLang prompt
+static void cli_ren (char* args) {
+    (void)args;
+    ren_repl();
+}
+
+// is there a program file with this name, here or in /bin/?
+static bool program_exists (const char* file) {
+    char dir[FS_PATH_MAX];
+    char name[FS_NAME_MAX];
+    if (!fs_split_path(file, dir, sizeof(dir), name, sizeof(name))) {
+        return false;
+    }
+    return fs_file_exists(dir, name) || (!strchr(file, '/') && fs_file_exists("/bin/", name));
+}
+
+// run "command args" as a RenLang program if command names one ("hello" or "hello.ren"),
+// returns false if there is no such program
+static bool cli_run_program (const char* command, const char* args) {
+    char line[P_INST_MAX];
+    strlcpy(line, command, sizeof(line));
+    size_t length = strlen(line);
+    if (length < 4 || strcasecmp(line + length - 4, ".ren") != 0) {
+        strlcat(line, ".ren", sizeof(line));
+    }
+    if (!program_exists(line)) {
+        return false;
+    }
+    if (*args) {
+        strlcat(line, " ", sizeof(line));
+        strlcat(line, args, sizeof(line));
+    }
+    // like RUN: as its own process, which hands the line to compile()
+    int pid = p_create(line);
+    if (pid < 0) {
+        printf("The process stack is full.\n");
+        return true;
+    }
+    p_exec(pid);
+    p_destroy(pid);
+    return true;
+}
+
 // the commands, in the order HELP lists them (names are not case sensitive)
 // name = what the user types (lowercase here, matched with strcasecmp so LA, la and La all work)
 // run  = the handler, given the trimmed rest of the line
@@ -438,6 +482,8 @@ static const struct cli_command {
     { "beep",     cli_beep,           "BEEP [HZ]       - PLAY A BEEP ON THE PC SPEAKER" },
     { "reboot",   cli_reboot,         "REBOOT          - RESTART THE COMPUTER" },
     { "shutdown", cli_shutdown,       "SHUTDOWN        - TURN OFF THE COMPUTER" },
+    { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
+    { "",         0,                  "<APP> [ARGS]    - RUN A RENLANG PROGRAM, e.g. HELLO (/bin/hello.ren)" },
 };
 
 // how many commands are in the table (the size of the whole array divided by the size of one entry)
@@ -483,6 +529,8 @@ void HandleInput (char* in) {
     // i is only inside the table if the loop stopped on a match
     if (i < CLI_COMMAND_COUNT) {
         cli_commands[i].run(args);
+    } else if (cli_run_program(command, args)) {
+        // it was a RenLang program (e.g. "hello" runs /bin/hello.ren)
     } else {
         printf("> %s\n", command);
         printf("Unrecognised command, please try again.\n");

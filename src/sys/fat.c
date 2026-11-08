@@ -852,18 +852,46 @@ bool fat_file_exists (const char* f_path, const char* name) {
 }
 
 // the whole file in a new buffer (free() it when done), NULL if it isn't there or can't be read
-char* fat_read_file (const char* f_path, const char* name) {
+// size (optional) receives its length, which matters for binary files that contain '\0' bytes
+char* fat_read_file (const char* f_path, const char* name, uint32_t* size) {
     fat_entry_t e;
     if (!fat_find_file(f_path, name, &e)) {
         return NULL;
     }
+    if (size) {
+        *size = e.entry.size;
+    }
     return fat_read_chain(fat_entry_cluster(&e.entry), e.entry.size);
+}
+
+typedef struct {
+    fs_list_fn fn;
+    void* ctx;
+    int count;
+} fat_each_ctx_t;
+
+static bool fat_each_visit (const fat_entry_t* e, void* ctx) {
+    fat_each_ctx_t* each = ctx;
+    each->fn(e->name, (e->entry.attr & FAT_ATTR_DIRECTORY) != 0, e->entry.size, each->ctx);
+    each->count++;
+    return false;
+}
+
+// call fn for every file and directory in d_path, returns how many there were (-1 if it doesn't exist)
+int fat_list_dir (const char* d_path, fs_list_fn fn, void* ctx) {
+    uint32_t dir;
+    if (!fat_resolve_dir(d_path, &dir)) {
+        return -1;
+    }
+    fat_each_ctx_t each = { fn, ctx, 0 };
+    fat_walk_dir(dir, fat_each_visit, &each);
+    return each.count;
 }
 
 // create a new file, the name has to fit 8.3 (we can read long names but not write them)
 // the order matters for crash safety: write the data, find a slot, then write the entry.
 // if anything fails the data clusters are freed again, so nothing is left half made
-int fat_create_file (const char* f_path, const char* name, const char* contents) {
+int fat_create_file (const char* f_path, const char* name, const char* contents, uint32_t length) {
     fat_entry_t existing;
     fat_dirent_t d;
     uint32_t dir, first, lba;
@@ -875,7 +903,6 @@ int fat_create_file (const char* f_path, const char* name, const char* contents)
     memset(&d, 0, sizeof(d));
     if (!fat_make_83(name, d.name, &d.nt_case)) return FS_ERR_BAD_NAME;
 
-    uint32_t length = (uint32_t)strlen(contents);
     int result = fat_write_chain(contents, length, &first);
     if (result != FS_OK) return result;
     if (!fat_free_slot(dir, &lba, &slot)) {

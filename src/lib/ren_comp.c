@@ -28,6 +28,8 @@
 #include "../sys/boot.h"
 #include "../sys/recovery.h"
 #include "../sys/splash.h"
+#include "../sys/f_sys.h"
+#include "../lang/renlang.h"
 #include "../sys/p_man.h"
 #include "../sys/terminal/t_int.h"
 
@@ -112,6 +114,13 @@ int error_screen (const char* code) {
 //   terminal            start the terminal, unless it is already running
 //   iso_launch_options  the boot options menu (sys/recovery.c)
 // anything else shows the error screen and returns -1
+// true if the first word of the code names a RenLang program file ("hello.ren", "/bin/x.ren ...")
+static bool is_program (const char* code) {
+    const char* end = strchr(code, ' ');
+    size_t length = end ? (size_t)(end - code) : strlen(code);
+    return length > 4 && strncmp(code + length - 4, ".ren", 4) == 0;
+}
+
 int compile (const char* code) {
     int result = 0;
 
@@ -157,6 +166,16 @@ int compile (const char* code) {
         // gotcha: picking an option after boot only changes boot_option, the file system
         // that init_boot already set up stays as it is
         boot_options_menu();
+    }
+    else if (is_program(code)) {
+        // "<program>.ren [args]": run a RenLang program file, the rest of the line is its args
+        char program[FS_PATH_MAX];
+        const char* space = strchr(code, ' ');
+        size_t length = space ? (size_t)(space - code) : strlen(code);
+        if (length >= sizeof(program)) length = sizeof(program) - 1;
+        memcpy(program, code, length);
+        program[length] = '\0';
+        result = ren_run_file(program, space ? space + 1 : "");
     }
     else {
         // unknown code: show the exception screen (this also beeps and waits 4 seconds)

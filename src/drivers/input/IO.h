@@ -49,6 +49,9 @@ void init_keyboard(void);
 // never blocks, so a program can poll the keyboard while doing something else (e.g. an animation)
 bool kb_haschar(void);
 
+// true (once) if ctrl + C was pressed since the last call, used to stop a running program
+bool kb_take_break(void);
+
 // returns the next pressed key, waiting for one if the buffer is empty
 // (ASCII characters, or one of the KEY_ special values), 0 if there is no keyboard
 // "no keyboard" also covers interrupts being disabled, since then no key could ever arrive
