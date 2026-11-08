@@ -49,5 +49,6 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Audio. (AC'97 sound card, PLAY for WAV and MP3 files using minimp3, and a startup sound in /sys/startup.wav that you can replace)
 - [x] A manual inside the OS. (DOCS opens /docs/ in a Markdown / HTML / text reader written in AerLang)
 - [x] System information. (SYSINFO shows the processor, memory, screen, disks, sound card and every PCI device)
+- [x] Animations. (progress bars and spinners for long jobs like DEL, ENCRYPT and PLAY, and progress / spinner / frame in AerLang)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

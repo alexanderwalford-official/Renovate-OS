@@ -484,60 +484,89 @@ int fs_delete_f (const char* f_path, const char* f_name) {
     return (fs_mode == FS_MODE_DISK) ? fat_delete_file(path, f_name) : mem_delete_f(path, f_name);
 }
 
-// what fs_wipe_dir has found in one directory, up to WIPE_BATCH entries at a time
-#define WIPE_BATCH 32
+// what fs_empty_dir has found in one directory, up to LIST_BATCH entries at a time
+#define LIST_BATCH 32
 typedef struct {
     char (*names)[FS_NAME_MAX];
     bool* dirs;
     int count;
-} wipe_list_t;
+} batch_t;
 
-static void wipe_collect (const char* name, bool is_dir, uint32_t size, void* ctx) {
+static void batch_collect (const char* name, bool is_dir, uint32_t size, void* ctx) {
     (void)size;
-    wipe_list_t* list = ctx;
-    if (list->count < WIPE_BATCH) {
-        strlcpy(list->names[list->count], name, FS_NAME_MAX);
-        list->dirs[list->count] = is_dir;
-        list->count++;
+    batch_t* batch = ctx;
+    if (batch->count < LIST_BATCH) {
+        strlcpy(batch->names[batch->count], name, FS_NAME_MAX);
+        batch->dirs[batch->count] = is_dir;
+        batch->count++;
     }
 }
 
-// securely delete everything inside a directory, see f_sys.h
-// it lists up to WIPE_BATCH entries, deletes them, and lists again until the directory is empty
-// (deleting while the listing is still walking the directory would confuse the walk)
-int fs_wipe_dir (const char* d_path) {
+// fs_count_files: add up the files here, and the files of each sub directory
+typedef struct {
+    const char* path;
+    int count;
+} count_t;
+
+static void count_entry (const char* name, bool is_dir, uint32_t size, void* ctx) {
+    (void)size;
+    count_t* c = ctx;
+    if (!is_dir) {
+        c->count++;
+        return;
+    }
+    char sub[FS_PATH_MAX];
+    snprintf(sub, sizeof(sub), "%s%s/", c->path, name);
+    int inside = fs_count_files(sub);
+    if (inside > 0) c->count += inside;
+}
+
+int fs_count_files (const char* d_path) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path)) || !fs_dir_exists(path)) return FS_ERR_NOT_FOUND;
-    char (*names)[FS_NAME_MAX] = malloc(WIPE_BATCH * FS_NAME_MAX);
+    count_t c = { path, 0 };
+    fs_list(path, count_entry, &c);
+    return c.count;
+}
+
+// delete everything inside a directory, see f_sys.h
+// it lists up to LIST_BATCH entries, deletes them, and lists again until the directory is empty
+// (deleting while the listing is still walking the directory would confuse the walk)
+int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, void* ctx) {
+    char path[FS_PATH_MAX];
+    if (!fs_resolve_dir(d_path, path, sizeof(path)) || !fs_dir_exists(path)) return FS_ERR_NOT_FOUND;
+    char (*names)[FS_NAME_MAX] = malloc(LIST_BATCH * FS_NAME_MAX);
     if (names == NULL) return FS_ERR_NO_MEMORY;
-    bool dirs[WIPE_BATCH];
-    int wiped = 0;
+    bool dirs[LIST_BATCH];
+    int deleted = 0;
     for (;;) {
-        wipe_list_t list = { names, dirs, 0 };
-        fs_list(path, wipe_collect, &list);
+        batch_t batch = { names, dirs, 0 };
+        fs_list(path, batch_collect, &batch);
         int progress = 0;
-        for (int i = 0; i < list.count; i++) {
+        for (int i = 0; i < batch.count; i++) {
             if (dirs[i]) {
                 char sub[FS_PATH_MAX];
                 snprintf(sub, sizeof(sub), "%s%s/", path, names[i]);
-                int inside = fs_wipe_dir(sub); // empty it first, a directory must be empty to go
-                if (inside > 0) wiped += inside;
+                // empty it first, a directory must be empty to be deleted
+                int inside = fs_empty_dir(sub, zero_first, on_file, ctx);
+                if (inside > 0) deleted += inside;
                 if (fs_delete_d(sub) == FS_OK) progress++;
             } else {
-                // zero the contents on the disk first: deleting only marks the space as free,
-                // and the old bytes would still be there for anyone reading the raw disk
-                fs_write_bytes(path, names[i], "", 0, true);
+                // zeroing first matters: deleting only marks the space as free, and the old
+                // bytes would still be there for anyone reading the raw disk
+                if (zero_first) fs_write_bytes(path, names[i], "", 0, true);
                 if (fs_delete_f(path, names[i]) == FS_OK) {
-                    wiped++;
+                    deleted++;
                     progress++;
+                    if (on_file) on_file(names[i], ctx);
                 }
             }
         }
         // stop when it's empty, or when nothing more could be deleted (rather than loop forever)
-        if (list.count == 0 || progress == 0) break;
+        if (batch.count == 0 || progress == 0) break;
     }
     free(names);
-    return wiped;
+    return deleted;
 }
 
 // delete an empty directory (not "/" and not the current directory or one of its parents)

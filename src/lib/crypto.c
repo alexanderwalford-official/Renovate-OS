@@ -20,6 +20,7 @@
 
 #include "crypto.h"
 #include "aer_string.h"
+#include "busy.h"
 
 // ---- small helpers ----------------------------------------------------------------------------
 
@@ -245,6 +246,7 @@ void pbkdf2_sha256 (const void* password, size_t password_length, const void* sa
         hmac_run(&h, salt, salt_length, number, sizeof(number), u); // U1
         memcpy(t, u, sizeof(t));
         for (uint32_t i = 1; i < iterations; i++) {
+            if ((i & 1023) == 0) busy(); // this is the slow part: let a spinner turn
             hmac_run(&h, u, sizeof(u), 0, 0, u); // U(i+1) from Ui
             for (int k = 0; k < SHA256_SIZE; k++) t[k] ^= u[k];
         }

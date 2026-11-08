@@ -131,6 +131,24 @@ rows, e.g. `["Processor", "Speed", "about 2400 MHz"]` (`/bin/sysinfo.aer` shows 
 
 `args` is the list of words typed after the program's name.
 
+**Animation** (the same bars and spinners AerOS itself uses, see `src/sys/ui.h`)
+`progress(x, y, width, done, total, colour)` a bar like `[#####.....]  50%` (the bar is
+`width` cells, plus 8 for the brackets and the percentage) ·
+`spinner(x, y, style, colour)` the spinner's frame for this moment, style 0 to 4 (line, arrows,
+pulse, dots, bounce); returns how many cells it took ·
+`frame(fps)` wait until it's time for the next frame, so a loop runs at a steady speed however
+long the drawing took. The colours can be left out.
+
+```
+while not haskey() do
+    progress(2, 10, 40, time() / 50 % 101, 100)
+    spinner(2, 12, 4, LIGHT_CYAN)
+    frame(20)
+end
+```
+
+`/bin/anim.aer` shows them all.
+
 **Graphics**
 Call `gfx_open()` to take over the screen (it returns false if there is no graphics screen) and
 `gfx_close()` to give it back to the terminal, which also happens on its own when the program ends.

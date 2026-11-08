@@ -13,7 +13,7 @@ fill in, and `[square brackets]` mean it can be left out. `HELP` shows this list
 | `mkf <file> [text]` | make a file, with some text in it if you like |
 | `wr <file> <text>` | add a line to the end of a file |
 | `mkd <dir>` | make a folder |
-| `del <name>` | delete a file or an empty folder |
+| `del <name>` | delete a file, or a folder and everything in it (asks first) |
 | `edit <file>` | open a file in the [editor](editor.md) |
 | `read [file]` | open a file in the [reader](reader.md) |
 | `docs [topic]` | this manual, e.g. `docs sound` |
@@ -45,6 +45,7 @@ See [Accounts and encryption](security.md).
 | `<app> [args]` | run `/bin/<app>.aer`, e.g. `hello` or `guess` |
 | `aer` | the AerLang prompt |
 | `sysinfo` | the system information screen: processor, memory, disks, devices |
+| `anim` | a demo of the animations AerLang can draw |
 | `run <code>` | run code as a process: `run s:hi` |
 | `pman` | show the process stack |
 

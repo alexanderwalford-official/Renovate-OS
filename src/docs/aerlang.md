@@ -106,6 +106,21 @@ Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGH
 `system_info()` gives everything AerOS knows about the computer as a list of
 `[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
 
+**Animation:** `progress(x, y, width, done, total, colour)` draws a bar like
+`[#####.....]  50%`, `spinner(x, y, style, colour)` draws a spinner as it should look right
+now (styles 0 to 4: line, arrows, pulse, dots, bounce), and `frame(fps)` waits for the next
+frame, so a loop runs at a steady speed. The colour can be left out.
+
+```
+let done = 0
+while done <= 100 do
+    progress(2, 10, 40, done, 100)
+    spinner(2, 12, 4)
+    done = done + 1
+    frame(20)                   # 20 frames a second
+end
+```
+
 **Graphics:** `gfx_open()` takes over the screen and `gfx_close()` gives it back.
 Colours are numbers like `0xFF7F00` or `rgb(255, 127, 0)`.
 `gfx_width()`, `gfx_height()`, `gfx_clear(c)`, `pixel(x, y, c)`, `rect(x, y, w, h, c)`,
@@ -128,3 +143,4 @@ key()
 | `/bin/viewer.aer` | graphics, pictures and a menu |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
+| `/bin/anim.aer` | spinners, progress bars and moving text |

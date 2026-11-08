@@ -52,6 +52,7 @@
 #include "../accounts/auth.h"
 #include "../fcrypt.h"
 #include "../sound.h"
+#include "../ui.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -181,7 +182,9 @@ static void cli_read_encrypted (const char* path) {
     cli_ask_secret("Password: ", password, sizeof(password));
     uint8_t* contents;
     uint32_t length;
+    ui_busy_begin("Checking the password");
     int result = fcrypt_read_file(path, password, &contents, &length);
+    ui_busy_end();
     crypto_wipe(password, sizeof(password));
     if (result != FCRYPT_OK) {
         printf("Can't read %s: %s\n", path, fcrypt_strerror(result));
@@ -213,7 +216,9 @@ static void cli_encrypt (char* args) {
     if (strcmp(password, again) != 0) {
         printf("The passwords don't match, nothing was changed.\n");
     } else {
+        ui_busy_begin("Encrypting");
         int result = fcrypt_encrypt_file(args, password);
+        ui_busy_end();
         if (result == FCRYPT_OK) {
             printf("Encrypted %s. Don't lose the password, there is no way back without it.\n", args);
         } else {
@@ -236,7 +241,9 @@ static void cli_decrypt (char* args) {
     }
     char password[CLI_PASSWORD_MAX];
     cli_ask_secret("Password: ", password, sizeof(password));
+    ui_busy_begin("Decrypting");
     int result = fcrypt_decrypt_file(args, password);
+    ui_busy_end();
     crypto_wipe(password, sizeof(password));
     if (result == FCRYPT_OK) {
         printf("Decrypted %s.\n", args);
@@ -422,6 +429,56 @@ static void cli_make_directory (char* args) {
 
 // DEL <name>: delete a file, or a directory if it is empty
 // the same name could be read as a file or a directory, so a file is tried first
+// moves DEL's progress bar along, one deleted file at a time
+typedef struct {
+    ui_progress_t bar;
+    uint32_t done;
+} cli_delete_progress_t;
+
+static void cli_delete_step (const char* name, void* ctx) {
+    cli_delete_progress_t* d = ctx;
+    ui_progress_update(&d->bar, ++d->done, name);
+}
+
+// a listing callback that does nothing, for when only fs_list's count is wanted
+static void cli_ignore_entry (const char* name, bool is_dir, uint32_t size, void* ctx) {
+    (void)name; (void)is_dir; (void)size; (void)ctx;
+}
+
+// DEL on a directory: delete it, and everything in it once the user says yes
+static void cli_delete_dir (const char* path) {
+    // the same rules fs_delete_d has, checked BEFORE emptying anything: never the root, and
+    // never the directory we are standing in (or one it is inside)
+    if (StrCompare(path, "/")) {
+        printf("The top folder, /, can't be deleted.\n");
+        return;
+    }
+    if (strncmp(cd, path, strlen(path)) == 0) {
+        printf("Can't delete %s: you are in it (SD somewhere else first).\n", path);
+        return;
+    }
+    int files = fs_count_files(path);
+    int inside = fs_list(path, cli_ignore_entry, NULL); // fs_list returns how many entries there are
+    if (inside > 0) {
+        printf("%s has %d file(s) in it. Delete it and everything in it? (y/n) ", path, files < 0 ? 0 : files);
+        int key = GetChar();
+        printf("%c\n", key == 'y' || key == 'Y' ? 'y' : 'n');
+        if (key != 'y' && key != 'Y') {
+            printf("Nothing was deleted.\n");
+            return;
+        }
+        cli_delete_progress_t d = { { 0, 0, 0 }, 0 };
+        ui_progress_begin(&d.bar, files > 0 ? (uint32_t)files : 1);
+        int deleted = fs_empty_dir(path, false, cli_delete_step, &d);
+        ui_progress_end(&d.bar);
+        printf("Deleted %d file(s).\n", deleted < 0 ? 0 : deleted);
+    }
+    int result = fs_delete_d(path);
+    if (result != FS_OK) {
+        printf("Can't delete %s: %s\n", path, fs_strerror(result));
+    }
+}
+
 static void cli_delete (char* args) {
     char dir[FS_PATH_MAX];
     char name[FS_NAME_MAX];
@@ -439,14 +496,9 @@ static void cli_delete (char* args) {
         }
         return;
     }
-    // a directory?
-    // fs_delete_d() refuses a directory that still has things in it, and the current directory
-    // (or one of its parents), since we would be standing inside it
+    // a directory? An empty one just goes, one with things in it is emptied first (after asking)
     if (fs_resolve_dir(args, path, sizeof(path)) && fs_dir_exists(path)) {
-        int result = fs_delete_d(path);
-        if (result != FS_OK) {
-            printf("Can't delete %s: %s\n", path, fs_strerror(result));
-        }
+        cli_delete_dir(path);
         return;
     }
     // neither
@@ -520,8 +572,37 @@ static void cli_beep (char* args) {
     beep(atoi(args));
 }
 
-// while PLAY is playing: Esc or Ctrl+C stops it (other keys are ignored)
+// PLAY's status line. While the file is read and decoded a "Reading" spinner turns (busy(),
+// called by the MP3 decoder). The sound card asks cli_play_should_stop every few milliseconds
+// once it is playing, which is when the line becomes "Playing song.mp3  0:12  Esc stops it"
+static struct {
+    const char* name;      // the file
+    bool playing;          // the card has started
+    uint8_t row;           // the status line's screen row
+    uint32_t started_ms;   // when the card started
+    uint32_t drawn_ms;     // when the line was last redrawn
+} cli_playing;
+
 static bool cli_play_should_stop (void) {
+    uint32_t now = clck_uptime_ms();
+    if (!cli_playing.playing) {
+        ui_busy_end(); // the reading spinner's line becomes the playing line
+        uint8_t x;
+        console_get_cursor(&x, &cli_playing.row);
+        printf("\n");
+        cli_playing.playing = true;
+        cli_playing.started_ms = now;
+        cli_playing.drawn_ms = 0;
+    }
+    if (cli_playing.drawn_ms == 0 || now - cli_playing.drawn_ms >= 100) {
+        cli_playing.drawn_ms = now;
+        uint32_t seconds = (now - cli_playing.started_ms) / 1000;
+        char line[COLS + 1];
+        snprintf(line, sizeof(line), "Playing %s  %u:%02u  (Esc stops it)", cli_playing.name,
+                 seconds / 60, seconds % 60);
+        int width = ui_spinner(2, cli_playing.row, 4, LIGHT_GREEN);
+        puts((uint8_t)(3 + width), cli_playing.row, BRIGHT, console_bg, line);
+    }
     return kb_take_break() || (kb_haschar() && GetChar() == KEY_ESCAPE);
 }
 
@@ -531,8 +612,15 @@ static void cli_play (char* args) {
         printf("Usage: PLAY <file>   (a .wav or .mp3 file)\n");
         return;
     }
-    printf("Playing %s, press Esc to stop...\n", args);
+    cli_playing.name = args;
+    cli_playing.playing = false;
+    char label[COLS];
+    snprintf(label, sizeof(label), "Reading %s", args);
+    ui_busy_begin(label);
     int result = sound_play_file(args, cli_play_should_stop);
+    if (!cli_playing.playing) {
+        ui_busy_end(); // it never started (a missing file, or not a sound file)
+    }
     if (result != SOUND_OK) {
         printf("Can't play %s: %s\n", args, sound_strerror(result));
     }
@@ -701,7 +789,9 @@ static bool cli_ask_new_password (char* out, int size) {
 static bool cli_confirm_password (void) {
     char password[CLI_PASSWORD_MAX];
     cli_ask_secret("Your password: ", password, sizeof(password));
+    ui_busy_begin("Checking the password");
     bool ok = auth_check(auth_user, password);
+    ui_busy_end();
     crypto_wipe(password, sizeof(password));
     if (!ok) {
         printf("Wrong password.\n");
@@ -747,7 +837,9 @@ static void cli_add_user (char* args) {
     }
     char password[CLI_PASSWORD_MAX];
     if (cli_ask_new_password(password, sizeof(password))) {
+        ui_busy_begin("Saving the account");
         int result = auth_add(args, password);
+        ui_busy_end();
         if (result == AUTH_OK) {
             char home[FS_PATH_MAX] = "";
             printf("Made the account %s", args);
@@ -786,7 +878,9 @@ static void cli_password (char* args) {
     if (!cli_accounts_available() || !cli_confirm_password()) return;
     char password[CLI_PASSWORD_MAX];
     if (cli_ask_new_password(password, sizeof(password))) {
+        ui_busy_begin("Saving the password");
         int result = auth_set_password(auth_user, password);
+        ui_busy_end();
         printf(result == AUTH_OK ? "Password changed.\n" : "Couldn't save the new password.\n");
     }
     crypto_wipe(password, sizeof(password));
@@ -821,7 +915,7 @@ static const struct cli_command {
     { "mkf",      cli_make_file,      "MKF <FILE> [T]  - MAKE A FILE, WITH OPTIONAL TEXT" },
     { "wr",       cli_write_file,     "WR <FILE> <T>   - ADD A LINE OF TEXT TO THE END OF A FILE" },
     { "mkd",      cli_make_directory, "MKD <DIR>       - MAKE A DIRECTORY" },
-    { "del",      cli_delete,         "DEL <NAME>      - DELETE A FILE OR AN EMPTY DIRECTORY" },
+    { "del",      cli_delete,         "DEL <NAME>      - DELETE A FILE, OR A DIRECTORY AND ALL IN IT (ASKS FIRST)" },
     { "echo",     cli_echo,           "ECHO <TEXT>     - PRINT TEXT" },
     { "cls",      cli_clear,          "CLS             - CLEAR THE SCREEN" },
     { "mem",      cli_memory,         "MEM             - MEMORY USAGE" },

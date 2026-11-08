@@ -20,7 +20,8 @@
 
         1st and 2nd wrong password   a warning on the login screen
         3rd                          everything in the account's home folder is securely deleted
-                                     (fs_wipe_dir: zeroed on the disk, then deleted)
+                                     (fs_empty_dir: zeroed on the disk, then deleted, with
+                                     a progress bar)
         good login                   the count goes back to 0, and the terminal says how many
                                      wrong passwords there were
 
@@ -36,6 +37,7 @@
 #include "../../drivers/input/IO.h"
 #include "../f_sys.h"
 #include "../sys_clck.h"
+#include "../ui.h"
 
 #define AUTH_DIR        "/acc/"
 #define AUTH_FILE       "users"
@@ -267,6 +269,28 @@ static uint32_t clear_failures (const char* name) {
     return failures;
 }
 
+// moves the wipe's progress bar along, one deleted file at a time
+typedef struct {
+    ui_progress_t bar;
+    uint32_t done;
+} wipe_progress_t;
+
+static void wipe_step (const char* name, void* ctx) {
+    wipe_progress_t* w = ctx;
+    ui_progress_update(&w->bar, ++w->done, name);
+}
+
+// zero and delete everything in a home folder, with a progress bar, returns how many files went
+static int wipe_home (const char* home) {
+    int total = fs_count_files(home);
+    if (total <= 0) return 0;
+    wipe_progress_t w = { { 0, 0, 0 }, 0 };
+    ui_progress_begin(&w.bar, (uint32_t)total);
+    int wiped = fs_empty_dir(home, true, wipe_step, &w);
+    ui_progress_end(&w.bar);
+    return wiped;
+}
+
 // after a wrong password for an existing account: warn, or on every third one wipe the home folder
 static void failed_login (const char* name, uint32_t failures) {
     char home[FS_PATH_MAX];
@@ -280,10 +304,11 @@ static void failed_login (const char* name, uint32_t failures) {
         }
         return;
     }
-    int wiped = has_home ? fs_wipe_dir(home) : 0;
     console_set_color(LIGHT_RED, BLACK);
     printf("  %u wrong passwords in a row for %s.\n", AUTH_MAX_FAILURES, name);
     if (has_home) {
+        int wiped = wipe_home(home);
+        console_set_color(LIGHT_RED, BLACK);
         printf("  The %d file(s) in %s have been securely deleted.\n", wiped < 0 ? 0 : wiped, home);
     }
 }
@@ -330,8 +355,9 @@ static void first_account (void) {
             printf("  The passwords %s, try again.\n\n", password[0] ? "don't match" : "can't be empty");
             continue;
         }
-        printf("  Saving...\n"); // PBKDF2 takes a moment
+        ui_busy_begin("Saving the account"); // PBKDF2 takes a moment, the spinner shows it's working
         int result = auth_add(user, password);
+        ui_busy_end();
         crypto_wipe(password, sizeof(password));
         crypto_wipe(again, sizeof(again));
         if (result != AUTH_OK) {
@@ -362,7 +388,9 @@ void auth_login (void) {
         ask("User:     ", name, sizeof(name), false);
         ask("Password: ", password, sizeof(password), true);
         char* user = strlwr(StrTrim(name));
+        ui_busy_begin("Checking the password");
         bool ok = auth_check(user, password);
+        ui_busy_end();
         crypto_wipe(password, sizeof(password));
         if (ok) {
             auth_failures_seen = clear_failures(user);

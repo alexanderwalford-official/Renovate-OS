@@ -7,6 +7,7 @@
 
 #include "mp3.h"
 #include "aer_stdlib.h"
+#include "busy.h"
 
 #define MINIMP3_IMPLEMENTATION
 #define MINIMP3_NO_SIMD // plain C only, SSE isn't turned on in AerOS
@@ -57,6 +58,7 @@ int16_t* mp3_decode (const uint8_t* data, uint32_t size, uint32_t* frames, uint3
     uint32_t count = 0, capacity = 0;
     *rate = 0;
     while (size > 0) {
+        busy(); // a spinner can turn while a long song decodes
         int samples = mp3dec_decode_frame(&decoder, data, (int)size, pcm, &info);
         if (info.frame_bytes == 0) break; // no more frames in what's left
         data += info.frame_bytes;

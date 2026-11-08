@@ -1,0 +1,87 @@
+# anim.aer - what AerLang can animate: spinners, progress bars and moving text
+#
+#     anim            (any key stops it)
+#
+# Every frame redraws the whole picture, and frame(20) waits just long enough to keep it at
+# 20 frames a second however long the drawing took. Each animation works out where it should
+# be from time(), the milliseconds since AerOS started, so they all run at a steady speed.
+#
+# The three functions it is built on:
+#     spinner(x, y, style, colour)                 the spinner's frame for this moment
+#     progress(x, y, width, done, total, colour)   a bar, [#####.....]  50%
+#     frame(fps)                                   wait for the next frame
+
+let STYLES = ["line", "arrows", "pulse", "dots", "bounce"]
+let COLOURS = [YELLOW, LIGHT_CYAN, LIGHT_GREEN, LIGHT_PURPLE, LIGHT_RED]
+let MESSAGE = "AerOS draws all of this with three AerLang functions."
+let SPACES = "                                                                                "
+
+func pad(s, n)
+    if len(s) >= n then return s end
+    return s + sub(SPACES, 0, n - len(s))
+end
+
+func heading(y, s)
+    at(2, y)
+    color(YELLOW, BLACK)
+    write(s)
+end
+
+# goes 0, 1, 2 ... span - 1 and back down again, one step every ms milliseconds
+func bounce(t, span, ms)
+    let p = t / ms % (2 * span - 2)
+    if p < span then return p end
+    return 2 * span - 2 - p
+end
+
+cls()
+at(0, 0)
+color(BLACK, BRIGHT)
+write(pad(" Animations", 80))
+heading(2, "Spinners: spinner(x, y, style, colour)")
+heading(10, "Progress bars: progress(x, y, width, done, total, colour)")
+heading(16, "Moving text")
+at(2, 23)
+color(DARK_GRAY, BLACK)
+write("Press any key to stop.   Change me: edit /bin/anim.aer")
+
+while not haskey() do
+    let t = time()
+
+    # every spinner style, with its number and name
+    for s = 0 to len(STYLES) - 1 do
+        spinner(4, 4 + s, s, COLOURS[s])
+        at(14, 4 + s)
+        color(BRIGHT, BLACK)
+        write(str(s) + "  " + STYLES[s])
+    end
+
+    # three bars filling at different speeds, then starting again
+    for b = 0 to 2 do
+        let done = t / (20 + b * 15) % 101
+        progress(4, 12 + b, 40, done, 100, COLOURS[b + 2])
+        at(54, 12 + b)
+        color(DARK_GRAY, BLACK)
+        write(pad(["copying", "loading", "saving"][b], 10))
+    end
+
+    # a word bouncing from side to side
+    at(0, 18)
+    color(LIGHT_CYAN, BLACK)
+    write(pad(sub(SPACES, 0, 4 + bounce(t, 60, 40)) + "AerOS", 80))
+
+    # a line typing itself out, waiting a moment, and starting again
+    let shown = t / 70 % (len(MESSAGE) + 25)
+    at(4, 20)
+    color(BRIGHT, BLACK)
+    write(pad(sub(MESSAGE, 0, shown), len(MESSAGE) + 1))
+    if shown < len(MESSAGE) and t / 300 % 2 == 0 then
+        at(4 + shown, 20)
+        write(chr(219)) # the cursor
+    end
+
+    frame(20)
+end
+key()
+color(BRIGHT, BLACK)
+cls()

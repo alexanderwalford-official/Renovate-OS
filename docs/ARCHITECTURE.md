@@ -60,6 +60,7 @@ src/
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
     sysinfo.c             everything known about the computer (CPU, memory, disks, PCI), for SYSINFO
+    ui.c                  progress bars and spinners for long jobs (and AerLang's progress / spinner)
     apps.c                the built-in apps and files, copied to the disk at boot
     splash.c              the orange boot screen
     recovery.c            the boot options menu (press X on the splash)
@@ -73,6 +74,7 @@ src/
     aer_stdio.c           printf, snprintf                 aer_ctype.h   isdigit, toupper...
     aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  StrCompare, split, StrTrim
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
+    busy.c                busy(): long loops call it so a spinner can turn (see sys/ui.h)
     mp3.c + minimp3/      MP3 decoding
     aer_comp.c            runs a process's line of code (the built-in "instructions")
 

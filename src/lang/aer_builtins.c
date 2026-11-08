@@ -29,6 +29,7 @@
 #include "../sys/fcrypt.h"
 #include "../sys/sound.h"
 #include "../sys/sysinfo.h"
+#include "../sys/ui.h"
 #include "../lib/crypto.h"
 
 // argument checks
@@ -489,6 +490,64 @@ static value_t bi_play (int argc, value_t* argv, int line) {
     return aer_bool(result == SOUND_OK);
 }
 
+// animation (the same drawing the OS uses, see sys/ui.h)
+
+// a screen position from two arguments, checked so nothing is drawn off the screen
+static void cell_args (value_t* argv, int line, const char* fn, uint8_t* x, uint8_t* y) {
+    int32_t cx = int_arg(argv, 0, line, fn);
+    int32_t cy = int_arg(argv, 1, line, fn);
+    if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) {
+        aer_error(line, "%s() position %d, %d is off the screen (it is %d x %d)", fn, cx, cy, COLS, ROWS);
+    }
+    *x = (uint8_t)cx;
+    *y = (uint8_t)cy;
+}
+
+// progress(x, y, width, done, total, colour): [#####.....]  50%
+static value_t bi_progress (int argc, value_t* argv, int line) {
+    uint8_t x, y;
+    cell_args(argv, line, "progress", &x, &y);
+    int32_t width = int_arg(argv, 2, line, "progress");
+    int32_t done = int_arg(argv, 3, line, "progress");
+    int32_t total = int_arg(argv, 4, line, "progress");
+    int32_t colour = argc > 5 ? int_arg(argv, 5, line, "progress") : LIGHT_GREEN;
+    if (width < 1 || width > COLS) aer_error(line, "progress() width must be 1 to %d", COLS);
+    ui_bar(x, y, (uint8_t)width, done < 0 ? 0 : (uint32_t)done, total < 0 ? 0 : (uint32_t)total,
+           (enum color)(colour & 15));
+    return aer_nil();
+}
+
+// spinner(x, y, style, colour): the frame for this moment, returns how many cells it took
+static value_t bi_spinner (int argc, value_t* argv, int line) {
+    uint8_t x, y;
+    cell_args(argv, line, "spinner", &x, &y);
+    int32_t style = argc > 2 ? int_arg(argv, 2, line, "spinner") : 0;
+    int32_t colour = argc > 3 ? int_arg(argv, 3, line, "spinner") : YELLOW;
+    if (style < 0 || style >= UI_SPINNER_STYLES) {
+        aer_error(line, "spinner() style must be 0 to %d", UI_SPINNER_STYLES - 1);
+    }
+    return aer_int(ui_spinner(x, y, style, (enum color)(colour & 15)));
+}
+
+// frame(fps): wait until it's time for the next frame, so a loop runs at a steady speed
+// whatever it draws (sleep would add the drawing time on top). Ctrl+C stops the program
+static uint32_t last_frame_ms = 0;
+
+static value_t bi_frame (int argc, value_t* argv, int line) {
+    (void)argc;
+    int32_t fps = int_arg(argv, 0, line, "frame");
+    if (fps < 1 || fps > 1000) aer_error(line, "frame() needs 1 to 1000 frames a second");
+    uint32_t period = 1000u / (uint32_t)fps;
+    // a long gap (the first frame, or after something slow) starts the timing again
+    if (clck_uptime_ms() - last_frame_ms > period * 4) last_frame_ms = clck_uptime_ms();
+    while (clck_uptime_ms() - last_frame_ms < period) {
+        if (kb_take_break()) aer_error(line, "stopped (Ctrl+C)");
+        sleep_ms(1);
+    }
+    last_frame_ms += period;
+    return aer_nil();
+}
+
 // add one row of system information to the list as [group, name, value]
 static void info_row (const char* group, const char* name, const char* value, void* ctx) {
     value_t row = aer_list(3);
@@ -681,6 +740,9 @@ const aer_builtin_t aer_builtins[] = {
     { "sleep", bi_sleep, 1, 1 },
     { "time", bi_time, 0, 0 },
     { "system_info", bi_system_info, 0, 0 },
+    { "progress", bi_progress, 5, 6 },
+    { "spinner", bi_spinner, 2, 4 },
+    { "frame", bi_frame, 1, 1 },
     { "random", bi_random, 1, 1 },
     { "beep", bi_beep, 0, 1 },
     { "play", bi_play, 1, 1 },
