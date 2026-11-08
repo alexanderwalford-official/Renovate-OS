@@ -1,66 +1,564 @@
-# viewer.ren - look at BMP pictures
+
+# viewer.ren - AerOS BMP viewer with diagnostics and conversion
 #
-#   viewer              pick a picture from the current directory and /bin/
-#   viewer photo.bmp    open one straight away
+# Supports:
+#   1, 4, 8, 16, 24 and 32-bit uncompressed BMP
+#   Windows BITMAPINFOHEADER and V4/V5 headers
+#   16-bit RGB555 and RGB565 bitfields
 #
-# LEFT / RIGHT show the previous / next picture, ESC goes back
+# Converts supported BMP files to 24-bit BMP in memory.
+# Original files are never modified.
+
+# ------------------------------------------------
+# General utilities
+# ------------------------------------------------
 
 func ends_with(s, tail)
     return len(s) >= len(tail) and lower(sub(s, len(s) - len(tail))) == tail
 end
 
-# add every .bmp file in a folder to the list
 func find_pictures(folder, found)
     let names = list_files(folder)
     if names == nil then return found end
+
     for name in names do
         if ends_with(name, ".bmp") then
             push(found, folder + name)
         end
     end
+
     return found
 end
 
-# the list of pictures, returns the one picked or -1 for ESC
-func choose(pictures, selected)
+# ------------------------------------------------
+# BMP byte utilities
+# ------------------------------------------------
+
+func read_u16(d, p)
+    return d[p] + d[p + 1] * 256
+end
+
+func read_u32(d, p)
+    return d[p] + d[p + 1] * 256 + d[p + 2] * 65536 + d[p + 3] * 16777216
+end
+
+func read_s32(d, p)
+    return d[p] + d[p + 1] * 256 + d[p + 2] * 65536 + (d[p + 3] - 256) * 16777216
+end
+
+func set_byte(d, p, v)
+    d[p] = v % 256
+end
+
+func set_u16(d, p, v)
+    set_byte(d, p, v)
+    set_byte(d, p + 1, v / 256)
+end
+
+func set_u32(d, p, v)
+    set_byte(d, p, v)
+    set_byte(d, p + 1, v / 256)
+    set_byte(d, p + 2, v / 65536)
+    set_byte(d, p + 3, v / 16777216)
+end
+
+# Convert a masked colour component to 0-255.
+# Used for RGB555 and RGB565.
+func mask_component(value, mask)
+    if mask == 0 then return 0 end
+
+    let factor = 1
+
+    while mask % 2 == 0 do
+        mask = mask / 2
+        factor = factor * 2
+    end
+
+    let component = (value / factor) % (mask + 1)
+
+    return component * 255 / mask
+end
+
+# ------------------------------------------------
+# Display BMP diagnostics
+# ------------------------------------------------
+
+func diagnostics(path, d)
+
+    gfx_clear(rgb(20, 20, 25))
+
+    text(20, 20, "IMAGE DIAGNOSTICS", rgb(255, 200, 80), 2)
+    text(20, 55, "File: " + path, rgb(230, 230, 230), 1)
+
+    if d == nil then
+        text(20, 100, "ERROR: File could not be read.", rgb(255, 80, 80), 1)
+        return
+    end
+
+    text(20, 85, "File size: " + str(len(d)) + " bytes", rgb(230, 230, 230), 1)
+
+    if len(d) < 54 then
+        text(20, 120, "ERROR: File is too small for a standard BMP header.", rgb(255, 80, 80), 1)
+        return
+    end
+
+    let signature = chr(d[0]) + chr(d[1])
+    let dib = read_u32(d, 14)
+    let width = read_s32(d, 18)
+    let height = read_s32(d, 22)
+    let planes = read_u16(d, 26)
+    let bpp = read_u16(d, 28)
+    let compression = read_u32(d, 30)
+    let offset = read_u32(d, 10)
+
+    text(20, 110, "Signature: " + signature, rgb(230, 230, 230), 1)
+    text(20, 135, "DIB header: " + str(dib) + " bytes", rgb(230, 230, 230), 1)
+    text(20, 160, "Width: " + str(width), rgb(230, 230, 230), 1)
+    text(20, 185, "Height: " + str(height), rgb(230, 230, 230), 1)
+    text(20, 210, "Planes: " + str(planes), rgb(230, 230, 230), 1)
+    text(20, 235, "Bits per pixel: " + str(bpp), rgb(230, 230, 230), 1)
+    text(20, 260, "Compression: " + str(compression), rgb(230, 230, 230), 1)
+    text(20, 285, "Pixel offset: " + str(offset), rgb(230, 230, 230), 1)
+
+    let native = image_size(d)
+
+    if native == nil then
+        text(20, 320, "Native loader: REJECTED", rgb(255, 100, 100), 1)
+    else
+        text(20, 320, "Native loader: ACCEPTED", rgb(100, 255, 100), 1)
+    end
+end
+
+# ------------------------------------------------
+# BMP conversion
+# ------------------------------------------------
+
+func convert_bmp(d)
+
+    if d == nil or len(d) < 54 then return nil end
+
+    if d[0] != ord("B") or d[1] != ord("M") then
+        return nil
+    end
+
+    let offset = read_u32(d, 10)
+    let dib = read_u32(d, 14)
+
+    if dib < 40 then return nil end
+    if 14 + dib > len(d) then return nil end
+
+    let width = read_s32(d, 18)
+    let signed_height = read_s32(d, 22)
+
+    let planes = read_u16(d, 26)
+    let bpp = read_u16(d, 28)
+    let compression = read_u32(d, 30)
+
+    if width <= 0 or signed_height == 0 then return nil end
+    if planes != 1 then return nil end
+
+    let height = signed_height
+    let top_down = false
+
+    if height < 0 then
+        top_down = true
+        height = 0 - height
+    end
+
+    # BI_RGB = 0
+    # BI_BITFIELDS = 3
+    if compression != 0 and compression != 3 then
+        return nil
+    end
+
+    if compression == 3 and bpp != 16 then
+        return nil
+    end
+
+    if bpp != 1 and bpp != 4 and bpp != 8 and bpp != 16 and bpp != 24 and bpp != 32 then
+        return nil
+    end
+
+    # 16-bit bitfield masks.
+    let red_mask = 0x7C00
+    let green_mask = 0x03E0
+    let blue_mask = 0x001F
+
+    if bpp == 16 and compression == 3 then
+
+        let mask_pos = 14 + 40
+
+        if dib >= 52 then
+            mask_pos = 54
+        end
+
+        if mask_pos + 12 > len(d) then return nil end
+
+        red_mask = read_u32(d, mask_pos)
+        green_mask = read_u32(d, mask_pos + 4)
+        blue_mask = read_u32(d, mask_pos + 8)
+
+        if red_mask == 0 or green_mask == 0 or blue_mask == 0 then
+            return nil
+        end
+    end
+
+    # Source row alignment.
+    let source_stride = ((width * bpp + 31) / 32) * 4
+
+    if offset + source_stride * height > len(d) then
+        return nil
+    end
+
+    # ------------------------------------------------
+    # Read indexed colour palette.
+    # ------------------------------------------------
+
+    let palette = []
+    let palette_count = 0
+    let palette_offset = 14 + dib
+
+    if bpp <= 8 then
+
+        if bpp == 1 then palette_count = 2 end
+        if bpp == 4 then palette_count = 16 end
+        if bpp == 8 then palette_count = 256 end
+
+        let used = read_u32(d, 46)
+
+        if used > 0 then
+            palette_count = used
+        end
+
+        if palette_count > 256 then return nil end
+
+        if palette_offset + palette_count * 4 > offset then
+            return nil
+        end
+
+        for i = 0 to palette_count - 1 do
+
+            let p = palette_offset + i * 4
+
+            push(palette, [
+                d[p + 2],
+                d[p + 1],
+                d[p]
+            ])
+        end
+    end
+
+    # ------------------------------------------------
+    # Allocate output 24-bit BMP.
+    # ------------------------------------------------
+
+    let output_stride = ((width * 3 + 3) / 4) * 4
+    let output_size = 54 + output_stride * height
+
+    let out = bytes(output_size)
+
+    # BMP file header.
+    out[0] = ord("B")
+    out[1] = ord("M")
+
+    set_u32(out, 2, output_size)
+    set_u32(out, 10, 54)
+
+    # BITMAPINFOHEADER.
+    set_u32(out, 14, 40)
+    set_u32(out, 18, width)
+    set_u32(out, 22, height)
+
+    set_u16(out, 26, 1)
+    set_u16(out, 28, 24)
+
+    set_u32(out, 30, 0)
+    set_u32(out, 34, output_stride * height)
+
+    set_u32(out, 38, 2835)
+    set_u32(out, 42, 2835)
+
+    set_u32(out, 46, 0)
+    set_u32(out, 50, 0)
+
+    # ------------------------------------------------
+    # Convert pixels.
+    # ------------------------------------------------
+
+    for y = 0 to height - 1 do
+
+        let source_y = y
+
+        # Positive BMP heights are bottom-up.
+        if top_down then
+            source_y = height - 1 - y
+        end
+
+        let source_row = offset + source_y * source_stride
+
+        # Output is always bottom-up.
+        let output_row = 54 + y * output_stride
+
+        for x = 0 to width - 1 do
+
+            let red = 0
+            let green = 0
+            let blue = 0
+
+            # 1-bit indexed.
+            if bpp == 1 then
+
+                let p = d[source_row + x / 8]
+                let bit = 128
+
+                for j = 0 to (x % 8) - 1 do
+                    bit = bit / 2
+                end
+
+                let index = (p / bit) % 2
+
+                if index >= len(palette) then return nil end
+
+                red = palette[index][0]
+                green = palette[index][1]
+                blue = palette[index][2]
+            end
+
+            # 4-bit indexed.
+            if bpp == 4 then
+
+                let p = d[source_row + x / 2]
+                let index = 0
+
+                if x % 2 == 0 then
+                    index = p / 16
+                else
+                    index = p % 16
+                end
+
+                if index >= len(palette) then return nil end
+
+                red = palette[index][0]
+                green = palette[index][1]
+                blue = palette[index][2]
+            end
+
+            # 8-bit indexed.
+            if bpp == 8 then
+
+                let index = d[source_row + x]
+
+                if index >= len(palette) then return nil end
+
+                red = palette[index][0]
+                green = palette[index][1]
+                blue = palette[index][2]
+            end
+
+            # 16-bit RGB555 or RGB565.
+            if bpp == 16 then
+
+                let value = read_u16(d, source_row + x * 2)
+
+                red = mask_component(value, red_mask)
+                green = mask_component(value, green_mask)
+                blue = mask_component(value, blue_mask)
+            end
+
+            # 24-bit BGR.
+            if bpp == 24 then
+
+                let p = source_row + x * 3
+
+                blue = d[p]
+                green = d[p + 1]
+                red = d[p + 2]
+            end
+
+            # 32-bit BGRX.
+            if bpp == 32 then
+
+                let p = source_row + x * 4
+
+                blue = d[p]
+                green = d[p + 1]
+                red = d[p + 2]
+            end
+
+            # Store BGR in destination.
+            let dest = output_row + x * 3
+
+            out[dest] = blue
+            out[dest + 1] = green
+            out[dest + 2] = red
+        end
+    end
+
+    return out
+end
+
+# ------------------------------------------------
+# Conversion prompt
+# ------------------------------------------------
+
+func ask_conversion(path, data)
+
+    diagnostics(path, data)
+
+    text(20, 365, "Y = Convert to 24-bit BMP", rgb(100, 255, 100), 1)
+    text(20, 390, "N = Skip image", rgb(255, 200, 80), 1)
+    text(20, 415, "ESC = Return", rgb(230, 230, 230), 1)
+
     while true do
+
+        let k = key()
+
+        if k == ord("Y") or k == ord("y") then return 1 end
+        if k == ord("N") or k == ord("n") then return 0 end
+        if k == KEY_ESCAPE then return -1 end
+    end
+end
+
+# ------------------------------------------------
+# Show conversion failure
+# ------------------------------------------------
+
+func conversion_error(path, data, reason)
+
+    diagnostics(path, data)
+
+    text(20, 365, "CONVERSION FAILED", rgb(255, 80, 80), 1)
+    text(20, 390, reason, rgb(255, 180, 100), 1)
+    text(20, 430, "Press any key to continue.", rgb(230, 230, 230), 1)
+
+    key()
+end
+
+# ------------------------------------------------
+# Load picture
+# ------------------------------------------------
+
+func load_picture(path)
+
+    let data = read_bytes(path)
+
+    if data == nil then
+        conversion_error(path, nil, "Unable to read file.")
+        return nil
+    end
+
+    # Attempt native loading first.
+    let size = image_size(data)
+
+    if size != nil then
+        return data
+    end
+
+    # Display diagnostics and ask the user.
+    let choice = ask_conversion(path, data)
+
+    if choice != 1 then
+        return nil
+    end
+
+    # Attempt conversion.
+    let converted = convert_bmp(data)
+
+    if converted == nil then
+        conversion_error(path, data, "Unsupported or malformed BMP.")
+        return nil
+    end
+
+    # Validate output.
+    let converted_size = image_size(converted)
+
+    if converted_size == nil then
+        conversion_error(path, data, "AerOS rejected converted BMP.")
+        return nil
+    end
+
+    return converted
+end
+
+# ------------------------------------------------
+# Picture selection
+# ------------------------------------------------
+
+func choose(pictures, selected)
+
+    while true do
+
         color(WHITE, BLACK)
         cls()
+
         print("Picture viewer")
         color(BRIGHT, BLACK)
+
         print("UP / DOWN to choose, ENTER to open, ESC to quit")
         print("")
+
         for i = 0 to len(pictures) - 1 do
-            if i == selected then color(BLACK, BRIGHT) else color(BRIGHT, BLACK) end
+
+            if i == selected then
+                color(BLACK, BRIGHT)
+            else
+                color(BRIGHT, BLACK)
+            end
+
             print(" " + pictures[i] + " ")
         end
+
         color(BRIGHT, BLACK)
+
         let k = key()
-        if k == KEY_UP and selected > 0 then selected = selected - 1 end
-        if k == KEY_DOWN and selected < len(pictures) - 1 then selected = selected + 1 end
+
+        if k == KEY_UP and selected > 0 then
+            selected = selected - 1
+        end
+
+        if k == KEY_DOWN and selected < len(pictures) - 1 then
+            selected = selected + 1
+        end
+
         if k == KEY_ENTER then return selected end
         if k == KEY_ESCAPE then return -1 end
     end
 end
 
+# ------------------------------------------------
+# Display image
+# ------------------------------------------------
+
 func show(path)
+
     let w = gfx_width()
     let h = gfx_height()
+
     gfx_clear(rgb(24, 24, 24))
-    let data = read_bytes(path)
-    let size = nil
-    if data != nil then size = image_size(data) end
-    if size == nil then
-        text(20, 20, "Can't show " + path + " (it has to be an 8, 24 or 32 bit BMP)", rgb(255, 90, 90))
+
+    let data = load_picture(path)
+
+    if data == nil then
+        gfx_clear(rgb(24, 24, 24))
+        text(20, 20, "Unable to load " + path, rgb(255, 90, 90), 1)
         return
     end
 
-    # fit the picture above the caption, keeping its shape
+    let size = image_size(data)
+
+    if size == nil then
+        text(20, 20, "Can't display " + path, rgb(255, 90, 90), 1)
+        return
+    end
+
     let box_w = w - 40
     let box_h = h - 80
+
     let pw = size[0]
     let ph = size[1]
+
     if pw > box_w or ph > box_h then
+
         if pw * box_h > ph * box_w then
             ph = ph * box_w / pw
             pw = box_w
@@ -68,54 +566,86 @@ func show(path)
             pw = pw * box_h / ph
             ph = box_h
         end
+
     else
-        # small pictures are blown up by a whole number, so they stay sharp
+
         let zoom = 1
+
         while size[0] * (zoom + 1) <= box_w and size[1] * (zoom + 1) <= box_h do
             zoom = zoom + 1
         end
+
         pw = size[0] * zoom
         ph = size[1] * zoom
     end
+
     image(data, (w - pw) / 2, (h - 60 - ph) / 2, pw, ph)
 
     let caption = path + "   " + str(size[0]) + " x " + str(size[1])
-    text(20, h - 40, caption, rgb(240, 240, 240))
-    text(w - 300, h - 40, "LEFT / RIGHT   ESC = back", rgb(255, 127, 0))
+
+    text(20, h - 40, caption, rgb(240, 240, 240), 1)
+    text(w - 300, h - 40, "LEFT / RIGHT   ESC = back", rgb(255, 127, 0), 1)
 end
 
+# ------------------------------------------------
+# Main program
+# ------------------------------------------------
+
 let pictures = []
+
 if len(args) > 0 then
+
     push(pictures, args[0])
+
 else
+
     find_pictures("", pictures)
-    if cwd() != "/bin/" then find_pictures("/bin/", pictures) end
+
+    if cwd() != "/bin/" then
+        find_pictures("/bin/", pictures)
+    end
 end
+
 if len(pictures) == 0 then
     print("No pictures here. Put some .bmp files in this directory or in /bin/.")
     exit()
 end
 
 let current = 0
-if len(args) == 0 then current = choose(pictures, 0) end
+
+if len(args) == 0 then
+    current = choose(pictures, 0)
+end
 
 while current >= 0 do
+
     if not gfx_open() then
         print("The viewer needs a graphics screen, and this one is text only.")
         exit()
     end
+
     show(pictures[current])
+
     let k = key()
+
     while k != KEY_ESCAPE and k != KEY_LEFT and k != KEY_RIGHT do
         k = key()
     end
+
     if k == KEY_LEFT then
+
         current = (current + len(pictures) - 1) % len(pictures)
+
     elif k == KEY_RIGHT then
+
         current = (current + 1) % len(pictures)
+
     else
+
         gfx_close()
+
         if len(args) > 0 then exit() end
+
         current = choose(pictures, current)
     end
 end

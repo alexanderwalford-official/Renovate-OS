@@ -7,7 +7,8 @@
     1. integers   abs, utoa / itoa (number to text), strtol / strtoul / atoi (text to number)
     2. random     rand / srand, the tiny generator from the C standard itself
     3. sorting    qsort (really an insertion sort, see below)
-    4. the heap   malloc / free / calloc / realloc / strdup over a fixed 4MB pool
+    4. the heap   malloc / free / calloc / realloc / strdup over a 4MB pool, plus the free RAM
+                  the bootloader reports (added at boot by heap_add_region)
 
     Two things worth knowing up front:
     - We never use 64 bit division here. On 32 bit x86, dividing a 64 bit number makes GCC
@@ -279,13 +280,16 @@ void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, co
 // ---------------------------------------------------------------------------------------
 
 /*
-    A simple first-fit allocator over a fixed 4MB memory pool.
+    A simple first-fit allocator over one or more stretches ("regions") of memory.
     Every allocation is preceded by a small header, neighbouring free blocks are merged on free().
 
     Where the memory comes from:
     heap_area is just a big static array, so it lives in the kernel's .bss section, which GRUB
-    clears to zero when it loads us. There is no paging or physical memory manager involved:
-    the heap is always exactly these 4MB and can never grow.
+    clears to zero when it loads us. That 4MB is there from the first instruction, before
+    anything is known about the machine. Once the boot code has read the bootloader's memory map
+    it hands the biggest free stretch of RAM above the kernel to heap_add_region(), which links
+    it on after the pool (on a 256MB machine that is about 250MB more). There is no paging or
+    physical memory manager involved, the regions are used exactly where they are.
 
     How it is laid out:
     The pool is chopped into blocks that sit one after another in memory. Each block starts
@@ -316,7 +320,7 @@ void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, co
     See https://wiki.osdev.org/Memory_Allocation for other ways to write an allocator.
 */
 
-// total size of the pool: 4MB
+// size of the built-in pool: 4MB (more is added at boot, see heap_add_region)
 #define HEAP_SIZE  (4u * 1024u * 1024u)
 // every allocation is rounded up to a multiple of this (must be a power of two for the mask trick in malloc)
 #define HEAP_ALIGN 16u

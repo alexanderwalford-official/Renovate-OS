@@ -9,7 +9,7 @@
                   .text       all the code, starting with entry.asm's loader
       next 4KB    .rodata     constants and string literals
       next 4KB    .data       initialised global variables
-                  .bss        zeroed globals: the 32KB stack, the 4MB heap, the IDT...
+                  .bss        zeroed globals: the 256KB stack, the 4MB heap pool, the IDT...
                   end         first free byte after the kernel
 
     Why 1MB? Everything below it is the old real mode world: the BIOS interrupt table and data

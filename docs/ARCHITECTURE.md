@@ -1,0 +1,279 @@
+# How AerOS works
+
+A guide to the whole system: what each part does, how a boot unfolds, where everything lives
+in memory, and how to change things. Every source file starts with a comment explaining itself
+in more detail. This document is the map that ties them together.
+
+The other guides go deeper into one area each:
+
+* [RENLANG.md](RENLANG.md): the RenLang programming language and its built-in functions
+* [SECURITY.md](SECURITY.md): user accounts, password hashing and file encryption
+* [AUDIO.md](AUDIO.md): the sound card driver and WAV / MP3 playback
+
+## The idea
+
+AerOS is meant to be **small enough to understand completely** and **fast because it does so
+little**. It leaves out the machinery a general-purpose OS needs for many programs and many
+users at once:
+
+| Left out | What AerOS does instead | What that buys |
+| --- | --- | --- |
+| paging / virtual memory | every pointer is a physical address | no page tables, no TLB misses, nothing to set up |
+| multitasking and context switches | one thing runs at a time, to completion | no scheduler overhead, no locks |
+| a kernel / user split | everything runs in ring 0 | no system call overhead, drivers are ordinary functions |
+| loadable drivers and modules | every driver is compiled in | the whole OS is one ~430 KB file |
+| a C library | `src/lib` has just what the kernel uses | no unused code (`--gc-sections` removes the rest) |
+
+The cost is just as clear. A bug anywhere can crash everything, and there is no protection
+between programs. AerOS treats this as a fair trade for a system meant to be read, learned
+from and modified.
+
+## The source tree
+
+```
+src/
+  entry.asm             multiboot header (asks GRUB for 1024x768x32), sets up the stack, calls main()
+  kernel.c              main(): starts the hardware, then runs the boot processes in order
+  linker.ld             puts the kernel at 1 MB, header first
+  Makefile              builds main.elf and main.iso, runs QEMU (make run / run-vfs / run-uefi)
+
+  drivers/              talking to hardware
+    input/    IO.c        PS/2 keyboard: scancodes -> ring buffer -> GetChar / GetString / GetSecret
+              GIO.h       inb / outb port I/O and other one-instruction helpers
+    video/    VGA_linear.c  the text console: VGA text mode, or 80x25 cells drawn on a framebuffer
+              gfx.c       pixels, rectangles, lines, text and BMP pictures for apps
+              bga.c       changing resolution on QEMU / Bochs / VirtualBox graphics (RES command)
+              font8x16.c  the console font
+    storage/  ata.c       IDE / ATA disks, read and write sectors (PIO)
+    pci/      pci.c       finding devices on the PCI bus
+    audio/    ac97.c      the AC'97 sound card
+              tone.c      the PC speaker (BEEP)
+    serial/   serial.c    COM1: everything printed on screen is copied here, for debugging
+
+  sys/                  the operating system proper
+    boot.c                reads GRUB's multiboot info, prints the boot log
+    interrupts.c          GDT, IDT, PIC remapping, exception and IRQ dispatch
+    sys_clck.c            the PIT timer (1000 Hz) and the CMOS real time clock
+    p_man.c               the process manager (a queue of one-line jobs)
+    f_sys.c               the file system front end: DISK mode or the in-memory VFS
+    fat.c                 the FAT16 / FAT32 driver
+    fcrypt.c              password protected files
+    sound.c               WAV / MP3 decoding and playback
+    apps.c                the built-in apps and files, copied to the disk at boot
+    splash.c              the orange boot screen
+    recovery.c            the boot options menu (press X on the splash)
+    power.c               reboot and shut down
+    accounts/auth.c       user accounts and the login screen
+    terminal/t_int.c      the terminal and all its commands
+    terminal/editor.c     the text editor (EDIT)
+
+  lib/                  the kernel's own small C library
+    ren_string.c          memcpy, strlen, strtok_r...      ren_stdlib.c  malloc / free, itoa, qsort...
+    ren_stdio.c           printf, snprintf                 ren_ctype.h   isdigit, toupper...
+    ren_setjmp.c          setjmp / longjmp (RenLang errors) primary_definitions.c  StrCompare, split, StrTrim
+    crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
+    mp3.c + minimp3/      MP3 decoding
+    ren_comp.c            runs a process's line of code (the built-in "instructions")
+
+  lang/                 the RenLang interpreter
+    ren_lexer.c           source text -> tokens
+    ren_parser.c          tokens -> syntax tree
+    ren_interp.c          walks the tree; memory, values, variables
+    ren_builtins.c        print, read_file, play, gfx_... (every function a program can call)
+
+  apps/                 built-in files, linked into the kernel and copied to /bin/ or /sys/ at boot
+  iso/boot/grub/grub.cfg  GRUB's menu: loads main.elf, restores the saved screen resolution
+```
+
+## A boot, step by step
+
+```mermaid
+sequenceDiagram
+    participant G as GRUB
+    participant E as entry.asm
+    participant K as kernel.c main()
+    participant P as processes
+    G->>E: load main.elf at 1 MB, set the 1024x768 framebuffer, jump to loader
+    E->>K: stack set up, eax = magic, ebx = multiboot info
+    K->>K: read multiboot info (memory map, framebuffer)
+    K->>K: screen, serial, GDT, IDT + PIC, timer (IRQ0), keyboard (IRQ1)
+    K->>K: sti: interrupts on, check the timer really ticks
+    K->>P: "splash_screen": logo, startup sound, 4 s to press X
+    P-->>K: X pressed? -> boot options (normal, fast, demo, reboot, off)
+    K->>P: "init_boot": boot log, crypto self-test, sound card, file system, built-in files
+    K->>P: "terminal": login (DISK mode), then the command loop, until REBOOT / SHUTDOWN
+```
+
+Each step after the hardware set-up is a **process**: a line of code (`"splash_screen"`,
+`"init_boot"`, `"terminal"`) put on the process stack and handed to `compile()` in
+`lib/ren_comp.c`, which knows what each name means. Processes run one at a time to completion,
+shortest first. The terminal's `RUN` command creates processes the same way.
+
+## Memory
+
+There is no paging, so these are the real physical addresses:
+
+```
+0x00000000  +---------------------------+
+            | BIOS data, real mode IVT  |  left alone
+0x000B8000  | VGA text buffer           |  the console in text mode (80 x 25 x 2 bytes)
+0x00100000  +---------------------------+  1 MB
+            | .text   code              |
+            | .rodata constants         |  the kernel, about 430 KB
+            | .data   globals           |
+            | .bss    256 KB stack      |
+            |         4 MB heap pool    |
+            +---------------------------+  end of the kernel
+            | free RAM                  |  the biggest free stretch in GRUB's memory map is
+            |   (added to the heap)     |  handed to heap_add_region() at boot
+            +---------------------------+  end of RAM
+   ...
+0xFD000000  | framebuffer (typically)   |  wherever GRUB says, used as a plain pointer
+            +---------------------------+
+```
+
+* **The stack** (256 KB) is shared by everything, including interrupt handlers. Code that might
+  recurse deeply (the RenLang parser and interpreter) checks how much is left.
+* **The heap** (`malloc` / `free` in `lib/ren_stdlib.c`) is first-fit with a header per block,
+  merging free neighbours. It starts with the 4 MB pool inside the kernel and grows by the free
+  RAM found at boot, about 250 MB on a 256 MB machine.
+* **DMA** (the sound card) works with ordinary heap pointers, because without paging every
+  address the CPU sees is the address the hardware sees.
+
+## Interrupts
+
+| Vector | Source | Handler |
+| --- | --- | --- |
+| 0-31 | CPU exceptions (divide by zero, page fault...) | the red panic screen, with the exception's name |
+| 32 (IRQ0) | PIT timer, 1000 times a second | counts milliseconds, adds entropy for the random generator |
+| 33 (IRQ1) | PS/2 keyboard | scancode -> character -> ring buffer, adds entropy, Ctrl+C sets a break flag |
+
+Waiting is done with `hlt` until the next interrupt (`sleep_ms`), so an idle AerOS uses almost
+no CPU. If the firmware has switched the PIT off, `clck_verify()` notices at boot and every wait
+becomes a busy loop instead (about a millisecond per 1000 port writes, so timing is rough).
+
+## Files
+
+`src/sys/f_sys.c` is the only file system interface the rest of the OS uses. At boot it picks
+one of two modes:
+
+| Mode | When | Files go to |
+| --- | --- | --- |
+| DISK | an IDE disk with a FAT16 / FAT32 volume labelled `AEROS` is found | the disk (`fat.c`) |
+| VFS | no such disk, or DEMO mode chosen in the boot options | memory, lost at power off |
+
+Paths are always absolute directories ending in `/` plus a name (`"/sys/"` + `"conf.ren"`).
+Users can type relative paths with `.` and `..`, and `fs_split_path` / `fs_resolve_dir` turn
+them into that form. On disk, new names must fit 8.3 (`NOTES.TXT`). Existing long names can be
+read.
+
+The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/sys/` (system files:
+`startup.wav`, `cache/`, `tmp/`) and `/conf.ren`.
+
+## The terminal
+
+`cli_init()` in `sys/terminal/t_int.c` is the main loop of the running system:
+
+```
+loop forever:
+    auth_login()          (DISK mode only)
+    draw the banner
+    until LOGOUT:
+        prompt "alex@0//: "  ->  read a line  ->  look the first word up in cli_commands[]
+                                                  or run it as /bin/<word>.ren
+```
+
+`HELP` lists every command from the same table, so a new command only needs one table line.
+
+## RenLang
+
+```
+source text --ren_lexer.c--> tokens --ren_parser.c--> syntax tree --ren_interp.c--> runs it
+                                                                        |
+                                                   ren_builtins.c: print, read_file, play...
+```
+
+The interpreter tracks every allocation, so when a program ends, normally or through an error,
+everything it used is freed at once. Errors `longjmp` straight back to the start of the run.
+See [RENLANG.md](RENLANG.md) for the language and the comments at the top of each `lang/` file
+for the details.
+
+## Building and testing
+
+```bash
+cd src
+make            # builds main.elf and main.iso (needs gcc-multilib, nasm, grub, mtools: make setup-dev)
+make run        # boots the ISO in QEMU with a 64 MB AEROS disk (disk.img) and an AC'97 sound card
+make run-vfs    # without a disk
+make run-uefi   # as a UEFI PC (OVMF)
+make disk-put FILE=photo.bmp DIR=/bin   # copy a file onto the disk
+```
+
+The kernel is built with `-Os -ffunction-sections -fdata-sections` and linked with
+`--gc-sections`, so any function nothing calls is left out. There are no warnings, and new code
+should keep it that way. Useful QEMU options while testing:
+
+* `-kernel main.elf` boots without GRUB (faster, and the screen stays in VGA text mode, so its
+  text can be read from memory at `0xB8000` with the QEMU monitor's `pmemsave`)
+* `-serial stdio` shows everything printed on screen in your terminal
+* `-audiodev wav,id=snd0,path=out.wav -device AC97,audiodev=snd0` records the sound card to a file
+
+## Recipes
+
+### Add a terminal command
+
+In `src/sys/terminal/t_int.c`:
+
+```c
+// VER: print the version
+static void cli_version (char* args) {
+    (void)args;
+    printf("AerOS 0.01 ALPHA\n");
+}
+```
+
+and one line in `cli_commands[]` (the help text is what `HELP` prints, at most 79 characters):
+
+```c
+    { "ver",      cli_version,        "VER             - PRINT THE AEROS VERSION" },
+```
+
+### Add a RenLang function
+
+In `src/lang/ren_builtins.c`, write the function in the right section:
+
+```c
+static value_t bi_twice (int argc, value_t* argv, int line) {
+    (void)argc;
+    return ren_int(int_arg(argv, 0, line, "twice") * 2);  // int_arg reports a wrong type for you
+}
+```
+
+then add `{ "twice", bi_twice, 1, 1 },` to `ren_builtins[]` (name, function, fewest and most
+arguments), and list it in [RENLANG.md](RENLANG.md).
+
+### Add a built-in app or file
+
+Put the file in `src/apps/`, then add two lines to `src/sys/apps.c`: `APP(name_ext)` and a table
+entry saying which folder it goes in. The Makefile links it into the kernel automatically, and
+it is copied to the disk at boot if it isn't there.
+
+### Add a driver
+
+1. Put it in `src/drivers/<kind>/` (any `.c` file there is built automatically).
+2. For a PCI card, find it with `pci_find_class()`, read its ports with `pci_io_bar()`, and call
+   `pci_enable_io_and_dma()`.
+3. Call its init function from `kernel.c` (if it needs to run before interrupts are on) or from
+   `init_boot()` in `sys/boot.c`, and print a `[ OK ]` / `[WARN]` line in the boot log.
+4. If it needs an interrupt, install a handler with `irq_install_handler(n, fn)` and
+   `pic_unmask(n)` (see the timer in `sys/sys_clck.c`).
+
+### Style
+
+* Every file starts with a comment saying what it is for and how it works.
+* Comments explain **why**, and anything that isn't obvious from the code: the hardware's rules,
+  the edge cases, the reasons for a choice.
+* Functions return a value or an `*_OK` / `*_ERR_*` code with a matching `*_strerror()` message.
+  There are no hidden globals for errors.
+* Secrets are wiped with `crypto_wipe()` as soon as they're no longer needed.
+* Builds must stay free of warnings.

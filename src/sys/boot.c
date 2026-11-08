@@ -7,8 +7,10 @@
        magic number 0x2BADB002 in eax and the address of a "multiboot information" structure
        in ebx. That structure describes the machine: how much memory there is, the boot
        device, the kernel command line, modules, a full memory map and more. Bit N of its
-       flags field says whether the Nth group of fields is filled in. We only need the memory
-       sizes for now (entry.asm asks GRUB for them with the MEMINFO header flag).
+       flags field says whether the Nth group of fields is filled in. We use three of them:
+       the memory sizes, the memory map (the biggest free stretch of RAM becomes extra heap)
+       and the framebuffer GRUB switched the screen to (entry.asm asks for a 1024 x 768 x 32
+       graphics mode in the multiboot header).
        https://www.gnu.org/software/grub/manual/multiboot/multiboot.html#Boot-information-format
        https://wiki.osdev.org/Multiboot
 
@@ -18,7 +20,9 @@
            [FAIL]  it was not set up (the matching *_ready flag is still false)
            [WARN]  it is missing but we can carry on without it
            [INFO]  just so you know (printed by the file system)
-       then starts the file system and gives the user a moment to read it all.
+       then checks the cryptography against its test vectors, looks for a sound card, starts
+       the file system, copies the built-in apps and files onto it and gives the user a moment
+       to read it all.
 */
 
 #include "boot.h"
@@ -30,6 +34,8 @@
 #include "sys_clck.h"
 #include "f_sys.h"
 #include "apps.h"
+#include "../lib/crypto.h"
+#include "../drivers/audio/ac97.h"
 
 // the value a multiboot bootloader leaves in eax (not the same as the 0x1BADB002 in our header)
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -193,7 +199,15 @@ int init_boot (void) {
 
     // rtc_datetime() fills in now and returns it, so it can go straight into printf
     char now[FS_DATETIME_MAX];
-    printf("[ OK ] Real time clock: %s\n\n", rtc_datetime(now, sizeof(now)));
+    printf("[ OK ] Real time clock: %s\n", rtc_datetime(now, sizeof(now)));
+    // check SHA-256, HMAC, PBKDF2 and AES against published test vectors before trusting them with passwords
+    printf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
+    // a missing sound card isn't a problem, only PLAY needs one
+    if (ac97_init()) {
+        printf("[ OK ] Sound: %s\n\n", ac97_name());
+    } else {
+        printf("[WARN] No sound card found (AerOS supports AC'97), PLAY won't work\n\n");
+    }
 
     // initialise the file system (the disk, or the temporary one if there is no disk)
     // "n" = normal: mount a FAT disk labelled AEROS if there is one, otherwise use the VFS
@@ -203,7 +217,7 @@ int init_boot (void) {
     // the apps that come with AerOS, copied into /bin/ unless they are already there
     int installed = apps_install();
     if (installed > 0) {
-        printf("< APPS .. > %d app file(s) added to /bin/\n", installed);
+        printf("< APPS .. > %d built-in file(s) added to /bin/ and /sys/\n", installed);
     }
 
     // beep once

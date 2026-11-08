@@ -93,7 +93,7 @@ one side is a string: `"Score: " + 10`.
 **Screen and keyboard**
 `print(a, b, ...)` print, separated by spaces, then a new line ·
 `write(...)` the same without the new line ·
-`input(prompt)` read a line ·
+`input(prompt)` read a line · `input_secret(prompt)` the same, showing `*` (for passwords) ·
 `cls()` clear the screen ·
 `color(fg, bg)` text colours (`BLACK` ... `WHITE`) ·
 `at(x, y)` move the cursor ·
@@ -113,11 +113,17 @@ one side is a string: `"Score: " + 10`.
 `append_file(path, text)` · `file_exists(path)` · `delete_file(path)` ·
 `list_files(dir)` (directories end in `/`)
 
+**Encrypted files** (AES-256 with a password, the file keeps its name)
+`encrypt_file(path, password)` · `decrypt_file(path, password)` (both true if it worked) ·
+`is_encrypted(path)` · `read_encrypted(path, password)` the contents, without changing the file
+(nil if the password is wrong)
+
 **Files** (continued)
 `cwd()` the current directory, e.g. `"/bin/"`
 
 **System**
-`sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` · `exit()`
+`sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
+`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()`
 
 `args` is the list of words typed after the program's name.
 

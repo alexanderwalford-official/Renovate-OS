@@ -130,6 +130,11 @@ int fat_create_file (const char* f_path, const char* name, const char* contents,
 // replace (append = false) or add to (append = true) the contents of an existing file
 int fat_write_file (const char* f_path, const char* name, const char* text, bool append);
 
+// replace the contents of an existing file with length bytes of data (which may contain '\0')
+// wipe_old = true fills the old clusters with zeros before freeing them, so the old contents
+// can't be recovered from the disk (used after encrypting a file)
+int fat_replace_file (const char* f_path, const char* name, const void* data, uint32_t length, bool wipe_old);
+
 // delete a file and give its clusters back
 int fat_delete_file (const char* f_path, const char* name);
 

@@ -1,8 +1,18 @@
 /*
     ren_builtins.c
     The functions every RenLang program can call: printing and input, strings, lists, byte
-    buffers, files and a few system services. Each one gets its arguments as an array of values
-    (which it must not release) and hands back a new value.
+    buffers, files, encrypted files, sound, graphics and a few system services.
+
+    Each one gets its arguments as an array of values, which it must not release (the caller
+    still owns them), and hands back a new value that the caller will own. A wrong argument is
+    reported with ren_error(), which never returns, so the code after a check can trust it.
+
+    Adding a builtin:
+      1. write  static value_t bi_<name> (int argc, value_t* argv, int line)  in the right section,
+         using int_arg / str_arg / list_arg / file_arg to check and unpack the arguments
+      2. add a line to ren_builtins[] at the bottom: { "name", bi_<name>, fewest args, most args }
+         (the interpreter checks the argument count before calling it)
+      3. add it to docs/RENLANG.md
 */
 
 #include "ren_internal.h"
@@ -16,6 +26,9 @@
 #include "../drivers/audio/tone.h"
 #include "../sys/sys_clck.h"
 #include "../sys/f_sys.h"
+#include "../sys/fcrypt.h"
+#include "../sys/sound.h"
+#include "../lib/crypto.h"
 
 // argument checks
 
@@ -75,6 +88,17 @@ static value_t bi_input (int argc, value_t* argv, int line) {
     (void)line;
     GetString(buffer, sizeof(buffer));
     return ren_string(buffer, (uint32_t)strlen(buffer));
+}
+
+// like input(), but shows * for each character (for passwords)
+static value_t bi_input_secret (int argc, value_t* argv, int line) {
+    char buffer[256];
+    if (argc > 0) ren_print_value(argv[0]);
+    (void)line;
+    GetSecret(buffer, sizeof(buffer));
+    value_t s = ren_string(buffer, (uint32_t)strlen(buffer));
+    crypto_wipe(buffer, sizeof(buffer));
+    return s;
 }
 
 static value_t bi_cls (int argc, value_t* argv, int line) {
@@ -398,6 +422,41 @@ static value_t bi_list_files (int argc, value_t* argv, int line) {
     return list;
 }
 
+// encrypted files (see sys/fcrypt.h)
+
+static value_t bi_encrypt_file (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "encrypt_file")->data.chars;
+    const char* password = str_arg(argv, 1, line, "encrypt_file")->data.chars;
+    return ren_bool(fcrypt_encrypt_file(path, password) == FCRYPT_OK);
+}
+
+static value_t bi_decrypt_file (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "decrypt_file")->data.chars;
+    const char* password = str_arg(argv, 1, line, "decrypt_file")->data.chars;
+    return ren_bool(fcrypt_decrypt_file(path, password) == FCRYPT_OK);
+}
+
+static value_t bi_is_encrypted (int argc, value_t* argv, int line) {
+    (void)argc;
+    return ren_bool(fcrypt_file_is_encrypted(str_arg(argv, 0, line, "is_encrypted")->data.chars));
+}
+
+// the contents of an encrypted file as a string, without changing the file (nil if it can't be read)
+static value_t bi_read_encrypted (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "read_encrypted")->data.chars;
+    const char* password = str_arg(argv, 1, line, "read_encrypted")->data.chars;
+    uint8_t* contents;
+    uint32_t length;
+    if (fcrypt_read_file(path, password, &contents, &length) != FCRYPT_OK) return ren_nil();
+    value_t s = ren_string((const char*)contents, length);
+    crypto_wipe(contents, length);
+    free(contents);
+    return s;
+}
+
 // system
 
 static value_t bi_sleep (int argc, value_t* argv, int line) {
@@ -410,6 +469,23 @@ static value_t bi_sleep (int argc, value_t* argv, int line) {
     }
     if (ms > 0) ren_error(line, "stopped (Ctrl+C)");
     return ren_nil();
+}
+
+// play() stops on Ctrl+C, and then the program stops too (like sleep)
+static bool play_interrupted;
+
+static bool play_should_stop (void) {
+    if (kb_take_break()) play_interrupted = true;
+    return play_interrupted;
+}
+
+// play a WAV or MP3 file and wait for it to finish, false if it couldn't be played
+static value_t bi_play (int argc, value_t* argv, int line) {
+    (void)argc;
+    play_interrupted = false;
+    int result = sound_play_file(str_arg(argv, 0, line, "play")->data.chars, play_should_stop);
+    if (play_interrupted) ren_error(line, "stopped (Ctrl+C)");
+    return ren_bool(result == SOUND_OK);
 }
 
 static value_t bi_time (int argc, value_t* argv, int line) {
@@ -549,6 +625,7 @@ const ren_builtin_t ren_builtins[] = {
     { "print", bi_print, 0, REN_MAX_ARGS },
     { "write", bi_write, 0, REN_MAX_ARGS },
     { "input", bi_input, 0, 1 },
+    { "input_secret", bi_input_secret, 0, 1 },
     { "cls", bi_cls, 0, 0 },
     { "color", bi_color, 1, 2 },
     { "at", bi_at, 2, 2 },
@@ -577,12 +654,17 @@ const ren_builtin_t ren_builtins[] = {
     { "append_file", bi_append_file, 2, 2 },
     { "file_exists", bi_file_exists, 1, 1 },
     { "delete_file", bi_delete_file, 1, 1 },
+    { "encrypt_file", bi_encrypt_file, 2, 2 },
+    { "decrypt_file", bi_decrypt_file, 2, 2 },
+    { "is_encrypted", bi_is_encrypted, 1, 1 },
+    { "read_encrypted", bi_read_encrypted, 2, 2 },
     { "list_files", bi_list_files, 0, 1 },
     { "cwd", bi_cwd, 0, 0 },
     { "sleep", bi_sleep, 1, 1 },
     { "time", bi_time, 0, 0 },
     { "random", bi_random, 1, 1 },
     { "beep", bi_beep, 0, 1 },
+    { "play", bi_play, 1, 1 },
     { "exit", bi_exit, 0, 0 },
     { "gfx_open", bi_gfx_open, 0, 0 },
     { "gfx_close", bi_gfx_close, 0, 0 },

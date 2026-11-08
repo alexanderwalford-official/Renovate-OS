@@ -69,6 +69,12 @@ int getchar(void);
 // size must be at least 1
 char* GetString(char* in, int size);
 
+// forget the up / down arrow history (done on logout)
+void ClearInputHistory(void);
+
+// read a line without showing it (each character appears as *), for passwords
+char* GetSecret(char* in, int size);
+
 // parse either 1 or 0 to enable to disable input buffer for current string
 // while disabled, key presses are thrown away instead of queued (modifier keys are still tracked)
 void InputBufferChangeState(int state);
