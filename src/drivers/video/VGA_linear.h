@@ -94,6 +94,10 @@ bool vga_framebuffer_active(void);
 // copy out the framebuffer's details for drawing graphics, false in VGA text mode
 bool vga_framebuffer_info(vga_framebuffer_t* out);
 
+// carry on drawing on a different framebuffer (the card changed resolution), redrawing everything
+// false if it can't be used (smaller than 640 x 400, or the screen isn't a framebuffer)
+bool vga_change_framebuffer(const vga_framebuffer_t* info);
+
 // forget what the console last drew, so its next output repaints the whole screen
 // (needed after a program has drawn its own graphics over it)
 void vga_invalidate(void);

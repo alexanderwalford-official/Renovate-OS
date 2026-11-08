@@ -211,11 +211,6 @@ static bool fb_setup(const vga_framebuffer_t* info) {
     for (int i = 0; i < 16; i++) {
         fb_colors[i] = fb_pack(palette[i]);
     }
-    for (int ch = 0; ch < 256; ch++) {
-        for (int row = 0; row < CELL_HEIGHT; row++) {
-            fb_font[ch][row] = font8x16[ch][row];
-        }
-    }
 
     // black out the whole screen once, including the border around the grid
     for (uint32_t y = 0; y < info->height; y++) {
@@ -237,6 +232,21 @@ bool vga_framebuffer_info(vga_framebuffer_t* out) {
         *out = fb_info;
     }
     return fb_mode;
+}
+
+// switch to a new framebuffer (after the graphics card changed mode) and redraw the screen on it
+bool vga_change_framebuffer(const vga_framebuffer_t* info) {
+    uint32_t bytes = (info->bpp + 7) / 8;
+    if (!fb_mode || info->address == 0 || (bytes != 2 && bytes != 3 && bytes != 4) ||
+        info->width < COLS * 8 || info->height < ROWS * CELL_HEIGHT) {
+        return false;
+    }
+    fb_setup(info);
+    fb_fill_border(border_color);
+    for (unsigned int i = 0; i < COLS * ROWS; i++) {
+        fb_draw_cell(i);
+    }
+    return true;
 }
 
 void vga_invalidate(void) {
@@ -522,7 +532,13 @@ void vga_init(const vga_framebuffer_t* framebuffer) {
     };
 
     fb_mode = framebuffer != 0 && fb_setup(framebuffer);
-    if (!fb_mode) {
+    if (fb_mode) {
+        for (int ch = 0; ch < 256; ch++) {
+            for (int row = 0; row < CELL_HEIGHT; row++) {
+                fb_font[ch][row] = font8x16[ch][row];
+            }
+        }
+    } else {
         inb(0x3DA);                // reset the attribute controller flip-flop
         outb(0x3C0, 0x30);         // select the mode control register (bit 5 keeps the screen on)
         uint8_t mode = inb(0x3C1);

@@ -42,6 +42,7 @@
 #include "../p_man.h"
 #include "../../lang/renlang.h"
 #include "editor.h"
+#include "../../drivers/video/bga.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -418,6 +419,60 @@ static void cli_ren (char* args) {
     ren_repl();
 }
 
+// save the resolution for the next start, as a GRUB environment block in the AEROS disk's root:
+// exactly 1024 bytes, a fixed first line, "name=value" lines and '#' padding. grub.cfg reads it
+// with load_env and asks for that mode before starting AerOS (which works on any PC)
+static bool save_resolution (uint32_t width, uint32_t height) {
+    if (fs_mode != FS_MODE_DISK) {
+        return false;
+    }
+    char block[1025];
+    int used = snprintf(block, sizeof(block), "# GRUB Environment Block\naeros_mode=%ux%ux32\n", width, height);
+    memset(block + used, '#', (size_t)(1024 - used));
+    block[1024] = '\0';
+    int result = fs_file_exists("/", "grubenv") ? fs_write_f("/", "grubenv", block, false) : fs_create_f("/", "grubenv", block);
+    return result >= 0;
+}
+
+// RES: show the screen resolution, or change it with RES <width>x<height>
+static void cli_resolution (char* args) {
+    vga_framebuffer_t fb;
+    bool graphics = vga_framebuffer_info(&fb);
+    if (*args == '\0') {
+        if (graphics) {
+            printf("Screen: %ux%u, %u bits per pixel\n", fb.width, fb.height, (unsigned int)fb.bpp);
+        } else {
+            printf("Screen: VGA text mode\n");
+        }
+        printf("Change it with RES <width>x<height>, e.g. RES 1280x720\n");
+        printf("Common sizes: 640x480 800x600 1024x768 1280x720 1280x1024 1600x900 1920x1080\n");
+        return;
+    }
+
+    char* end;
+    long width = strtol(args, &end, 10);
+    long height = (*end == 'x' || *end == 'X') ? strtol(end + 1, &end, 10) : 0;
+    if (*end != '\0' || width < 640 || height < 400 || width > 4096 || height > 4096) {
+        printf("Usage: RES <width>x<height>, at least 640x400 (e.g. RES 1280x720)\n");
+        return;
+    }
+
+    bool changed = bga_set_mode((uint32_t)width, (uint32_t)height);
+    bool saved = save_resolution((uint32_t)width, (uint32_t)height);
+    if (changed) {
+        vga_framebuffer_info(&fb);
+        printf("The screen is now %ux%u.\n", fb.width, fb.height);
+    }
+    if (saved) {
+        printf("Saved: AerOS will start at %ldx%ld from now on.\n", width, height);
+    } else if (changed) {
+        printf("Not saved for the next start, that needs an AEROS disk.\n");
+    } else {
+        printf("This graphics card can't change resolution while AerOS is running,\n");
+        printf("and without an AEROS disk it can't be saved for the next start either.\n");
+    }
+}
+
 static void cli_edit (char* args) {
     if (*args == '\0') {
         printf("Usage: EDIT <file>   (e.g. edit hello.ren)\n");
@@ -491,7 +546,8 @@ static const struct cli_command {
     { "beep",     cli_beep,           "BEEP [HZ]       - PLAY A BEEP ON THE PC SPEAKER" },
     { "reboot",   cli_reboot,         "REBOOT          - RESTART THE COMPUTER" },
     { "shutdown", cli_shutdown,       "SHUTDOWN        - TURN OFF THE COMPUTER" },
-    { "edit",     cli_edit,           "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
+    { "res",      cli_resolution,     "RES [WxH]       - SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)" },
+    { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
     { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
     { "",         0,                  "<APP> [ARGS]    - RUN A RENLANG PROGRAM, e.g. HELLO (/bin/hello.ren)" },
 };
