@@ -55,8 +55,8 @@ SECTIONS
     *(.data .data.*)
   }
   /* variables that start at zero. They take no space in main.elf, GRUB zeroes this memory while
-     loading. sbss / ebss mark its start and end, so code could clear or measure it (nothing
-     uses them at the moment). COMMON holds old style uninitialised globals, which modern GCC
+     loading. sbss / ebss mark its start and end (sys/sysinfo.c uses sbss to work out how big
+     the kernel file is). COMMON holds old style uninitialised globals, which modern GCC
      no longer creates by default, but it does no harm to collect them */
   .bss : {
     sbss = .;
@@ -65,7 +65,7 @@ SECTIONS
     ebss = .;
   }
   /* the first byte after the whole kernel image, the traditional name for "free memory starts
-     here" (not used yet, the heap is a fixed array in .bss) */
+     here" (the boot code only gives the heap memory above it, and sysinfo reports it) */
   end = .;
 
   /* sections the kernel does not need: .comment holds the compiler version string, .eh_frame

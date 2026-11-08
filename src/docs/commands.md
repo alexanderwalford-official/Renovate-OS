@@ -44,6 +44,7 @@ See [Accounts and encryption](security.md).
 | --- | --- |
 | `<app> [args]` | run `/bin/<app>.aer`, e.g. `hello` or `guess` |
 | `aer` | the AerLang prompt |
+| `sysinfo` | the system information screen: processor, memory, disks, devices |
 | `run <code>` | run code as a process: `run s:hi` |
 | `pman` | show the process stack |
 

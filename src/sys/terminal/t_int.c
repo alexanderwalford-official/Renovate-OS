@@ -112,7 +112,7 @@ int cli_rend_main (void) {
     // console_clear() fills the screen with the current colours, so set them first
     console_set_color(WHITE, BLACK);
     console_clear();
-    printf("AerOS - Version 0.01 ALPHA\n");
+    printf("AerOS - Version " AEROS_VERSION "\n");
     printf("Alexander Walford 2026\n\n");
     // demo mode always runs from memory, so DISK mode is checked first and only VFS mode needs telling apart
     if (fs_mode == FS_MODE_DISK) {

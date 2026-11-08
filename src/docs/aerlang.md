@@ -103,6 +103,8 @@ Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGH
 
 **System:** `sleep(ms)`, `time()` (ms since start), `random(n)` (0 to n - 1), `beep(hz)`,
 `play(path)`, `exit()`. `args` is the list of words typed after the program's name.
+`system_info()` gives everything AerOS knows about the computer as a list of
+`[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
 
 **Graphics:** `gfx_open()` takes over the screen and `gfx_close()` gives it back.
 Colours are numbers like `0xFF7F00` or `rgb(255, 127, 0)`.
@@ -125,3 +127,4 @@ key()
 | `/bin/guess.aer` | random numbers and a game loop |
 | `/bin/viewer.aer` | graphics, pictures and a menu |
 | `/bin/read.aer` | this reader: text handling, a whole app |
+| `/bin/sysinfo.aer` | system information: lists, layout and scrolling |

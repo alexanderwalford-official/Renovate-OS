@@ -125,7 +125,9 @@ one side is a string: `"Score: " + 10`.
 
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
-`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()`
+`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()` ·
+`system_info()` everything AerOS knows about the computer, as a list of `[group, name, value]`
+rows, e.g. `["Processor", "Speed", "about 2400 MHz"]` (`/bin/sysinfo.aer` shows them)
 
 `args` is the list of words typed after the program's name.
 

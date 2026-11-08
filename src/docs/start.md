@@ -57,6 +57,7 @@ The up and down arrows bring back earlier commands.
 | `hello` | run the hello program |
 | `guess` | play a guessing game |
 | `viewer` | look at the pictures in `/bin/` |
+| `sysinfo` | see what's inside this computer |
 | `play /sys/startup.wav` | hear the startup sound again |
 | `edit notes.txt` | write a file |
 | `aer` | try AerLang, type `exit` to leave |

@@ -59,6 +59,7 @@ src/
     fat.c                 the FAT16 / FAT32 driver
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
+    sysinfo.c             everything known about the computer (CPU, memory, disks, PCI), for SYSINFO
     apps.c                the built-in apps and files, copied to the disk at boot
     splash.c              the orange boot screen
     recovery.c            the boot options menu (press X on the splash)

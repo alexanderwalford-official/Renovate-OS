@@ -29,6 +29,7 @@ EMBEDDED(apps_hello_aer)
 EMBEDDED(apps_guess_aer)
 EMBEDDED(apps_viewer_aer)
 EMBEDDED(apps_read_aer)
+EMBEDDED(apps_sysinfo_aer)
 EMBEDDED(apps_aeros_bmp)
 EMBEDDED(apps_colours_bmp)
 EMBEDDED(apps_startup_wav)
@@ -55,6 +56,7 @@ static const struct {
     FILE_ENTRY("/bin/", "guess.aer", apps_guess_aer, false),
     FILE_ENTRY("/bin/", "viewer.aer", apps_viewer_aer, false),
     FILE_ENTRY("/bin/", "read.aer", apps_read_aer, false),
+    FILE_ENTRY("/bin/", "sysinfo.aer", apps_sysinfo_aer, false),
     FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),
     FILE_ENTRY("/bin/", "colours.bmp", apps_colours_bmp, false),
     FILE_ENTRY("/sys/", "startup.wav", apps_startup_wav, false),

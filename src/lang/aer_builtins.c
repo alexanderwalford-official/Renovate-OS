@@ -28,6 +28,7 @@
 #include "../sys/f_sys.h"
 #include "../sys/fcrypt.h"
 #include "../sys/sound.h"
+#include "../sys/sysinfo.h"
 #include "../lib/crypto.h"
 
 // argument checks
@@ -488,6 +489,23 @@ static value_t bi_play (int argc, value_t* argv, int line) {
     return aer_bool(result == SOUND_OK);
 }
 
+// add one row of system information to the list as [group, name, value]
+static void info_row (const char* group, const char* name, const char* value, void* ctx) {
+    value_t row = aer_list(3);
+    aer_list_push(row.as.obj, aer_string(group, (uint32_t)strlen(group)));
+    aer_list_push(row.as.obj, aer_string(name, (uint32_t)strlen(name)));
+    aer_list_push(row.as.obj, aer_string(value, (uint32_t)strlen(value)));
+    aer_list_push((aer_object_t*)ctx, row);
+}
+
+// everything AerOS knows about the computer, as a list of [group, name, value] (see sys/sysinfo.h)
+static value_t bi_system_info (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    value_t rows = aer_list(64);
+    sysinfo_collect(info_row, rows.as.obj);
+    return rows;
+}
+
 static value_t bi_time (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
     return aer_int((int32_t)clck_uptime_ms());
@@ -662,6 +680,7 @@ const aer_builtin_t aer_builtins[] = {
     { "cwd", bi_cwd, 0, 0 },
     { "sleep", bi_sleep, 1, 1 },
     { "time", bi_time, 0, 0 },
+    { "system_info", bi_system_info, 0, 0 },
     { "random", bi_random, 1, 1 },
     { "beep", bi_beep, 0, 1 },
     { "play", bi_play, 1, 1 },
