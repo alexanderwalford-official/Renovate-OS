@@ -93,7 +93,7 @@ one side is a string: `"Score: " + 10`.
 **Screen and keyboard**
 `print(a, b, ...)` print, separated by spaces, then a new line ·
 `write(...)` the same without the new line ·
-`input(prompt)` read a line ·
+`input(prompt)` read a line · `input_secret(prompt)` the same, showing `*` (for passwords) ·
 `cls()` clear the screen ·
 `color(fg, bg)` text colours (`BLACK` ... `WHITE`) ·
 `at(x, y)` move the cursor ·
@@ -112,6 +112,11 @@ one side is a string: `"Score: " + 10`.
 `read_file(path)` (nil if missing) · `read_bytes(path)` · `write_file(path, text)` ·
 `append_file(path, text)` · `file_exists(path)` · `delete_file(path)` ·
 `list_files(dir)` (directories end in `/`)
+
+**Encrypted files** (AES-256 with a password, the file keeps its name)
+`encrypt_file(path, password)` · `decrypt_file(path, password)` (both true if it worked) ·
+`is_encrypted(path)` · `read_encrypted(path, password)` the contents, without changing the file
+(nil if the password is wrong)
 
 **Files** (continued)
 `cwd()` the current directory, e.g. `"/bin/"`

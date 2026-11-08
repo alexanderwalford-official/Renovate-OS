@@ -45,6 +45,7 @@
 #include "../../drivers/video/bga.h"
 #include "../../lib/crypto.h"
 #include "../accounts/auth.h"
+#include "../fcrypt.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -144,6 +145,90 @@ void cli_prompt (void) {
 // so declare it here and define it after the table
 static void cli_help (char* args);
 
+// password prompts, defined with the account commands further down
+static void cli_ask_secret (const char* question, char* out, int size);
+
+// encrypted files (see sys/fcrypt.h)
+
+#define CLI_PASSWORD_MAX 64
+
+// true (with a message) if path is an encrypted file, for commands that would break one
+static bool cli_refuse_encrypted (const char* path) {
+    if (!fcrypt_file_is_encrypted(path)) return false;
+    printf("%s is encrypted, DECRYPT it first.\n", path);
+    return true;
+}
+
+// RD on an encrypted file: ask for the password and show it, without changing the file
+static void cli_read_encrypted (const char* path) {
+    char password[CLI_PASSWORD_MAX];
+    cli_ask_secret("Password: ", password, sizeof(password));
+    uint8_t* contents;
+    uint32_t length;
+    int result = fcrypt_read_file(path, password, &contents, &length);
+    crypto_wipe(password, sizeof(password));
+    if (result != FCRYPT_OK) {
+        printf("Can't read %s: %s\n", path, fcrypt_strerror(result));
+        return;
+    }
+    printf((length > 0 && contents[length - 1] == '\n') ? "%s" : "%s\n", (char*)contents);
+    crypto_wipe(contents, length);
+    free(contents);
+}
+
+// ENCRYPT <FILE>: lock a file with a password (asked for twice)
+static void cli_encrypt (char* args) {
+    if (*args == '\0') {
+        printf("Usage: ENCRYPT <file>\n");
+        return;
+    }
+    char password[CLI_PASSWORD_MAX], again[CLI_PASSWORD_MAX];
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    if (!fs_split_path(args, dir, sizeof(dir), name, sizeof(name)) || !fs_file_exists(dir, name)) {
+        printf("File not found: %s\n", args);
+        return;
+    }
+    if (fcrypt_file_is_encrypted(args)) {
+        printf("%s is already encrypted.\n", args);
+        return;
+    }
+    cli_ask_secret("Password: ", password, sizeof(password));
+    cli_ask_secret("Again:    ", again, sizeof(again));
+    if (strcmp(password, again) != 0) {
+        printf("The passwords don't match, nothing was changed.\n");
+    } else {
+        int result = fcrypt_encrypt_file(args, password);
+        if (result == FCRYPT_OK) {
+            printf("Encrypted %s. Don't lose the password, there is no way back without it.\n", args);
+        } else {
+            printf("Couldn't encrypt %s: %s\n", args, fcrypt_strerror(result));
+        }
+    }
+    crypto_wipe(password, sizeof(password));
+    crypto_wipe(again, sizeof(again));
+}
+
+// DECRYPT <FILE>: turn an encrypted file back into a normal one
+static void cli_decrypt (char* args) {
+    if (*args == '\0') {
+        printf("Usage: DECRYPT <file>\n");
+        return;
+    }
+    if (!fcrypt_file_is_encrypted(args)) {
+        printf("%s isn't an encrypted file.\n", args);
+        return;
+    }
+    char password[CLI_PASSWORD_MAX];
+    cli_ask_secret("Password: ", password, sizeof(password));
+    int result = fcrypt_decrypt_file(args, password);
+    crypto_wipe(password, sizeof(password));
+    if (result == FCRYPT_OK) {
+        printf("Decrypted %s.\n", args);
+    } else {
+        printf("Couldn't decrypt %s: %s\n", args, fcrypt_strerror(result));
+    }
+}
+
 // LA: list the files and directories in the current directory
 static void cli_list (char* args) {
     (void)args; // LA takes no arguments, anything after it is ignored
@@ -216,6 +301,10 @@ static void cli_read_file (char* args) {
         printf("Usage: RD <file>\n");
         return;
     }
+    if (fcrypt_file_is_encrypted(args)) {
+        cli_read_encrypted(args);
+        return;
+    }
     // fs_read_f() gives us our own copy of the contents, which we must free()
     char* contents = fs_read_f(dir, name);
     if (contents == NULL) {
@@ -263,6 +352,7 @@ static void cli_write_file (char* args) {
         printf("Usage: WR <file> <text>\n");
         return;
     }
+    if (cli_refuse_encrypted(parts[0])) return; // adding text would break the file's tag
     // read the file first, to check it exists and to see whether it is empty
     char* existing = fs_read_f(dir, name);
     if (existing == NULL) {
@@ -491,6 +581,7 @@ static void cli_edit (char* args) {
         printf("Usage: EDIT <file>   (e.g. edit hello.ren)\n");
         return;
     }
+    if (cli_refuse_encrypted(args)) return;
     editor_open(args);
 }
 
@@ -532,8 +623,6 @@ static bool cli_run_program (const char* command, const char* args) {
 }
 
 // accounts (see sys/accounts/auth.h)
-
-#define CLI_PASSWORD_MAX 64
 
 // the account commands only make sense with a disk to keep the accounts on
 static bool cli_accounts_available (void) {
@@ -691,7 +780,9 @@ static const struct cli_command {
     { "res",      cli_resolution,     "RES [WxH]       - SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)" },
     { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
     { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
-    { "whoami",   cli_whoami,         "WHOAMI          - PRINT WHO IS LOGGED IN" },
+    { "encrypt",  cli_encrypt,        "ENCRYPT <FILE>  - LOCK A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW THE FILE)" },
+    { "decrypt",  cli_decrypt,        "DECRYPT <FILE>  - UNLOCK AN ENCRYPTED FILE" },
+    { "whoami",   cli_whoami,        "WHOAMI          - PRINT WHO IS LOGGED IN" },
     { "users",    cli_users,          "USERS           - LIST THE USER ACCOUNTS" },
     { "adduser",  cli_add_user,       "ADDUSER <NAME>  - MAKE A NEW USER ACCOUNT" },
     { "deluser",  cli_delete_user,    "DELUSER <NAME>  - DELETE A USER ACCOUNT" },

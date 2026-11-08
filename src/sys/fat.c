@@ -927,32 +927,47 @@ int fat_create_file (const char* f_path, const char* name, const char* contents,
 // a crash part way leaves either the old file or the new one, never a mix of the two.
 // appending is done the simple way: read the old file, join the new text on, write it all out
 int fat_write_file (const char* f_path, const char* name, const char* text, bool append) {
+    if (!append) {
+        return fat_replace_file(f_path, name, text, (uint32_t)strlen(text), false);
+    }
+    fat_entry_t e;
+    if (!fat_find_file(f_path, name, &e)) return FS_ERR_NOT_FOUND;
+    char* old = fat_read_chain(fat_entry_cluster(&e.entry), e.entry.size);
+    if (old == NULL) return FS_ERR_IO;
+    // strlen rather than entry.size, in case the chain was shorter than the entry claimed
+    size_t old_len = strlen(old);
+    char* joined = realloc(old, old_len + strlen(text) + 1);
+    if (joined == NULL) {
+        free(old); // realloc failed, the old buffer is still ours to free
+        return FS_ERR_NO_MEMORY;
+    }
+    strcpy(joined + old_len, text);
+    int result = fat_replace_file(f_path, name, joined, (uint32_t)strlen(joined), false);
+    free(joined);
+    return result;
+}
+
+// fill every cluster of a chain with zeros, so what was in it can't be read off the disk later
+static void fat_zero_chain (uint32_t cluster) {
+    static const uint8_t zeros[512] = { 0 };
+    for (uint32_t guard = 0; fat_valid_cluster(cluster) && guard < fat_vol.cluster_count; guard++) {
+        uint32_t lba = fat_cluster_lba(cluster);
+        for (uint32_t s = 0; s < fat_vol.sectors_per_cluster; s++) {
+            fat_write_sector(lba + s, zeros);
+        }
+        cluster = fat_get(cluster);
+    }
+}
+
+// replace a file's contents with length bytes of data (binary safe), see fat.h
+int fat_replace_file (const char* f_path, const char* name, const void* data, uint32_t length, bool wipe_old) {
     fat_entry_t e;
     uint32_t first;
-    char* joined = NULL;          // the old contents + text when appending (we free it)
-    const char* contents = text;  // what will be written
-
     if (!fat_find_file(f_path, name, &e)) return FS_ERR_NOT_FOUND;
     uint32_t old_cluster = fat_entry_cluster(&e.entry);
 
-    if (append) {
-        char* old = fat_read_chain(old_cluster, e.entry.size);
-        if (old == NULL) return FS_ERR_IO;
-        // strlen rather than entry.size, in case the chain was shorter than the entry claimed
-        size_t old_len = strlen(old);
-        joined = realloc(old, old_len + strlen(text) + 1);
-        if (joined == NULL) {
-            free(old); // realloc failed, the old buffer is still ours to free
-            return FS_ERR_NO_MEMORY;
-        }
-        strcpy(joined + old_len, text);
-        contents = joined;
-    }
-
     // write the new data first, then point the entry at it, then free the old data
-    uint32_t length = (uint32_t)strlen(contents);
-    int result = fat_write_chain(contents, length, &first);
-    free(joined); // free(NULL) is fine when we weren't appending
+    int result = fat_write_chain(data, length, &first);
     if (result != FS_OK) return result;
 
     fat_set_entry_cluster(&e.entry, first);
@@ -962,6 +977,9 @@ int fat_write_file (const char* f_path, const char* name, const char* text, bool
     if (!fat_write_entry(e.lba, e.slot, &e.entry)) {
         fat_free_chain(first); // the entry still points at the old data, so drop the new copy
         return FS_ERR_IO;
+    }
+    if (wipe_old) {
+        fat_zero_chain(old_cluster);
     }
     fat_free_chain(old_cluster);
     return FS_OK;

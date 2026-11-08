@@ -16,6 +16,8 @@
 #include "../drivers/audio/tone.h"
 #include "../sys/sys_clck.h"
 #include "../sys/f_sys.h"
+#include "../sys/fcrypt.h"
+#include "../lib/crypto.h"
 
 // argument checks
 
@@ -75,6 +77,17 @@ static value_t bi_input (int argc, value_t* argv, int line) {
     (void)line;
     GetString(buffer, sizeof(buffer));
     return ren_string(buffer, (uint32_t)strlen(buffer));
+}
+
+// like input(), but shows * for each character (for passwords)
+static value_t bi_input_secret (int argc, value_t* argv, int line) {
+    char buffer[256];
+    if (argc > 0) ren_print_value(argv[0]);
+    (void)line;
+    GetSecret(buffer, sizeof(buffer));
+    value_t s = ren_string(buffer, (uint32_t)strlen(buffer));
+    crypto_wipe(buffer, sizeof(buffer));
+    return s;
 }
 
 static value_t bi_cls (int argc, value_t* argv, int line) {
@@ -366,6 +379,41 @@ static value_t bi_file_exists (int argc, value_t* argv, int line) {
     return ren_bool(fs_file_exists(dir, name));
 }
 
+// encrypted files (see sys/fcrypt.h)
+
+static value_t bi_encrypt_file (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "encrypt_file")->data.chars;
+    const char* password = str_arg(argv, 1, line, "encrypt_file")->data.chars;
+    return ren_bool(fcrypt_encrypt_file(path, password) == FCRYPT_OK);
+}
+
+static value_t bi_decrypt_file (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "decrypt_file")->data.chars;
+    const char* password = str_arg(argv, 1, line, "decrypt_file")->data.chars;
+    return ren_bool(fcrypt_decrypt_file(path, password) == FCRYPT_OK);
+}
+
+static value_t bi_is_encrypted (int argc, value_t* argv, int line) {
+    (void)argc;
+    return ren_bool(fcrypt_file_is_encrypted(str_arg(argv, 0, line, "is_encrypted")->data.chars));
+}
+
+// the contents of an encrypted file as a string, without changing the file (nil if it can't be read)
+static value_t bi_read_encrypted (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "read_encrypted")->data.chars;
+    const char* password = str_arg(argv, 1, line, "read_encrypted")->data.chars;
+    uint8_t* contents;
+    uint32_t length;
+    if (fcrypt_read_file(path, password, &contents, &length) != FCRYPT_OK) return ren_nil();
+    value_t s = ren_string((const char*)contents, length);
+    crypto_wipe(contents, length);
+    free(contents);
+    return s;
+}
+
 static value_t bi_delete_file (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
@@ -549,6 +597,7 @@ const ren_builtin_t ren_builtins[] = {
     { "print", bi_print, 0, REN_MAX_ARGS },
     { "write", bi_write, 0, REN_MAX_ARGS },
     { "input", bi_input, 0, 1 },
+    { "input_secret", bi_input_secret, 0, 1 },
     { "cls", bi_cls, 0, 0 },
     { "color", bi_color, 1, 2 },
     { "at", bi_at, 2, 2 },
@@ -577,6 +626,10 @@ const ren_builtin_t ren_builtins[] = {
     { "append_file", bi_append_file, 2, 2 },
     { "file_exists", bi_file_exists, 1, 1 },
     { "delete_file", bi_delete_file, 1, 1 },
+    { "encrypt_file", bi_encrypt_file, 2, 2 },
+    { "decrypt_file", bi_decrypt_file, 2, 2 },
+    { "is_encrypted", bi_is_encrypted, 1, 1 },
+    { "read_encrypted", bi_read_encrypted, 2, 2 },
     { "list_files", bi_list_files, 0, 1 },
     { "cwd", bi_cwd, 0, 0 },
     { "sleep", bi_sleep, 1, 1 },

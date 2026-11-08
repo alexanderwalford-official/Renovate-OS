@@ -279,6 +279,29 @@ static int mem_write_f (const char* path, const char* f_name, const char* text, 
     return FS_OK;
 }
 
+// replace a file's contents with length bytes of data (binary safe)
+// wipe_old zeros the old buffer before it is freed, so it can't turn up in a later malloc
+static int mem_replace_f (const char* path, const char* f_name, const void* data, uint32_t length, bool wipe_old) {
+    int index = mem_find_f(path, f_name);
+    if (index < 0) {
+        return FS_ERR_NOT_FOUND;
+    }
+    char* contents = malloc(length + 1);
+    if (contents == NULL) {
+        return FS_ERR_NO_MEMORY;
+    }
+    memcpy(contents, data, length);
+    contents[length] = '\0';
+    struct file* f = &files[index];
+    if (wipe_old) {
+        memset(f->f_cont, 0, (size_t)f->f_size);
+    }
+    free(f->f_cont);
+    f->f_cont = contents;
+    f->f_size = (int)length;
+    return FS_OK;
+}
+
 // remove a file from the table and free its contents
 static int mem_delete_f (const char* path, const char* f_name) {
     int index = mem_find_f(path, f_name);
@@ -388,6 +411,14 @@ int fs_write_f (const char* f_path, const char* f_name, const char* text, bool a
     char path[FS_PATH_MAX];
     if (text == NULL || !fs_resolve_dir(f_path, path, sizeof(path))) return FS_ERR_NOT_FOUND;
     return (fs_mode == FS_MODE_DISK) ? fat_write_file(path, f_name, text, append) : mem_write_f(path, f_name, text, append);
+}
+
+// replace the contents of an existing file with length bytes of data (binary safe)
+int fs_write_bytes (const char* f_path, const char* f_name, const void* data, uint32_t length, bool wipe_old) {
+    char path[FS_PATH_MAX];
+    if (data == NULL || !fs_resolve_dir(f_path, path, sizeof(path))) return FS_ERR_NOT_FOUND;
+    return (fs_mode == FS_MODE_DISK) ? fat_replace_file(path, f_name, data, length, wipe_old)
+                                     : mem_replace_f(path, f_name, data, length, wipe_old);
 }
 
 // the contents of a file in a new buffer (free() it when done), or NULL

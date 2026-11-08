@@ -89,6 +89,10 @@ char* fs_read_f (const char* f_path, const char* f_name); // free() the result
 // create a file from length bytes of data (binary safe)
 int fs_create_bytes (const char* f_path, const char* f_name, const void* data, uint32_t length);
 
+// replace an existing file's contents with length bytes of data (binary safe)
+// wipe_old = true zeros the old contents first, so they can't be recovered (used by encryption)
+int fs_write_bytes (const char* f_path, const char* f_name, const void* data, uint32_t length, bool wipe_old);
+
 // read a whole file and its length (binary safe), NULL if missing; free() the result
 char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size);
 
