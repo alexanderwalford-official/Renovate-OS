@@ -115,6 +115,9 @@ char* strndup(const char* s, size_t n);
 
 // the size of the whole heap pool
 size_t heap_total(void);
+
+// hand the heap another free stretch of memory, above everything it already has (used at boot)
+void heap_add_region(void* start, size_t size);
 // how much of it is currently handed out, block headers included
 size_t heap_used(void);
 

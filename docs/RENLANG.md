@@ -98,7 +98,31 @@ one side is a string: `"Score: " + 10`.
 `append_file(path, text)` · `file_exists(path)` · `delete_file(path)` ·
 `list_files(dir)` (directories end in `/`)
 
+**Files** (continued)
+`cwd()` the current directory, e.g. `"/bin/"`
+
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` · `exit()`
 
 `args` is the list of words typed after the program's name.
+
+**Graphics**
+Call `gfx_open()` to take over the screen (it returns false if there is no graphics screen) and
+`gfx_close()` to give it back to the terminal, which also happens on its own when the program ends.
+Colours are numbers like `0xFF7F00`, or `rgb(255, 127, 0)`. Drawing off the edge of the screen is fine.
+
+`gfx_width()` · `gfx_height()` · `gfx_clear(colour)` · `pixel(x, y, colour)` ·
+`rect(x, y, w, h, colour)` filled · `line(x1, y1, x2, y2, colour)` ·
+`text(x, y, text, colour, size)` (size 1 is 8 x 16 pixels per character) ·
+`image(bytes, x, y, w, h)` draw a BMP picture (8, 24 or 32 bit), scaled to fit `w` x `h` if given ·
+`image_size(bytes)` its `[width, height]`, or nil if it isn't a BMP
+
+```
+gfx_open()
+let picture = read_bytes("/bin/aeros.bmp")
+image(picture, 0, 0)
+text(10, 320, "Press a key", 0xFFFFFF, 2)
+key()
+```
+
+`/bin/viewer.ren` is a complete app built from these: a picture picker and viewer in about 100 lines.

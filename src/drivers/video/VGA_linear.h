@@ -91,6 +91,13 @@ void vga_init(const vga_framebuffer_t* framebuffer);
 // true if the screen is a framebuffer drawn by us, false for VGA text mode
 bool vga_framebuffer_active(void);
 
+// copy out the framebuffer's details for drawing graphics, false in VGA text mode
+bool vga_framebuffer_info(vga_framebuffer_t* out);
+
+// forget what the console last drew, so its next output repaints the whole screen
+// (needed after a program has drawn its own graphics over it)
+void vga_invalidate(void);
+
 // show the blinking hardware cursor, using scanlines start..end of the character cell
 // (a cell is 16 scanlines tall: 14..15 is the usual underline, 0..15 a full block)
 void vga_enable_cursor(uint8_t start, uint8_t end);

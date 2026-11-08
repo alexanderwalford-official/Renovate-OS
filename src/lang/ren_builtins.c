@@ -11,6 +11,7 @@
 #include "../lib/ren_stdio.h"
 #include "../lib/ren_ctype.h"
 #include "../drivers/video/VGA_linear.h"
+#include "../drivers/video/gfx.h"
 #include "../drivers/input/IO.h"
 #include "../drivers/audio/tone.h"
 #include "../sys/sys_clck.h"
@@ -381,6 +382,12 @@ static void list_one (const char* name, bool is_dir, uint32_t size, void* ctx) {
     ren_list_push((ren_object_t*)ctx, ren_string(entry, (uint32_t)strlen(entry)));
 }
 
+// the current directory, e.g. "/bin/"
+static value_t bi_cwd (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    return ren_string(cd, (uint32_t)strlen(cd));
+}
+
 static value_t bi_list_files (int argc, value_t* argv, int line) {
     const char* dir = argc > 0 ? str_arg(argv, 0, line, "list_files")->data.chars : ".";
     value_t list = ren_list(8);
@@ -420,6 +427,115 @@ static value_t bi_random (int argc, value_t* argv, int line) {
 static value_t bi_beep (int argc, value_t* argv, int line) {
     beep(argc > 0 ? int_arg(argv, 0, line, "beep") : 0);
     return ren_nil();
+}
+
+// graphics
+
+static void need_graphics (int line, const char* fn) {
+    if (!ren->graphics) ren_error(line, "%s() needs graphics, call gfx_open() first", fn);
+}
+
+static value_t bi_gfx_open (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    if (!ren->graphics) {
+        ren->graphics = gfx_begin();
+    }
+    return ren_bool(ren->graphics);
+}
+
+static value_t bi_gfx_close (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    if (ren->graphics) {
+        gfx_end();
+        ren->graphics = false;
+    }
+    return ren_nil();
+}
+
+static value_t bi_gfx_width (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv;
+    need_graphics(line, "gfx_width");
+    return ren_int((int32_t)gfx_width());
+}
+
+static value_t bi_gfx_height (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv;
+    need_graphics(line, "gfx_height");
+    return ren_int((int32_t)gfx_height());
+}
+
+static value_t bi_rgb (int argc, value_t* argv, int line) {
+    (void)argc;
+    int32_t r = int_arg(argv, 0, line, "rgb") & 0xFF;
+    int32_t g = int_arg(argv, 1, line, "rgb") & 0xFF;
+    int32_t b = int_arg(argv, 2, line, "rgb") & 0xFF;
+    return ren_int((r << 16) | (g << 8) | b);
+}
+
+static value_t bi_gfx_clear (int argc, value_t* argv, int line) {
+    need_graphics(line, "gfx_clear");
+    gfx_clear(argc > 0 ? (uint32_t)int_arg(argv, 0, line, "gfx_clear") : 0);
+    return ren_nil();
+}
+
+static value_t bi_pixel (int argc, value_t* argv, int line) {
+    (void)argc;
+    need_graphics(line, "pixel");
+    gfx_pixel(int_arg(argv, 0, line, "pixel"), int_arg(argv, 1, line, "pixel"), (uint32_t)int_arg(argv, 2, line, "pixel"));
+    return ren_nil();
+}
+
+static value_t bi_rect (int argc, value_t* argv, int line) {
+    (void)argc;
+    need_graphics(line, "rect");
+    gfx_rect(int_arg(argv, 0, line, "rect"), int_arg(argv, 1, line, "rect"), int_arg(argv, 2, line, "rect"),
+             int_arg(argv, 3, line, "rect"), (uint32_t)int_arg(argv, 4, line, "rect"));
+    return ren_nil();
+}
+
+static value_t bi_line (int argc, value_t* argv, int line) {
+    (void)argc;
+    need_graphics(line, "line");
+    gfx_line(int_arg(argv, 0, line, "line"), int_arg(argv, 1, line, "line"), int_arg(argv, 2, line, "line"),
+             int_arg(argv, 3, line, "line"), (uint32_t)int_arg(argv, 4, line, "line"));
+    return ren_nil();
+}
+
+static value_t bi_text (int argc, value_t* argv, int line) {
+    need_graphics(line, "text");
+    value_t s = ren_to_string(argv[2]);
+    int scale = argc > 4 ? int_arg(argv, 4, line, "text") : 1;
+    gfx_text(int_arg(argv, 0, line, "text"), int_arg(argv, 1, line, "text"), s.as.obj->data.chars,
+             (uint32_t)int_arg(argv, 3, line, "text"), scale);
+    ren_release(s);
+    return ren_nil();
+}
+
+static ren_object_t* bytes_arg (value_t* argv, int i, int line, const char* fn) {
+    if (argv[i].type != V_BYTES) {
+        ren_error(line, "%s() needs bytes (from read_bytes) for argument %d, not a %s", fn, i + 1, ren_type_name(argv[i]));
+    }
+    return argv[i].as.obj;
+}
+
+static value_t bi_image (int argc, value_t* argv, int line) {
+    need_graphics(line, "image");
+    ren_object_t* data = bytes_arg(argv, 0, line, "image");
+    int max_w = argc > 3 ? int_arg(argv, 3, line, "image") : 0;
+    int max_h = argc > 4 ? int_arg(argv, 4, line, "image") : 0;
+    return ren_bool(gfx_image(data->data.bytes, data->length, int_arg(argv, 1, line, "image"),
+                              int_arg(argv, 2, line, "image"), max_w, max_h));
+}
+
+static value_t bi_image_size (int argc, value_t* argv, int line) {
+    (void)argc;
+    ren_object_t* data = bytes_arg(argv, 0, line, "image_size");
+    int w, h;
+    if (!gfx_image_size(data->data.bytes, data->length, &w, &h)) return ren_nil();
+    value_t size = ren_list(2);
+    ren_list_push(size.as.obj, ren_int(w));
+    ren_list_push(size.as.obj, ren_int(h));
+    return size;
 }
 
 static value_t bi_exit (int argc, value_t* argv, int line) {
@@ -462,11 +578,24 @@ const ren_builtin_t ren_builtins[] = {
     { "file_exists", bi_file_exists, 1, 1 },
     { "delete_file", bi_delete_file, 1, 1 },
     { "list_files", bi_list_files, 0, 1 },
+    { "cwd", bi_cwd, 0, 0 },
     { "sleep", bi_sleep, 1, 1 },
     { "time", bi_time, 0, 0 },
     { "random", bi_random, 1, 1 },
     { "beep", bi_beep, 0, 1 },
     { "exit", bi_exit, 0, 0 },
+    { "gfx_open", bi_gfx_open, 0, 0 },
+    { "gfx_close", bi_gfx_close, 0, 0 },
+    { "gfx_width", bi_gfx_width, 0, 0 },
+    { "gfx_height", bi_gfx_height, 0, 0 },
+    { "gfx_clear", bi_gfx_clear, 0, 1 },
+    { "rgb", bi_rgb, 3, 3 },
+    { "pixel", bi_pixel, 3, 3 },
+    { "rect", bi_rect, 5, 5 },
+    { "line", bi_line, 5, 5 },
+    { "text", bi_text, 4, 5 },
+    { "image", bi_image, 3, 5 },
+    { "image_size", bi_image_size, 1, 1 },
 };
 
 const int ren_builtin_count = sizeof(ren_builtins) / sizeof(ren_builtins[0]);
@@ -489,5 +618,10 @@ void ren_define_constants (void) {
     srand(clck_uptime_ms()); // a different random() sequence every run
 }
 
+// a program that ends (or crashes) in graphics mode gets the terminal back automatically
 void ren_builtins_finish (void) {
+    if (ren->graphics) {
+        gfx_end();
+        ren->graphics = false;
+    }
 }

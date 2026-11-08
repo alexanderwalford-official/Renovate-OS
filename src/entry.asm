@@ -59,13 +59,14 @@ MultiBootHeader:
   ; header_addr, load_addr, load_end_addr, bss_end_addr, entry_addr: only used with bit 16
   ; (GRUB reads them from the ELF file instead), but they must be here to reach the mode fields
   dd 0, 0, 0, 0, 0
-  ; video mode: ask for 80x25 text. On a BIOS PC that is what we get (VGA text mode at 0xB8000).
-  ; UEFI PCs have no text mode, and because GRUB knows we also accept a framebuffer it sets up a
-  ; graphics mode instead and tells us where it is (see boot_parse_multiboot / VGA_linear.c)
-  dd 1                      ; mode_type: 1 = text
-  dd 80                     ; width in characters
-  dd 25                     ; height in characters
-  dd 0                      ; depth: 0 for text mode
+  ; video mode: ask for a 1024x768 framebuffer with 32 bits per pixel, so apps can draw graphics
+  ; on every PC. GRUB sets it up through VBE on a BIOS PC or GOP on a UEFI PC (picking the closest
+  ; mode it can if that one isn't there) and tells us where it is (see boot_parse_multiboot).
+  ; The terminal is then drawn into the framebuffer too (VGA_linear.c).
+  dd 0                      ; mode_type: 0 = graphics
+  dd 1024                   ; width in pixels
+  dd 768                    ; height in pixels
+  dd 32                     ; bits per pixel
 
 section .text
 

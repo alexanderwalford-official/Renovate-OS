@@ -16,6 +16,9 @@
 
 APP(hello_ren)
 APP(guess_ren)
+APP(viewer_ren)
+APP(aeros_bmp)
+APP(colours_bmp)
 
 static const struct {
     const char* name;
@@ -24,6 +27,9 @@ static const struct {
 } apps[] = {
     { "hello.ren", _binary_apps_hello_ren_start, _binary_apps_hello_ren_end },
     { "guess.ren", _binary_apps_guess_ren_start, _binary_apps_guess_ren_end },
+    { "viewer.ren", _binary_apps_viewer_ren_start, _binary_apps_viewer_ren_end },
+    { "aeros.bmp", _binary_apps_aeros_bmp_start, _binary_apps_aeros_bmp_end },
+    { "colours.bmp", _binary_apps_colours_bmp_start, _binary_apps_colours_bmp_end },
 };
 
 int apps_install (void) {

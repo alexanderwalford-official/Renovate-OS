@@ -80,6 +80,7 @@ static struct {
     uint32_t left, top;   // where the 80 x 25 grid starts, to centre it
 } fb;
 static int border_color = BLACK; // the colour of the margin around the grid
+static vga_framebuffer_t fb_info; // what GRUB told us, handed on to the graphics module
 
 // the 16 colours as red, green, blue: the standard VGA colours until the palette is changed
 static uint8_t palette[16][3] = {
@@ -183,6 +184,7 @@ static bool fb_setup(const vga_framebuffer_t* info) {
     if (info->address == 0 || (bytes != 2 && bytes != 3 && bytes != 4)) {
         return false;
     }
+    fb_info = *info;
     fb.base = (uint8_t*)(uintptr_t)info->address;
     fb.pitch = info->pitch;
     fb.bytes = bytes;
@@ -228,6 +230,19 @@ static bool fb_setup(const vga_framebuffer_t* info) {
 
 bool vga_framebuffer_active(void) {
     return fb_mode;
+}
+
+bool vga_framebuffer_info(vga_framebuffer_t* out) {
+    if (fb_mode) {
+        *out = fb_info;
+    }
+    return fb_mode;
+}
+
+void vga_invalidate(void) {
+    for (unsigned int i = 0; i < COLS * ROWS; i++) {
+        cells[i] = 0xFFFF;
+    }
 }
 
 // change one cell, on screen and in cells[]

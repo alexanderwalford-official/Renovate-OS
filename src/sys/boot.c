@@ -44,7 +44,10 @@ typedef struct __attribute__((packed)) multiboot_info {
     uint32_t flags; // which of the fields below are valid
     uint32_t mem_lower; // KB of memory below 1MB
     uint32_t mem_upper; // KB of memory above 1MB
-    uint32_t unused[19]; // boot device, command line, modules, symbols, memory map, drives, VBE ...
+    uint32_t unused1[8]; // boot device, command line, modules, symbols
+    uint32_t mmap_length; // the memory map (flags bit 6): its size in bytes
+    uint32_t mmap_addr;   // and where it is
+    uint32_t unused2[9];  // drives, config table, bootloader name, APM, VBE
     uint64_t framebuffer_addr; // from here on: the screen GRUB set up (flags bit 12)
     uint32_t framebuffer_pitch;
     uint32_t framebuffer_width;
@@ -56,6 +59,49 @@ typedef struct __attribute__((packed)) multiboot_info {
     uint8_t padding[2];
     uint8_t red_pos, red_size, green_pos, green_size, blue_pos, blue_size;
 } multiboot_info_t;
+
+// bit 6 of the info flags: the memory map fields are valid
+#define MULTIBOOT_INFO_MEMORY_MAP  0x00000040
+#define MULTIBOOT_MEMORY_AVAILABLE 1
+
+// one entry of the memory map. "size" doesn't count itself, the next entry starts size + 4 later
+typedef struct __attribute__((packed)) {
+    uint32_t size;
+    uint64_t base;
+    uint64_t length;
+    uint32_t type; // 1 = free RAM, anything else is reserved, ACPI tables, broken ...
+} multiboot_mmap_entry_t;
+
+extern char end[]; // the first byte after the kernel (linker.ld)
+
+uint32_t boot_heap_extra_kb = 0;
+
+// give the heap the biggest stretch of free RAM above the kernel (the built-in 4MB is only enough
+// to get going: pictures, programs and their data need far more)
+static void boot_add_memory (const multiboot_info_t* info) {
+    uint64_t best_start = 0, best_end = 0;
+    uint32_t offset = 0;
+    while (offset + sizeof(multiboot_mmap_entry_t) <= info->mmap_length) {
+        const multiboot_mmap_entry_t* e = (const multiboot_mmap_entry_t*)(uintptr_t)(info->mmap_addr + offset);
+        offset += e->size + 4;
+        if (e->type != MULTIBOOT_MEMORY_AVAILABLE) {
+            continue;
+        }
+        // only the part above the kernel and below 4GB (no paging, so nothing higher can be reached)
+        uint64_t start = e->base;
+        uint64_t stop = e->base + e->length;
+        if (start < (uintptr_t)end) start = (uintptr_t)end;
+        if (stop > 0x100000000ULL) stop = 0x100000000ULL;
+        if (stop > start && stop - start > best_end - best_start) {
+            best_start = start;
+            best_end = stop;
+        }
+    }
+    if (best_end - best_start >= 1024 * 1024) {
+        heap_add_region((void*)(uintptr_t)best_start, (size_t)(best_end - best_start));
+        boot_heap_extra_kb = (uint32_t)((best_end - best_start) / 1024);
+    }
+}
 
 // bit 12 of the info flags: the framebuffer fields are valid
 #define MULTIBOOT_INFO_FRAMEBUFFER 0x00001000
@@ -105,6 +151,10 @@ void boot_parse_multiboot (uint32_t magic, uint32_t info_addr) {
         boot_framebuffer.blue_pos = info->blue_pos;
         boot_framebuffer.blue_size = info->blue_size;
         boot_framebuffer_valid = true;
+    }
+    // last, because the heap may hand out the memory the multiboot information sits in
+    if (info->flags & MULTIBOOT_INFO_MEMORY_MAP) {
+        boot_add_memory(info);
     }
 }
 
