@@ -38,9 +38,9 @@
 #include <stddef.h>
 #include "GIO.h"
 #include "../video/VGA_linear.h"
-#include "../../lib/ren_ctype.h"
-#include "../../lib/ren_string.h"
-#include "../../lib/ren_stdio.h"
+#include "../../lib/aer_ctype.h"
+#include "../../lib/aer_string.h"
+#include "../../lib/aer_stdio.h"
 #include "../../sys/interrupts.h"
 #include "../../lib/crypto.h"
 

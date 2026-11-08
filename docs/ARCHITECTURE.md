@@ -6,7 +6,7 @@ in more detail. This document is the map that ties them together.
 
 The other guides go deeper into one area each:
 
-* [RENLANG.md](RENLANG.md): the RenLang programming language and its built-in functions
+* [AERLANG.md](AERLANG.md): the AerLang programming language and its built-in functions
 * [SECURITY.md](SECURITY.md): user accounts, password hashing and file encryption
 * [AUDIO.md](AUDIO.md): the sound card driver and WAV / MP3 playback
 
@@ -68,20 +68,21 @@ src/
     terminal/editor.c     the text editor (EDIT)
 
   lib/                  the kernel's own small C library
-    ren_string.c          memcpy, strlen, strtok_r...      ren_stdlib.c  malloc / free, itoa, qsort...
-    ren_stdio.c           printf, snprintf                 ren_ctype.h   isdigit, toupper...
-    ren_setjmp.c          setjmp / longjmp (RenLang errors) primary_definitions.c  StrCompare, split, StrTrim
+    aer_string.c          memcpy, strlen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
+    aer_stdio.c           printf, snprintf                 aer_ctype.h   isdigit, toupper...
+    aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  StrCompare, split, StrTrim
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
     mp3.c + minimp3/      MP3 decoding
-    ren_comp.c            runs a process's line of code (the built-in "instructions")
+    aer_comp.c            runs a process's line of code (the built-in "instructions")
 
-  lang/                 the RenLang interpreter
-    ren_lexer.c           source text -> tokens
-    ren_parser.c          tokens -> syntax tree
-    ren_interp.c          walks the tree; memory, values, variables
-    ren_builtins.c        print, read_file, play, gfx_... (every function a program can call)
+  lang/                 the AerLang interpreter
+    aer_lexer.c           source text -> tokens
+    aer_parser.c          tokens -> syntax tree
+    aer_interp.c          walks the tree; memory, values, variables
+    aer_builtins.c        print, read_file, play, gfx_... (every function a program can call)
 
-  apps/                 built-in files, linked into the kernel and copied to /bin/ or /sys/ at boot
+  apps/                 built-in apps and files, linked into the kernel and copied to /bin/ or /sys/
+  docs/                 the in-OS manual (Markdown and HTML), copied to /docs/ and shown by DOCS
   iso/boot/grub/grub.cfg  GRUB's menu: loads main.elf, restores the saved screen resolution
 ```
 
@@ -106,7 +107,7 @@ sequenceDiagram
 
 Each step after the hardware set-up is a **process**: a line of code (`"splash_screen"`,
 `"init_boot"`, `"terminal"`) put on the process stack and handed to `compile()` in
-`lib/ren_comp.c`, which knows what each name means. Processes run one at a time to completion,
+`lib/aer_comp.c`, which knows what each name means. Processes run one at a time to completion,
 shortest first. The terminal's `RUN` command creates processes the same way.
 
 ## Memory
@@ -133,9 +134,10 @@ There is no paging, so these are the real physical addresses:
 ```
 
 * **The stack** (256 KB) is shared by everything, including interrupt handlers. Code that might
-  recurse deeply (the RenLang parser and interpreter) checks how much is left.
-* **The heap** (`malloc` / `free` in `lib/ren_stdlib.c`) is first-fit with a header per block,
-  merging free neighbours. It starts with the 4 MB pool inside the kernel and grows by the free
+  recurse deeply (the AerLang parser and interpreter) checks how much is left.
+* **The heap** (`malloc` / `free` in `lib/aer_stdlib.c`) is "next fit" with a 16-byte header
+  per block. `malloc` carries on searching from where it last allocated, and `free` merges a
+  block with its free neighbours in constant time. It starts with the 4 MB pool inside the kernel and grows by the free
   RAM found at boot, about 250 MB on a 256 MB machine.
 * **DMA** (the sound card) works with ordinary heap pointers, because without paging every
   address the CPU sees is the address the hardware sees.
@@ -162,13 +164,26 @@ one of two modes:
 | DISK | an IDE disk with a FAT16 / FAT32 volume labelled `AEROS` is found | the disk (`fat.c`) |
 | VFS | no such disk, or DEMO mode chosen in the boot options | memory, lost at power off |
 
-Paths are always absolute directories ending in `/` plus a name (`"/sys/"` + `"conf.ren"`).
+Paths are always absolute directories ending in `/` plus a name (`"/sys/"` + `"conf.aer"`).
 Users can type relative paths with `.` and `..`, and `fs_split_path` / `fs_resolve_dir` turn
 them into that form. On disk, new names must fit 8.3 (`NOTES.TXT`). Existing long names can be
 read.
 
-The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/sys/` (system files:
-`startup.wav`, `cache/`, `tmp/`) and `/conf.ren`.
+The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
+`/sys/` (system files: `startup.wav`, `cache/`, `tmp/`) and `/conf.aer`.
+
+## The manual inside AerOS
+
+`src/docs/` holds the manual that ships inside the OS: short Markdown pages written for an
+80-column screen, plus an HTML sample. They are linked into the kernel like the apps and
+copied to `/docs/` at boot. Unlike the apps, which are only copied when missing so your own
+changes are kept, each page is **replaced whenever it differs** from the built-in copy, so the
+manual always matches the version that is running.
+
+`DOCS [topic]` opens it in the reader, `/bin/read.aer`. The reader is an AerLang app that shows
+Markdown, HTML and plain text with colours, word wrapping, tables and links (Tab picks a link,
+Enter opens it, Backspace goes back). To change a page, edit it in `src/docs/` and rebuild. To
+add one, also add it to the table in `src/sys/apps.c` and link to it from `index.md`.
 
 ## The terminal
 
@@ -180,22 +195,22 @@ loop forever:
     draw the banner
     until LOGOUT:
         prompt "alex@0//: "  ->  read a line  ->  look the first word up in cli_commands[]
-                                                  or run it as /bin/<word>.ren
+                                                  or run it as /bin/<word>.aer
 ```
 
 `HELP` lists every command from the same table, so a new command only needs one table line.
 
-## RenLang
+## AerLang
 
 ```
-source text --ren_lexer.c--> tokens --ren_parser.c--> syntax tree --ren_interp.c--> runs it
+source text --aer_lexer.c--> tokens --aer_parser.c--> syntax tree --aer_interp.c--> runs it
                                                                         |
-                                                   ren_builtins.c: print, read_file, play...
+                                                   aer_builtins.c: print, read_file, play...
 ```
 
 The interpreter tracks every allocation, so when a program ends, normally or through an error,
 everything it used is freed at once. Errors `longjmp` straight back to the start of the run.
-See [RENLANG.md](RENLANG.md) for the language and the comments at the top of each `lang/` file
+See [AERLANG.md](AERLANG.md) for the language and the comments at the top of each `lang/` file
 for the details.
 
 ## Building and testing
@@ -238,25 +253,26 @@ and one line in `cli_commands[]` (the help text is what `HELP` prints, at most 7
     { "ver",      cli_version,        "VER             - PRINT THE AEROS VERSION" },
 ```
 
-### Add a RenLang function
+### Add an AerLang function
 
-In `src/lang/ren_builtins.c`, write the function in the right section:
+In `src/lang/aer_builtins.c`, write the function in the right section:
 
 ```c
 static value_t bi_twice (int argc, value_t* argv, int line) {
     (void)argc;
-    return ren_int(int_arg(argv, 0, line, "twice") * 2);  // int_arg reports a wrong type for you
+    return aer_int(int_arg(argv, 0, line, "twice") * 2);  // int_arg reports a wrong type for you
 }
 ```
 
-then add `{ "twice", bi_twice, 1, 1 },` to `ren_builtins[]` (name, function, fewest and most
-arguments), and list it in [RENLANG.md](RENLANG.md).
+then add `{ "twice", bi_twice, 1, 1 },` to `aer_builtins[]` (name, function, fewest and most
+arguments), and list it in [AERLANG.md](AERLANG.md).
 
 ### Add a built-in app or file
 
-Put the file in `src/apps/`, then add two lines to `src/sys/apps.c`: `APP(name_ext)` and a table
-entry saying which folder it goes in. The Makefile links it into the kernel automatically, and
-it is copied to the disk at boot if it isn't there.
+Put the file in `src/apps/` (or `src/docs/` for a manual page), then add two lines to
+`src/sys/apps.c`: `EMBEDDED(apps_name_ext)` and a `FILE_ENTRY` saying which folder it goes in
+and whether to refresh it when it changes. The Makefile links it into the kernel automatically.
+On a disk, new names must fit 8.3 (`sample.htm`, not `sample.html`).
 
 ### Add a driver
 

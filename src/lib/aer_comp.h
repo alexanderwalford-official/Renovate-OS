@@ -1,13 +1,13 @@
-#ifndef REN_COMP_H
-#define REN_COMP_H
+#ifndef AER_COMP_H
+#define AER_COMP_H
 
-// RenLang for AerOS compiler
+// AerLang for AerOS compiler
 
 /*
-    RenLang is the tiny language every AerOS process is written in. Each process holds
+    AerLang is the tiny language every AerOS process is written in. Each process holds
     one line of it, and compile() "compiles" that line by matching it against the instructions
     it knows and calling the matching kernel function straight away (so it is really closer to
-    an interpreter than a compiler). See compile() in ren_comp.c for the full instruction list,
+    an interpreter than a compiler). See compile() in aer_comp.c for the full instruction list,
     e.g. "splash_screen", "init_boot", "terminal", "print_stack" or "s:<text>" to print text.
 
     Anything it does not recognise brings up the red system exception screen.
@@ -28,7 +28,7 @@ int splash_screen (void);
 // the red "SYSTEM EXCEPTION" screen with a beep, held for 4 seconds. code = "invalid_code" or anything else. Returns 0
 int error_screen (const char* code);
 
-// run one line of RenLang code, returns 0 on success or -1 for code it does not understand
+// run one line of AerLang code, returns 0 on success or -1 for code it does not understand
 int compile (const char* code);
 
-#endif /* REN_COMP_H */
+#endif /* AER_COMP_H */

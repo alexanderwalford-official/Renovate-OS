@@ -1,7 +1,7 @@
 /*
-    ren_comp.c - the RenLang compiler
+    aer_comp.c - the AerLang compiler
 
-    Every process on the process stack (sys/p_man.c) is a single line of RenLang code. When
+    Every process on the process stack (sys/p_man.c) is a single line of AerLang code. When
     the process manager runs a process it passes that line to compile(), which looks it up
     and calls the kernel function it stands for. That is how the whole boot sequence is
     driven: kernel.c only creates processes called "splash_screen", "init_boot" and
@@ -17,7 +17,7 @@
     in the middle of the screen.
 */
 
-#include "ren_comp.h"
+#include "aer_comp.h"
 #include <stdint.h>
 #include "primary_definitions.h"
 #include "../drivers/video/VGA_linear.h"
@@ -30,7 +30,7 @@
 #include "../sys/splash.h"
 #include "../sys/sound.h"
 #include "../sys/f_sys.h"
-#include "../lang/renlang.h"
+#include "../lang/aerlang.h"
 #include "../sys/p_man.h"
 #include "../sys/terminal/t_int.h"
 
@@ -105,9 +105,9 @@ int error_screen (const char* code) {
 }
 
 // main method to compile input line code, returns 0 on success and -1 for invalid code
-// code = one line of RenLang, matched exactly and case sensitively (only "s:" is a prefix)
+// code = one line of AerLang, matched exactly and case sensitively (only "s:" is a prefix)
 //
-// the instructions RenLang knows:
+// the instructions AerLang knows:
 //   s:<text>            print <text> on its own line, e.g. "s:hello" prints hello
 //   update_stack        hand out fresh tickets on the process stack (p_stack_update)
 //   init_boot           the boot log and file system start up (sys/boot.c)
@@ -117,11 +117,11 @@ int error_screen (const char* code) {
 //   terminal            start the terminal, unless it is already running
 //   iso_launch_options  the boot options menu (sys/recovery.c)
 // anything else shows the error screen and returns -1
-// true if the first word of the code names a RenLang program file ("hello.ren", "/bin/x.ren ...")
+// true if the first word of the code names an AerLang program file ("hello.aer", "/bin/x.aer ...")
 static bool is_program (const char* code) {
     const char* end = strchr(code, ' ');
     size_t length = end ? (size_t)(end - code) : strlen(code);
-    return length > 4 && strncmp(code + length - 4, ".ren", 4) == 0;
+    return aer_is_program_name(code, length);
 }
 
 int compile (const char* code) {
@@ -171,14 +171,14 @@ int compile (const char* code) {
         boot_options_menu();
     }
     else if (is_program(code)) {
-        // "<program>.ren [args]": run a RenLang program file, the rest of the line is its args
+        // "<program>.aer [args]": run an AerLang program file, the rest of the line is its args
         char program[FS_PATH_MAX];
         const char* space = strchr(code, ' ');
         size_t length = space ? (size_t)(space - code) : strlen(code);
         if (length >= sizeof(program)) length = sizeof(program) - 1;
         memcpy(program, code, length);
         program[length] = '\0';
-        result = ren_run_file(program, space ? space + 1 : "");
+        result = aer_run_file(program, space ? space + 1 : "");
     }
     else {
         // unknown code: show the exception screen (this also beeps and waits 4 seconds)

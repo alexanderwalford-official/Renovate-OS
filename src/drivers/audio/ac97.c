@@ -44,7 +44,7 @@
 #include "../pci/pci.h"
 #include "../input/GIO.h"
 #include "../../sys/sys_clck.h"
-#include "../../lib/ren_stdio.h"
+#include "../../lib/aer_stdio.h"
 
 #define NAM_RESET          0x00
 #define NAM_MASTER_VOLUME  0x02

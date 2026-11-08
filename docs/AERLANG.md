@@ -1,22 +1,25 @@
-# RenLang
+# AerLang
 
-RenLang is the programming language built into AerOS. Programs are text files ending in `.ren`.
+AerLang is the programming language built into AerOS. Programs are text files ending in `.aer`.
 The interpreter runs inside the kernel, so a program can use the screen, keyboard and files directly.
 
 ## Running programs
 
 | You type | What happens |
 | --- | --- |
-| `hello` | runs `hello.ren` from the current directory, or from `/bin/` |
-| `hello.ren a b` | the same, with `args` set to `["a", "b"]` |
-| `run hello.ren` | runs it through the process manager like any other RenLang instruction |
-| `ren` | the RenLang prompt: type code and see the result straight away, `exit` to leave |
+| `hello` | runs `hello.aer` from the current directory, or from `/bin/` |
+| `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
+| `run hello.aer` | runs it through the process manager like any other AerLang instruction |
+| `aer` | the AerLang prompt: type code and see the result straight away, `exit` to leave |
 
 Press **Ctrl+C** to stop a program that is stuck in a loop.
 
+AerLang used to be called RenLang, and its programs ended in `.ren`. Those still run if you
+type the name with its extension (`old.ren`), and the editor still colours them in.
+
 ## Writing programs on AerOS
 
-`edit myapp.ren` opens the editor (the file is made when you first save it). RenLang code is
+`edit myapp.aer` opens the editor (the file is made when you first save it). AerLang code is
 coloured in, and a new line keeps the indentation of the one above.
 
 | Key | |
@@ -27,7 +30,7 @@ coloured in, and a new line keeps the indentation of the one above.
 | arrows, Home, End, Page Up / Down | move around |
 
 Programs can also be written on another computer and copied onto the AerOS disk with
-`make disk-put FILE=myapp.ren` (see `src/README.md`).
+`make disk-put FILE=myapp.aer` (see `src/README.md`).
 
 The apps in `src/apps/` are built into AerOS and copied to `/bin/` when it starts.
 
@@ -97,7 +100,9 @@ one side is a string: `"Score: " + 10`.
 `cls()` clear the screen ·
 `color(fg, bg)` text colours (`BLACK` ... `WHITE`) ·
 `at(x, y)` move the cursor ·
-`key()` wait for a key and return its code (`KEY_UP`, `KEY_ENTER`, `KEY_ESCAPE`, or a character code) ·
+`key()` wait for a key and return its code: a character code, or one of `KEY_UP`, `KEY_DOWN`,
+`KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`,
+`KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`, `KEY_ESCAPE` ·
 `haskey()` true if a key is waiting
 
 **Text**
@@ -111,15 +116,12 @@ one side is a string: `"Score: " + 10`.
 **Files** (paths can be relative or absolute)
 `read_file(path)` (nil if missing) · `read_bytes(path)` · `write_file(path, text)` ·
 `append_file(path, text)` · `file_exists(path)` · `delete_file(path)` ·
-`list_files(dir)` (directories end in `/`)
+`list_files(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
 
 **Encrypted files** (AES-256 with a password, the file keeps its name)
 `encrypt_file(path, password)` · `decrypt_file(path, password)` (both true if it worked) ·
 `is_encrypted(path)` · `read_encrypted(path, password)` the contents, without changing the file
 (nil if the password is wrong)
-
-**Files** (continued)
-`cwd()` the current directory, e.g. `"/bin/"`
 
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
@@ -146,4 +148,6 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
-`/bin/viewer.ren` is a complete app built from these: a picture picker and viewer in about 100 lines.
+`/bin/viewer.aer` is a complete app built from these: a picture picker and viewer.
+`/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
+own parsers, word wrapping and link navigation, all in AerLang.

@@ -123,7 +123,7 @@ bool fs_resolve_dir (const char* input, char* out, size_t out_size) {
     return strlcpy(out, work, out_size) < out_size;
 }
 
-// split a file path typed by the user ("notes.txt", "/sys/conf.ren", "../a.txt") into its
+// split a file path typed by the user ("notes.txt", "/sys/conf.aer", "../a.txt") into its
 // directory path and file name
 // everything up to and including the last '/' is the directory (resolved like any other
 // directory path), everything after it is the name. No '/' at all means the file is in cd.
@@ -541,10 +541,11 @@ static void fs_init_base (void) {
     }
     created += fs_ensure_d("/acc/", "accounts");
     created += fs_ensure_d("/bin/", "bin");
+    created += fs_ensure_d("/docs/", "the manual");
     created += fs_ensure_d("/sys/", "system");
     created += fs_ensure_d("/sys/cache/", "system cache");
     created += fs_ensure_d("/sys/tmp/", "system temp");
-    created += fs_ensure_f("/", "conf.ren", "# here you will find all major system config options");
+    created += fs_ensure_f("/", "conf.aer", "# here you will find all major system config options");
 
     if (fs_mode == FS_MODE_DISK) {
         printf("< REQ FS DONE .. > %d missing item(s) created\n", created);

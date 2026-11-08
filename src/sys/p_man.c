@@ -3,7 +3,7 @@
 
     Keeps the process stack (a fixed array of P_STACK_SIZE slots), creates and destroys
     processes, decides in which order LIVE processes run and runs them by handing their
-    code to the RenLang compiler (lib/ren_comp.c).
+    code to the AerLang compiler (lib/aer_comp.c).
 
     Despite the name, the "process stack" is not a stack in the push / pop sense. It is a
     table of slots indexed by process ID, the scheduler walks it to find the next job.
@@ -16,7 +16,7 @@
 
 #include "p_man.h"
 #include "../lib/primary_definitions.h"
-#include "../lib/ren_comp.h"
+#include "../lib/aer_comp.h"
 #include "sys_clck.h"
 
 int p_cnt = 0; // process count, automatic handler
@@ -42,7 +42,7 @@ int p_id_handler (const char* action, int p_id) {
 }
 
 // create new process, returns its ID or -1 when the process stack is full
-// c_p_inst = the RenLang code the process will run, it is copied so the caller's string can go away
+// c_p_inst = the AerLang code the process will run, it is copied so the caller's string can go away
 // the process is not run yet, call p_exec() with the returned ID for that
 int p_create (const char* c_p_inst) {
     if (c_p_inst == NULL) {

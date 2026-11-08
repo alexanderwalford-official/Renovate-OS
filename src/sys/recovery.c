@@ -3,7 +3,7 @@
 
     If X is pressed during the splash screen, kernel.c calls init_recovery() before the
     boot log runs. The menu is run as a process like every other boot step, so it goes
-    through the process manager and the RenLang compiler ("iso_launch_options").
+    through the process manager and the AerLang compiler ("iso_launch_options").
 
     The menu only sets boot_option, it is init_boot() (sys/boot.c) that acts on it:
         [1] normal -> BOOT_OPT_NORMAL: use a AEROS disk if there is one, show the boot log

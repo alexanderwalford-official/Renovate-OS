@@ -1,10 +1,10 @@
 /*
-    ren_stdlib.h
+    aer_stdlib.h
     General utilities (freestanding replacement for <stdlib.h>):
     number conversion, random numbers, sorting and a kernel heap (malloc / free).
 
     Like the rest of lib/, this exists because the kernel is built freestanding with
-    no C library to lean on (see ren_ctype.h for the longer explanation). The names and
+    no C library to lean on (see aer_ctype.h for the longer explanation). The names and
     signatures match the standard ones, so code here reads just like normal C.
 
     What's inside:
@@ -13,7 +13,7 @@
     - qsort, used by the process manager to line its processes up shortest first
     - the kernel heap: malloc / free / calloc / realloc over a built-in 4MB pool and the free
       RAM added at boot, plus strdup / strndup which copy a string onto the heap
-    The heap's inner workings are explained at length in ren_stdlib.c.
+    The heap's inner workings are explained at length in aer_stdlib.c.
 
     What's missing compared with a hosted libc: there's no errno (failures are reported
     through return values only), no exit() / abort() (there's no process to exit back
@@ -24,8 +24,8 @@
         https://wiki.osdev.org/Memory_Allocation
         https://en.cppreference.com/w/c/program
 */
-#ifndef REN_STDLIB_H
-#define REN_STDLIB_H
+#ifndef AER_STDLIB_H
+#define AER_STDLIB_H
 
 #include <stddef.h>
 
@@ -121,4 +121,4 @@ void heap_add_region(void* start, size_t size);
 // how much of it is currently handed out, block headers included
 size_t heap_used(void);
 
-#endif /* REN_STDLIB_H */
+#endif /* AER_STDLIB_H */

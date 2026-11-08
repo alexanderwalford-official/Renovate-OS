@@ -71,7 +71,7 @@ MultiBootHeader:
 section .text
 
 ; 0x40000 = 256KB of kernel stack, shared by main(), every process and every interrupt handler
-; (RenLang programs run on it too, and an interpreter recurses for every nested call and expression)
+; (AerLang programs run on it too, and an interpreter recurses for every nested call and expression)
 ; (there is no separate interrupt stack). Recursion or large local arrays eat into it
 STACKSIZE equ 0x40000
 

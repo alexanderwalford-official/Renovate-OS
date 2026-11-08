@@ -2,7 +2,7 @@
     splash.h
     The AerOS boot screen: an orange page with the copyright box, the version number,
     "Press X for boot options." and the big "aerOS" wordmark, all drawn in VGA text mode.
-    splash_screen() in lib/ren_comp.c shows it while it waits for the X key.
+    splash_screen() in lib/aer_comp.c shows it while it waits for the X key.
 */
 #ifndef SPLASH_H
 #define SPLASH_H

@@ -1,0 +1,1198 @@
+# read.aer - the AerOS reader, for Markdown (.md), HTML (.htm) and plain text files
+#
+#     read <file>       open a file
+#     read              open the AerOS documentation (/docs/index.md), the same as DOCS
+#
+# Keys: Up / Down scroll, PgUp / PgDn (or Space) move a page, Home / End, Tab or Right picks
+# the next link and Left the one before, Enter opens it, Backspace goes back, Q or Esc quits.
+#
+# It works in three steps, each a section of this file:
+#
+#   1. parse   the file becomes a list of blocks: headings, paragraphs, list items, quotes,
+#              code, rules and tables. Markdown and HTML have a parser each, and both make the
+#              same kind of blocks. The text inside a block is a list of "spans": pieces of
+#              text in one style (normal, bold, italic, code or a link)
+#   2. layout  the blocks are word wrapped into screen lines, each a list of coloured "segments"
+#   3. view    the lines are drawn a screen at a time, and the keys move around them
+#
+# A block is  [kind, spans, level, extra]:
+#     "h"      heading               level 1-6
+#     "p"      paragraph
+#     "li"     list item             level = how deeply nested (0 = top), extra = "1." or a bullet
+#     "quote"  quoted paragraph
+#     "code"   code block            extra = its lines, shown as they are
+#     "hr"     a line across the page
+#     "table"  table                 level = true if the first row is a header, extra = the rows
+#     "text"   a line of a text file extra = the line
+# A span is     [text, style, link target]   style: "n" normal, "b" bold, "i" italic, "c" code, "l" link
+# A segment is  [text, colour, link number]  link number -1 for ordinary text
+
+# ---- settings -------------------------------------------------------------------------------
+
+let WIDTH = 78          # columns of text, with one column of margin either side
+let ROWS = 23           # rows of text, between the title bar and the help bar
+
+let C_TEXT = BRIGHT
+let C_BOLD = WHITE
+let C_ITALIC = LIGHT_PURPLE
+let C_CODE = LIGHT_GREEN
+let C_LINK = LIGHT_BLUE
+let C_DIM = DARK_GRAY
+let C_BULLET = YELLOW
+let HEADING_COLOURS = [YELLOW, LIGHT_CYAN, WHITE, WHITE, WHITE, WHITE]
+
+let BULLET = chr(7)     # the font's round bullet
+let BAR = chr(179)      # the box drawing characters of the PC font: | - = +
+let RULE = chr(196)
+let DOUBLE_RULE = chr(205)
+let CROSS = chr(197)
+let CR = chr(13)        # carriage return (Windows files end lines with CR LF)
+let SPACES = "                                                                                "
+
+let HELP = "Up/Down PgUp/PgDn scroll  Tab/Left/Right links  Enter open  Bksp back  Q quit"
+
+# ---- state ----------------------------------------------------------------------------------
+
+let LINES = []          # the laid out page: a list of lines, each a list of segments
+let LINKS = []          # every link on the page: [target, the line it starts on]
+let HEADINGS = []       # every heading: [anchor name, line], for links like "page.md#keys"
+let CURRENT = ""        # the file being shown
+let TOP = 0             # the line at the top of the screen
+let SELECTED = -1       # the link picked with Tab, -1 for none
+let MESSAGE = ""        # shown in the help bar until the next key
+let HISTORY = []        # where Backspace goes: [file, top] for each page we came from
+
+# used while parsing and wrapping (AerLang functions can't share local variables)
+let BLOCKS = []
+let PENDING = nil
+let W_CUR = []
+let W_WIDTH = 0
+let W_REST = []
+let W_ANY = false
+let W_SPACE = false
+let H_KIND = ""
+let H_SPANS = []
+let H_LEVEL = 0
+let H_EXTRA = nil
+let H_BOLD = 0
+let H_ITALIC = 0
+let H_CODE = 0
+let H_LINK = ""
+let H_PRE = false
+let H_QUOTE = false
+let H_LISTS = []
+let H_TABLE = nil
+let H_ROW = nil
+let H_CELL = nil
+let H_HEADER = false
+
+# ---- small helpers --------------------------------------------------------------------------
+
+func min(a, b)
+    if a < b then return a end
+    return b
+end
+
+func max(a, b)
+    if a > b then return a end
+    return b
+end
+
+func repeat(s, n)
+    let out = ""
+    for i = 1 to n do
+        out = out + s
+    end
+    return out
+end
+
+# s with spaces added up to n characters
+func pad(s, n)
+    if len(s) >= n then return s end
+    return s + sub(SPACES, 0, n - len(s))
+end
+
+func starts_with(s, part)
+    return sub(s, 0, len(part)) == part
+end
+
+func ends_with(s, part)
+    return len(s) >= len(part) and sub(s, len(s) - len(part)) == part
+end
+
+func trim(s)
+    let a = 0
+    let b = len(s)
+    while a < b and (s[a] == " " or s[a] == "\t") do a = a + 1 end
+    while b > a and (s[b - 1] == " " or s[b - 1] == "\t" or s[b - 1] == CR) do b = b - 1 end
+    return sub(s, a, b - a)
+end
+
+# like find, but starting at position start
+func find_from(s, part, start)
+    let i = find(sub(s, start), part)
+    if i < 0 then return -1 end
+    return i + start
+end
+
+func replace(s, old, new)
+    return join(split(s, old), new)
+end
+
+func strip_cr(s)
+    if ends_with(s, CR) then return sub(s, 0, len(s) - 1) end
+    return s
+end
+
+func expand_tabs(s)
+    return replace(s, "\t", "    ")
+end
+
+func indent_of(s)
+    let i = 0
+    while i < len(s) and s[i] == " " do i = i + 1 end
+    return i
+end
+
+let WORD_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func is_word(c)
+    return find(WORD_CHARS, c) >= 0
+end
+
+# the text of some spans without their styles
+func plain(spans)
+    let out = ""
+    for span in spans do out = out + span[0] end
+    return out
+end
+
+# a heading's anchor, the way GitHub makes them: "Keys and links" -> "keys-and-links"
+func slug(s)
+    let out = ""
+    for i = 0 to len(s) - 1 do
+        let c = lower(s[i])
+        if is_word(c) then
+            out = out + c
+        elif c == " " or c == "-" then
+            out = out + "-"
+        end
+    end
+    return out
+end
+
+# the folder a file is in, with its "/" ("/docs/index.md" -> "/docs/")
+func dir_of(path)
+    let i = len(path) - 1
+    while i >= 0 and path[i] != "/" do i = i - 1 end
+    if i < 0 then return cwd() end
+    return sub(path, 0, i + 1)
+end
+
+# "md", "html" or "text", from the end of the name
+func file_kind(path)
+    let name = lower(path)
+    if ends_with(name, ".md") or ends_with(name, ".markdown") then return "md" end
+    if ends_with(name, ".htm") or ends_with(name, ".html") then return "html" end
+    return "text"
+end
+
+# ---- 1a. Markdown ---------------------------------------------------------------------------
+
+let MARKUP = ["*", "_", "`", "[", "\\", "<"]
+
+func has_markup(s)
+    for c in MARKUP do
+        if find(s, c) >= 0 then return true end
+    end
+    return false
+end
+
+# add the text collected so far as a span in the current style
+func add_span(spans, buf, bold, italic)
+    if buf == "" then return end
+    let style = "n"
+    if bold then
+        style = "b"
+    elif italic then
+        style = "i"
+    end
+    push(spans, [buf, style, ""])
+end
+
+# can the * or _ at position i open (or, if closing, close) emphasis? "2 * 3" and snake_case
+# names shouldn't turn italic, so an opening mark needs a letter after it and a closing one a
+# letter before it, and _ only counts at the edge of a word
+func emphasis(s, i, closing)
+    let c = s[i]
+    let before = " "
+    if i > 0 then before = s[i - 1] end
+    let after = " "
+    if i + 1 < len(s) then after = s[i + 1] end
+    if closing then
+        return before != " " and not (c == "_" and is_word(after))
+    end
+    return after != " " and not (c == "_" and is_word(before))
+end
+
+# one paragraph of Markdown -> spans: **bold**, *italic*, `code`, [links](target), ![images](x),
+# <http://autolinks>, <br> line breaks and \escapes
+func md_spans(s)
+    if not has_markup(s) then return [[s, "n", ""]] end
+    let spans = []
+    let buf = ""
+    let bold = false
+    let italic = false
+    let i = 0
+    let n = len(s)
+    while i < n do
+        let c = s[i]
+        let after = ""
+        if i + 1 < n then after = s[i + 1] end
+        if c == "\\" and after != "" then
+            buf = buf + after
+            i = i + 2
+        elif c == "`" and find_from(s, "`", i + 1) > 0 then
+            let close = find_from(s, "`", i + 1)
+            add_span(spans, buf, bold, italic)
+            buf = ""
+            push(spans, [sub(s, i + 1, close - i - 1), "c", ""])
+            i = close + 1
+        elif (c == "*" or c == "_") and after == c and (bold or (i + 2 < n and s[i + 2] != " ")) then
+            add_span(spans, buf, bold, italic)
+            buf = ""
+            bold = not bold
+            i = i + 2
+        elif (c == "*" or c == "_") and emphasis(s, i, italic) then
+            add_span(spans, buf, bold, italic)
+            buf = ""
+            italic = not italic
+            i = i + 1
+        elif c == "[" or (c == "!" and after == "[") then
+            let first = i
+            if c == "!" then first = i + 1 end
+            let middle = find_from(s, "](", first)
+            let close = -1
+            if middle > 0 then close = find_from(s, ")", middle + 2) end
+            if close > 0 then
+                add_span(spans, buf, bold, italic)
+                buf = ""
+                let label = sub(s, first + 1, middle - first - 1)
+                let target = sub(s, middle + 2, close - middle - 2)
+                if c == "!" then
+                    push(spans, ["[picture: " + label + "]", "i", ""])
+                else
+                    push(spans, [replace(replace(label, "`", ""), "**", ""), "l", target])
+                end
+                i = close + 1
+            else
+                buf = buf + c
+                i = i + 1
+            end
+        elif c == "<" and find_from(s, ">", i) > 0 then
+            let close = find_from(s, ">", i)
+            let inner = sub(s, i + 1, close - i - 1)
+            if starts_with(inner, "http") then
+                add_span(spans, buf, bold, italic)
+                buf = ""
+                push(spans, [inner, "l", inner])
+                i = close + 1
+            elif lower(inner) == "br" or lower(inner) == "br/" or lower(inner) == "br /" then
+                add_span(spans, buf, bold, italic)
+                buf = ""
+                push(spans, ["\n", "n", ""])
+                i = close + 1
+            else
+                buf = buf + c
+                i = i + 1
+            end
+        else
+            buf = buf + c
+            i = i + 1
+        end
+    end
+    add_span(spans, buf, bold, italic)
+    return spans
+end
+
+# "## Title" -> 2, 0 if it isn't a heading ("#hashtag" isn't)
+func heading_level(t)
+    let n = 0
+    while n < len(t) and t[n] == "#" do n = n + 1 end
+    if n > 6 then return 0 end
+    if n < len(t) and t[n] != " " then return 0 end
+    return n
+end
+
+# "Title ##" -> "Title"
+func strip_hashes(t)
+    let s = trim(t)
+    while ends_with(s, "#") do s = sub(s, 0, len(s) - 1) end
+    return trim(s)
+end
+
+# ---, *** or ___ (spaces allowed between): a line across the page
+func is_rule(t)
+    let c = t[0]
+    if c != "-" and c != "*" and c != "_" then return false end
+    let count = 0
+    for k = 0 to len(t) - 1 do
+        if t[k] == c then
+            count = count + 1
+        elif t[k] != " " then
+            return false
+        end
+    end
+    return count >= 3
+end
+
+# ==== or ---- under a line of text makes it a heading
+func is_underline(t)
+    let c = t[0]
+    if c != "=" and c != "-" then return false end
+    for k = 0 to len(t) - 1 do
+        if t[k] != c then return false end
+    end
+    return len(t) >= 2
+end
+
+# how many characters a list marker takes ("- " is 2, "12. " is 4), 0 if t isn't a list item
+func list_marker(t)
+    if len(t) >= 2 and find("-*+", t[0]) >= 0 and t[1] == " " then return 2 end
+    let i = 0
+    while i < len(t) and find("0123456789", t[i]) >= 0 do i = i + 1 end
+    if i > 0 and i + 1 < len(t) and (t[i] == "." or t[i] == ")") and t[i + 1] == " " then return i + 2 end
+    return 0
+end
+
+# "| a | b |" -> ["a", "b"]
+func table_cells(t)
+    let s = trim(t)
+    if starts_with(s, "|") then s = sub(s, 1) end
+    if ends_with(s, "|") then s = sub(s, 0, len(s) - 1) end
+    let cells = []
+    for cell in split(s, "|") do push(cells, trim(cell)) end
+    return cells
+end
+
+# the "| --- | :---: |" row under a table's header
+func is_separator(cells)
+    for cell in cells do
+        if cell == "" then return false end
+        for k = 0 to len(cell) - 1 do
+            if find("-:", cell[k]) < 0 then return false end
+        end
+    end
+    return true
+end
+
+func md_table(rows)
+    let header = len(rows) > 1 and is_separator(rows[1])
+    if header then remove(rows, 1) end
+    let table = []
+    for row in rows do
+        let cells = []
+        for cell in row do push(cells, md_spans(cell)) end
+        push(table, cells)
+    end
+    push(BLOCKS, ["table", [], header, table])
+end
+
+# finish the paragraph, list item or quote being collected
+func md_end()
+    if PENDING != nil then
+        push(BLOCKS, [PENDING[0], md_spans(PENDING[1]), PENDING[2], PENDING[3]])
+        PENDING = nil
+    end
+end
+
+# a Markdown file -> blocks, one line at a time. Lines of a paragraph are collected in PENDING
+# and joined with spaces, a blank line (or any other kind of line) ends it
+func md_blocks(src)
+    BLOCKS = []
+    PENDING = nil
+    let rows = split(src, "\n")
+    let fence = false
+    let code = []
+    let i = 0
+    while i < len(rows) do
+        let raw = expand_tabs(strip_cr(rows[i]))
+        let t = trim(raw)
+        i = i + 1
+        if fence then
+            if starts_with(t, "```") then
+                push(BLOCKS, ["code", [], 0, code])
+                fence = false
+            else
+                push(code, raw)
+            end
+        elif starts_with(t, "```") then
+            md_end()
+            fence = true
+            code = []
+        elif t == "" then
+            md_end()
+        elif t[0] == "#" and heading_level(t) > 0 then
+            md_end()
+            let level = heading_level(t)
+            push(BLOCKS, ["h", md_spans(strip_hashes(sub(t, level))), level, nil])
+        elif PENDING != nil and PENDING[0] == "p" and is_underline(t) then
+            let level = 2
+            if t[0] == "=" then level = 1 end
+            push(BLOCKS, ["h", md_spans(PENDING[1]), level, nil])
+            PENDING = nil
+        elif is_rule(t) then
+            md_end()
+            push(BLOCKS, ["hr", [], 0, nil])
+        elif t[0] == "|" then
+            md_end()
+            let table_rows = [table_cells(t)]
+            while i < len(rows) and starts_with(trim(rows[i]), "|") do
+                push(table_rows, table_cells(strip_cr(rows[i])))
+                i = i + 1
+            end
+            md_table(table_rows)
+        elif t[0] == ">" then
+            let quoted = trim(sub(t, 1))
+            if PENDING != nil and PENDING[0] == "quote" then
+                PENDING[1] = PENDING[1] + " " + quoted
+            else
+                md_end()
+                PENDING = ["quote", quoted, 0, nil]
+            end
+        elif list_marker(t) > 0 then
+            md_end()
+            let m = list_marker(t)
+            let marker = BULLET
+            if find("-*+", t[0]) < 0 then marker = sub(t, 0, m - 1) end
+            PENDING = ["li", sub(t, m), min(indent_of(raw) / 2, 4), marker]
+        elif PENDING != nil then
+            PENDING[1] = PENDING[1] + " " + t
+        else
+            PENDING = ["p", t, 0, nil]
+        end
+    end
+    md_end()
+    if fence then push(BLOCKS, ["code", [], 0, code]) end
+    return BLOCKS
+end
+
+# ---- 1b. HTML -------------------------------------------------------------------------------
+# A simple tag soup reader: text between tags is added to the block being built, and each tag
+# either starts or ends a block (<h1>, <p>, <li>...) or changes the style (<b>, <a>...).
+# <script>, <style> and <title> are skipped, unknown tags are ignored.
+
+# the tags that end the current block (and start a new one when text follows)
+let BREAKING = " p /p div /div section /section article /article header /header footer /footer main /main nav /nav dl /dl dt /dt dd /dd figure /figure body /body "
+
+# "a href='x'" -> "a", "/P" -> "/p"
+func tag_name(tag)
+    let t = trim(tag)
+    let closing = starts_with(t, "/")
+    if closing then t = sub(t, 1) end
+    let j = 0
+    while j < len(t) and t[j] != " " and t[j] != "/" and t[j] != "\n" and t[j] != "\t" do j = j + 1 end
+    let name = lower(sub(t, 0, j))
+    if closing then return "/" + name end
+    return name
+end
+
+# the value of attr="..." in a tag, "" if it isn't there
+func get_attr(tag, attr)
+    let pos = find(lower(tag), attr + "=")
+    if pos < 0 then return "" end
+    let p = pos + len(attr) + 1
+    if p >= len(tag) then return "" end
+    let quote = tag[p]
+    if quote == "\"" or quote == "'" then
+        let close = find_from(tag, quote, p + 1)
+        if close < 0 then return "" end
+        return sub(tag, p + 1, close - p - 1)
+    end
+    let q = p
+    while q < len(tag) and tag[q] != " " do q = q + 1 end
+    return sub(tag, p, q - p)
+end
+
+# &lt; &amp; &#39; and friends
+func decode(s)
+    if find(s, "&") < 0 then return s end
+    let pos = find(s, "&#")
+    while pos >= 0 do
+        let semi = find_from(s, ";", pos)
+        if semi < 0 then break end
+        let code = int(sub(s, pos + 2, semi - pos - 2))
+        let ch = "?"
+        if code != nil and code > 31 and code < 127 then ch = chr(code) end
+        s = sub(s, 0, pos) + ch + sub(s, semi + 1)
+        pos = find_from(s, "&#", pos + 1)
+    end
+    s = replace(s, "&lt;", "<")
+    s = replace(s, "&gt;", ">")
+    s = replace(s, "&quot;", "\"")
+    s = replace(s, "&apos;", "'")
+    s = replace(s, "&nbsp;", " ")
+    s = replace(s, "&copy;", "(c)")
+    s = replace(s, "&mdash;", "--")
+    s = replace(s, "&ndash;", "-")
+    s = replace(s, "&hellip;", "...")
+    s = replace(s, "&rarr;", "->")
+    return replace(s, "&amp;", "&") # last, so "&amp;lt;" stays as "&lt;"
+end
+
+# where text goes: the table cell being read, or the block being built
+func target_spans()
+    if H_CELL != nil then return H_CELL end
+    return H_SPANS
+end
+
+func html_start(kind)
+    H_KIND = kind
+    if kind == "p" and H_QUOTE then H_KIND = "quote" end
+    H_SPANS = []
+    H_LEVEL = 0
+    H_EXTRA = nil
+end
+
+# finish the block being built
+func html_close()
+    if H_KIND == "code" then
+        let code = H_EXTRA
+        if len(code) > 0 and trim(code[0]) == "" then remove(code, 0) end
+        if len(code) > 0 and trim(code[len(code) - 1]) == "" then pop(code) end
+        push(BLOCKS, ["code", [], 0, code])
+    elif H_KIND != "" and len(H_SPANS) > 0 then
+        push(BLOCKS, [H_KIND, H_SPANS, H_LEVEL, H_EXTRA])
+    end
+    H_KIND = ""
+    H_SPANS = []
+    H_EXTRA = nil
+end
+
+func html_text(raw)
+    let s = decode(raw)
+    if H_PRE then
+        # inside <pre> the lines stay exactly as they are
+        let parts = split(replace(s, CR, ""), "\n")
+        for k = 0 to len(parts) - 1 do
+            if k > 0 then push(H_EXTRA, "") end
+            H_EXTRA[len(H_EXTRA) - 1] = H_EXTRA[len(H_EXTRA) - 1] + expand_tabs(parts[k])
+        end
+        return
+    end
+    # everywhere else a line break is just a space (the wrapping squeezes runs of spaces)
+    s = replace(replace(replace(s, CR, ""), "\n", " "), "\t", " ")
+    if trim(s) == "" and len(target_spans()) == 0 then return end
+    if H_KIND == "" and H_CELL == nil then html_start("p") end
+    let style = "n"
+    if H_LINK != "" then
+        style = "l"
+    elif H_CODE > 0 then
+        style = "c"
+    elif H_BOLD > 0 then
+        style = "b"
+    elif H_ITALIC > 0 then
+        style = "i"
+    end
+    push(target_spans(), [s, style, H_LINK])
+end
+
+func html_tag(name, tag)
+    if len(name) == 2 and name[0] == "h" and find("123456", name[1]) >= 0 then
+        html_close()
+        html_start("h")
+        H_LEVEL = int(name[1])
+    elif len(name) == 3 and starts_with(name, "/h") and find("123456", name[2]) >= 0 then
+        html_close()
+    elif find(BREAKING, " " + name + " ") >= 0 then
+        html_close()
+    elif name == "br" then
+        if H_PRE then
+            push(H_EXTRA, "")
+        elif H_CELL != nil then
+            push(H_CELL, [" ", "n", ""])
+        elif H_KIND != "" then
+            push(H_SPANS, ["\n", "n", ""])
+        end
+    elif name == "hr" then
+        html_close()
+        push(BLOCKS, ["hr", [], 0, nil])
+    elif name == "ul" or name == "ol" then
+        html_close()
+        if name == "ul" then push(H_LISTS, -1) else push(H_LISTS, 0) end
+    elif name == "/ul" or name == "/ol" then
+        html_close()
+        if len(H_LISTS) > 0 then pop(H_LISTS) end
+    elif name == "li" then
+        html_close()
+        if len(H_LISTS) == 0 then push(H_LISTS, -1) end
+        let depth = len(H_LISTS)
+        html_start("li")
+        H_LEVEL = min(depth - 1, 4)
+        if H_LISTS[depth - 1] >= 0 then
+            H_LISTS[depth - 1] = H_LISTS[depth - 1] + 1
+            H_EXTRA = str(H_LISTS[depth - 1]) + "."
+        else
+            H_EXTRA = BULLET
+        end
+    elif name == "/li" then
+        html_close()
+    elif name == "blockquote" or name == "/blockquote" then
+        html_close()
+        H_QUOTE = name == "blockquote"
+    elif name == "pre" then
+        html_close()
+        H_PRE = true
+        H_KIND = "code"
+        H_EXTRA = [""]
+    elif name == "/pre" then
+        H_PRE = false
+        html_close()
+    elif name == "b" or name == "strong" then
+        H_BOLD = H_BOLD + 1
+    elif name == "/b" or name == "/strong" then
+        H_BOLD = max(0, H_BOLD - 1)
+    elif name == "i" or name == "em" or name == "cite" or name == "var" then
+        H_ITALIC = H_ITALIC + 1
+    elif name == "/i" or name == "/em" or name == "/cite" or name == "/var" then
+        H_ITALIC = max(0, H_ITALIC - 1)
+    elif name == "code" or name == "tt" or name == "kbd" or name == "samp" then
+        H_CODE = H_CODE + 1
+    elif name == "/code" or name == "/tt" or name == "/kbd" or name == "/samp" then
+        H_CODE = max(0, H_CODE - 1)
+    elif name == "a" then
+        H_LINK = get_attr(tag, "href")
+    elif name == "/a" then
+        H_LINK = ""
+    elif name == "img" then
+        H_ITALIC = H_ITALIC + 1
+        html_text("[picture: " + get_attr(tag, "alt") + "]")
+        H_ITALIC = H_ITALIC - 1
+    elif name == "table" then
+        html_close()
+        H_TABLE = []
+        H_HEADER = false
+    elif name == "tr" then
+        H_ROW = []
+    elif name == "td" or name == "th" then
+        H_CELL = []
+        if name == "th" and H_TABLE != nil and len(H_TABLE) == 0 then H_HEADER = true end
+    elif name == "/td" or name == "/th" then
+        if H_ROW != nil and H_CELL != nil then push(H_ROW, H_CELL) end
+        H_CELL = nil
+    elif name == "/tr" then
+        if H_TABLE != nil and H_ROW != nil then push(H_TABLE, H_ROW) end
+        H_ROW = nil
+    elif name == "/table" then
+        if H_TABLE != nil then push(BLOCKS, ["table", [], H_HEADER, H_TABLE]) end
+        H_TABLE = nil
+    end
+end
+
+func html_blocks(src)
+    BLOCKS = []
+    H_KIND = ""
+    H_SPANS = []
+    H_BOLD = 0
+    H_ITALIC = 0
+    H_CODE = 0
+    H_LINK = ""
+    H_PRE = false
+    H_QUOTE = false
+    H_LISTS = []
+    H_TABLE = nil
+    H_ROW = nil
+    H_CELL = nil
+    let i = 0
+    let n = len(src)
+    while i < n do
+        let lt = find_from(src, "<", i)
+        if lt < 0 then lt = n end
+        if lt > i then html_text(sub(src, i, lt - i)) end
+        if lt >= n then break end
+        if sub(src, lt, 4) == "<!--" then
+            let close = find_from(src, "-->", lt)
+            if close < 0 then break end
+            i = close + 3
+        else
+            let gt = find_from(src, ">", lt)
+            if gt < 0 then break end
+            let tag = sub(src, lt + 1, gt - lt - 1)
+            let name = tag_name(tag)
+            i = gt + 1
+            if name == "script" or name == "style" or name == "title" then
+                # skip everything up to the closing tag
+                let close = find_from(lower(src), "</" + name, i)
+                if close < 0 then break end
+                i = close
+            else
+                html_tag(name, tag)
+            end
+        end
+    end
+    html_close()
+    return BLOCKS
+end
+
+# ---- 1c. plain text -------------------------------------------------------------------------
+
+func text_blocks(src)
+    BLOCKS = []
+    for raw in split(src, "\n") do
+        push(BLOCKS, ["text", [], 0, expand_tabs(strip_cr(raw))])
+    end
+    return BLOCKS
+end
+
+# ---- 2. layout ------------------------------------------------------------------------------
+
+func style_colour(style, base)
+    if style == "c" then return C_CODE end
+    if style == "l" then return C_LINK end
+    if style == "i" then return C_ITALIC end
+    if style == "b" and base == C_TEXT then return C_BOLD end
+    return base
+end
+
+func copy_segments(segments)
+    let out = []
+    for s in segments do push(out, [s[0], s[1], s[2]]) end
+    return out
+end
+
+func segments_width(segments)
+    let w = 0
+    for s in segments do w = w + len(s[0]) end
+    return w
+end
+
+# add to the line being built, joining onto the last segment if it looks the same
+func add_segment(piece, colour, link)
+    if link >= 0 and LINKS[link][1] < 0 then LINKS[link][1] = len(LINES) end
+    if len(W_CUR) > 0 then
+        let last = W_CUR[len(W_CUR) - 1]
+        if last[1] == colour and last[2] == link then
+            last[0] = last[0] + piece
+            return
+        end
+    end
+    push(W_CUR, [piece, colour, link])
+end
+
+# finish the line being built and start the next, with the "rest" prefix (e.g. list indentation)
+func wrap_break()
+    push(LINES, W_CUR)
+    W_CUR = copy_segments(W_REST)
+    W_WIDTH = segments_width(W_REST)
+    W_ANY = false
+    W_SPACE = false
+end
+
+# put one word on the line, moving to a new line first if it doesn't fit
+func place(word, colour, link, base)
+    if W_ANY and W_WIDTH + len(word) + (W_SPACE and 1 or 0) > WIDTH then
+        wrap_break()
+    elif W_ANY and W_SPACE then
+        # the space between two words of the same link is part of the link, so it highlights too
+        let last = W_CUR[len(W_CUR) - 1]
+        if link >= 0 and last[2] == link then
+            add_segment(" ", colour, link)
+        else
+            add_segment(" ", base, -1)
+        end
+        W_WIDTH = W_WIDTH + 1
+    end
+    W_SPACE = false
+    # a word longer than a whole line is cut into pieces
+    while W_WIDTH + len(word) > WIDTH do
+        let room = WIDTH - W_WIDTH
+        add_segment(sub(word, 0, room), colour, link)
+        word = sub(word, room)
+        wrap_break()
+    end
+    if len(word) > 0 then
+        add_segment(word, colour, link)
+        W_WIDTH = W_WIDTH + len(word)
+        W_ANY = true
+    end
+end
+
+# word wrap spans into LINES. first goes in front of the first line, rest in front of the others
+func wrap(spans, first, rest, base)
+    W_CUR = copy_segments(first)
+    W_WIDTH = segments_width(first)
+    W_REST = rest
+    W_ANY = false
+    W_SPACE = false
+    for span in spans do
+        let colour = style_colour(span[1], base)
+        let link = -1
+        if span[1] == "l" then
+            link = len(LINKS)
+            push(LINKS, [span[2], -1])
+        end
+        if span[0] == "\n" then
+            wrap_break()
+        else
+            let words = split(span[0], " ")
+            for k = 0 to len(words) - 1 do
+                if k > 0 then W_SPACE = true end
+                if words[k] != "" then place(words[k], colour, link, base) end
+            end
+        end
+    end
+    push(LINES, W_CUR)
+end
+
+# an empty line, but never two in a row and never at the top
+func blank()
+    if len(LINES) > 0 and len(LINES[len(LINES) - 1]) > 0 then push(LINES, []) end
+end
+
+func is_code_cell(spans)
+    return len(spans) == 1 and spans[0][1] == "c"
+end
+
+# columns as wide as their widest cell, shrunk (widest first) if the table is wider than the page
+func table_layout(rows, header)
+    let cols = 0
+    for row in rows do cols = max(cols, len(row)) end
+    if cols == 0 then return end
+    let widths = list(cols, 0)
+    let cells = []
+    for row in rows do
+        let texts = []
+        for c = 0 to cols - 1 do
+            let t = ""
+            if c < len(row) then t = plain(row[c]) end
+            push(texts, t)
+            widths[c] = max(widths[c], len(t))
+        end
+        push(cells, texts)
+    end
+    let total = 3 * (cols - 1)
+    for w in widths do total = total + w end
+    while total > WIDTH do
+        let widest = 0
+        for c = 1 to cols - 1 do
+            if widths[c] > widths[widest] then widest = c end
+        end
+        if widths[widest] <= 3 then break end
+        widths[widest] = widths[widest] - 1
+        total = total - 1
+    end
+
+    let sep = " " + BAR + " "
+    for r = 0 to len(cells) - 1 do
+        let head = header and r == 0
+        let segments = []
+        for c = 0 to cols - 1 do
+            if c > 0 then push(segments, [sep, C_DIM, -1]) end
+            let cell = cells[r][c]
+            if len(cell) > widths[c] then cell = sub(cell, 0, widths[c] - 1) + "~" end
+            let colour = C_TEXT
+            if head then
+                colour = C_BOLD
+            elif c < len(rows[r]) and is_code_cell(rows[r][c]) then
+                colour = C_CODE
+            end
+            push(segments, [pad(cell, widths[c]), colour, -1])
+        end
+        push(LINES, segments)
+        if head then
+            let rule = ""
+            for c = 0 to cols - 1 do
+                if c > 0 then rule = rule + RULE + CROSS + RULE end
+                rule = rule + repeat(RULE, widths[c])
+            end
+            push(LINES, [[rule, C_DIM, -1]])
+        end
+    end
+end
+
+func layout(blocks)
+    LINES = []
+    LINKS = []
+    HEADINGS = []
+    for b = 0 to len(blocks) - 1 do
+        let block = blocks[b]
+        let kind = block[0]
+        let next_kind = ""
+        if b + 1 < len(blocks) then next_kind = blocks[b + 1][0] end
+
+        if kind == "h" then
+            blank()
+            let level = block[2]
+            let colour = HEADING_COLOURS[level - 1]
+            push(HEADINGS, [slug(plain(block[1])), len(LINES)])
+            let before = len(LINES)
+            wrap(block[1], [], [], colour)
+            if level <= 2 then
+                # underline the two biggest headings, = for the title and - for sections
+                let w = 0
+                for r = before to len(LINES) - 1 do w = max(w, segments_width(LINES[r])) end
+                push(LINES, [[repeat(level == 1 and DOUBLE_RULE or RULE, w), colour, -1]])
+            end
+            blank()
+        elif kind == "p" then
+            wrap(block[1], [], [], C_TEXT)
+            blank()
+        elif kind == "li" then
+            let lead = repeat("   ", block[2])
+            let marker = block[3]
+            let first = [[lead, C_TEXT, -1], [marker + " ", C_BULLET, -1]]
+            let rest = [[lead + repeat(" ", len(marker) + 1), C_TEXT, -1]]
+            wrap(block[1], first, rest, C_TEXT)
+            if next_kind != "li" then blank() end
+        elif kind == "quote" then
+            let bar = [[BAR + " ", C_DIM, -1]]
+            wrap(block[1], bar, bar, C_TEXT)
+            if next_kind != "quote" then blank() end
+        elif kind == "code" then
+            for row in block[3] do
+                push(LINES, [["  " + sub(row, 0, WIDTH - 2), C_CODE, -1]])
+            end
+            blank()
+        elif kind == "hr" then
+            push(LINES, [[repeat(RULE, WIDTH), C_DIM, -1]])
+            blank()
+        elif kind == "table" then
+            table_layout(block[3], block[2])
+            blank()
+        elif kind == "text" then
+            let s = block[3]
+            if s == "" then push(LINES, []) end
+            while len(s) > 0 do
+                push(LINES, [[sub(s, 0, WIDTH), C_TEXT, -1]])
+                s = sub(s, WIDTH)
+            end
+        end
+    end
+    while len(LINES) > 0 and len(LINES[len(LINES) - 1]) == 0 do pop(LINES) end
+end
+
+# ---- 3. view --------------------------------------------------------------------------------
+
+func max_top()
+    return max(0, len(LINES) - ROWS)
+end
+
+func on_screen(row)
+    return row >= TOP and row < TOP + ROWS
+end
+
+func set_top(row)
+    TOP = max(0, min(row, max_top()))
+    if SELECTED >= 0 and not on_screen(LINKS[SELECTED][1]) then SELECTED = -1 end
+end
+
+func status(s)
+    at(0, ROWS + 1)
+    color(YELLOW, BLACK)
+    write(pad(sub(s, 0, 79), 79))
+end
+
+# read, parse and lay out a file, false (with MESSAGE set) if it can't be shown
+func open_file(path, top)
+    if not file_exists(path) then
+        MESSAGE = "Can't find " + path
+        return false
+    end
+    let src = nil
+    if is_encrypted(path) then
+        status("")
+        at(0, ROWS + 1)
+        src = read_encrypted(path, input_secret(path + " is encrypted, password: "))
+        if src == nil then
+            MESSAGE = "Wrong password for " + path
+            return false
+        end
+    else
+        src = read_file(path)
+    end
+    status("Reading " + path + "...")
+    let kind = file_kind(path)
+    if kind == "md" then
+        layout(md_blocks(src))
+    elif kind == "html" then
+        layout(html_blocks(src))
+    else
+        layout(text_blocks(src))
+    end
+    BLOCKS = []
+    CURRENT = path
+    SELECTED = -1
+    set_top(top)
+    return true
+end
+
+# scroll so the heading with this anchor is at the top
+func jump_to(anchor)
+    for h in HEADINGS do
+        if h[0] == lower(anchor) then
+            set_top(h[1])
+            return true
+        end
+    end
+    MESSAGE = "There is no heading #" + anchor + " on this page"
+    return false
+end
+
+# Tab / Left / Right: pick the next link (dir 1) or the one before (dir -1)
+func next_link(dir)
+    if len(LINKS) == 0 then
+        MESSAGE = "There are no links on this page"
+        return
+    end
+    let pick = -1
+    if SELECTED >= 0 then
+        pick = SELECTED + dir
+    elif dir > 0 then
+        # the first link on screen or below it
+        pick = 0
+        while pick < len(LINKS) and LINKS[pick][1] < TOP do pick = pick + 1 end
+    else
+        # the last link on screen or above it
+        pick = len(LINKS) - 1
+        while pick >= 0 and LINKS[pick][1] >= TOP + ROWS do pick = pick - 1 end
+    end
+    if pick < 0 or pick >= len(LINKS) then
+        MESSAGE = "No more links that way"
+        return
+    end
+    SELECTED = pick
+    if not on_screen(LINKS[pick][1]) then set_top(LINKS[pick][1] - ROWS / 2) end
+end
+
+# Enter: open the picked link. Other files are opened relative to this one's folder, and
+# "#anchor" jumps to a heading
+func follow()
+    if SELECTED < 0 then
+        MESSAGE = "Press Tab to pick a link first"
+        return
+    end
+    let target = LINKS[SELECTED][0]
+    if starts_with(target, "http:") or starts_with(target, "https:") or starts_with(target, "mailto:") then
+        MESSAGE = "AerOS can't open web links: " + target
+        return
+    end
+    let anchor = ""
+    let hash = find(target, "#")
+    if hash >= 0 then
+        anchor = sub(target, hash + 1)
+        target = sub(target, 0, hash)
+    end
+    push(HISTORY, [CURRENT, TOP])
+    if target == "" then
+        jump_to(anchor)
+        return
+    end
+    let path = target
+    if not starts_with(target, "/") then path = dir_of(CURRENT) + target end
+    if open_file(path, 0) then
+        if anchor != "" then jump_to(anchor) end
+    else
+        pop(HISTORY)
+    end
+end
+
+# Backspace: back to where we were before the last link
+func go_back()
+    if len(HISTORY) == 0 then
+        MESSAGE = "This is the first page"
+        return
+    end
+    let place_ = pop(HISTORY)
+    if place_[0] == CURRENT then
+        set_top(place_[1])
+    else
+        open_file(place_[0], place_[1])
+    end
+end
+
+func draw()
+    # the title bar: the file, and how far down it we are
+    at(0, 0)
+    color(BLACK, BRIGHT)
+    let where = "line " + (TOP + 1) + " of " + len(LINES) + " "
+    write(pad(sub(" " + CURRENT, 0, 80 - len(where)), 80 - len(where)) + where)
+
+    # the text, one screen row at a time (80 characters each, so every row is fully redrawn)
+    for r = 0 to ROWS - 1 do
+        at(0, r + 1)
+        color(C_TEXT, BLACK)
+        write(" ")
+        let used = 1
+        let row = TOP + r
+        if row < len(LINES) then
+            for s in LINES[row] do
+                if s[2] >= 0 and s[2] == SELECTED then
+                    color(BLACK, LIGHT_CYAN)
+                else
+                    color(s[1], BLACK)
+                end
+                # never past the end of the row (a very narrow table can't always fit)
+                let piece = sub(s[0], 0, 80 - used)
+                write(piece)
+                used = used + len(piece)
+            end
+        end
+        color(C_TEXT, BLACK)
+        if used < 80 then write(sub(SPACES, 0, 80 - used)) end
+    end
+
+    # the help bar (79 characters: writing in the very last cell would scroll the screen)
+    at(0, ROWS + 1)
+    if MESSAGE != "" then
+        color(YELLOW, BLACK)
+        write(pad(sub(MESSAGE, 0, 79), 79))
+    else
+        color(C_DIM, BLACK)
+        write(pad(HELP, 79))
+    end
+end
+
+func view()
+    cls()
+    while true do
+        draw()
+        let k = key()
+        MESSAGE = ""
+        if k == KEY_DOWN then
+            set_top(TOP + 1)
+        elif k == KEY_UP then
+            set_top(TOP - 1)
+        elif k == KEY_PGDN or k == 32 then
+            set_top(TOP + ROWS - 1)
+        elif k == KEY_PGUP then
+            set_top(TOP - (ROWS - 1))
+        elif k == KEY_HOME then
+            set_top(0)
+        elif k == KEY_END then
+            set_top(max_top())
+        elif k == KEY_TAB or k == KEY_RIGHT then
+            next_link(1)
+        elif k == KEY_LEFT then
+            next_link(-1)
+        elif k == KEY_ENTER then
+            follow()
+        elif k == KEY_BACKSPACE then
+            go_back()
+        elif k == ord("q") or k == ord("Q") or k == KEY_ESCAPE or k == 0 then
+            return
+        end
+    end
+end
+
+# ---- start ----------------------------------------------------------------------------------
+
+let start_path = "/docs/index.md"
+if len(args) > 0 then start_path = args[0] end
+if open_file(start_path, 0) then
+    view()
+    color(BRIGHT, BLACK)
+    cls()
+else
+    color(BRIGHT, BLACK)
+    print(MESSAGE)
+end

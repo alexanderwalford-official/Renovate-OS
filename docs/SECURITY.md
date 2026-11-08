@@ -285,9 +285,9 @@ hours.
 | Reading without unlocking | `RD` on an encrypted file asks for the password and shows it without changing the file |
 | Keys in memory | the master key, both derived keys, AES round keys and decrypted copies are wiped after use |
 
-### Commands and RenLang
+### Commands and AerLang
 
-| Terminal | RenLang | Does |
+| Terminal | AerLang | Does |
 | --- | --- | --- |
 | `ENCRYPT <file>` | `encrypt_file(path, password)` | lock a file |
 | `DECRYPT <file>` | `decrypt_file(path, password)` | unlock it again |

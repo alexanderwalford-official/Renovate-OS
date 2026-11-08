@@ -4,13 +4,13 @@
  ![alt text](media/thumb.png)
  
 ## What is AerOS?
-It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "RenLang". 
+It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "AerLang". 
 
 ## Documentation
 AerOS is written to be read. Every source file starts with an explanation of what it does and how, and these guides tie it all together:
 
 - [How AerOS works](docs/ARCHITECTURE.md): the source tree, the boot sequence, memory, interrupts, files, and recipes for adding commands, functions and drivers
-- [RenLang](docs/RENLANG.md): the built-in programming language
+- [AerLang](docs/AERLANG.md): the built-in programming language
 - [Security](docs/SECURITY.md): user accounts, password hashing and file encryption, with every algorithm explained
 - [Sound](docs/AUDIO.md): the AC'97 driver and WAV / MP3 playback
 
@@ -42,10 +42,11 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Sound driver for error reporting. (PC speaker beep)
 - [x] Implement local filesystem. (FAT16 / FAT32 on IDE disks labelled AEROS, temporary VFS without one)
 - [x] Process management.
-- [x] Programming interface. (RenLang: an interpreter, a prompt and a text editor, see docs/RENLANG.md)
+- [x] Programming interface. (AerLang: an interpreter, a prompt and a text editor, see docs/AERLANG.md)
 - [x] Graphics driver. (framebuffer console, pixels, shapes, text and BMP pictures for apps)
 - [x] User accounts. (login screen, passwords stored as salted PBKDF2 hashes)
 - [x] File encryption. (ENCRYPT / DECRYPT, AES-256 with an HMAC tag)
 - [x] Audio. (AC'97 sound card, PLAY for WAV and MP3 files using minimp3, and a startup sound in /sys/startup.wav that you can replace)
+- [x] A manual inside the OS. (DOCS opens /docs/ in a Markdown / HTML / text reader written in AerLang)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

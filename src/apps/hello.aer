@@ -1,7 +1,7 @@
-# hello.ren - a first RenLang program
+# hello.aer - a first AerLang program
 # run it from the terminal by typing: hello
 
-print("Hello from RenLang!")
+print("Hello from AerLang!")
 print("")
 
 let name = input("What's your name? ")

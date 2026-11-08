@@ -15,10 +15,11 @@ LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
 # every .c file is compiled on its own into obj/, then linked together
 SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
-# the built-in apps (apps/*.ren and their files) are linked into the kernel as raw data,
-# sys/apps.c copies them into /bin/ when the OS starts
-APP_FILES = $(wildcard apps/*)
-OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(APP_FILES))
+# the built-in files are linked into the kernel as raw data, and sys/apps.c copies them onto
+# the disk when the OS starts: apps/ (the apps and their files) into /bin/, and docs/ (the
+# documentation the DOCS command shows) into /docs/
+BUILTIN_FILES = $(wildcard apps/* docs/*)
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(BUILTIN_FILES))
 
 QEMU = qemu-system-i386
 
@@ -56,10 +57,14 @@ obj/%.o: %.c
 	@mkdir -p '$(dir $@)'
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
 
-# a built-in app: "ld -b binary" wraps the file's bytes in an object file, with the symbols
-# _binary_apps_<name>_start / _end marking where they are (see sys/apps.c)
+# a built-in file: "ld -b binary" wraps the file's bytes in an object file, with the symbols
+# _binary_<folder>_<name>_start / _end marking where they are (see sys/apps.c)
 obj/apps/%.o: apps/%
 	@mkdir -p obj/apps
+	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
+
+obj/docs/%.o: docs/%
+	@mkdir -p obj/docs
 	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
 
 # minimp3 includes <string.h> and <stdlib.h>, point those at our own versions for this file only
@@ -89,7 +94,7 @@ clean-disk:
 disk-ls: $(DISK)
 	mdir -i $(DISK) -/ ::
 
-# copy a file onto the disk, e.g. "make disk-put FILE=hello.ren" (DIR=/bin to put it in a folder)
+# copy a file onto the disk, e.g. "make disk-put FILE=hello.aer" (DIR=/bin to put it in a folder)
 disk-put: $(DISK)
 	mcopy -i $(DISK) -o '$(FILE)' ::$(DIR)/
 

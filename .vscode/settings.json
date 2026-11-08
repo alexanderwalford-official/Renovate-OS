@@ -9,7 +9,7 @@
     "t_int.h": "c",
     "ps2.h": "c",
     "vga_linear.h": "c",
-    "ren_comp.h": "c",
+    "aer_comp.h": "c",
     "tone.h": "c",
     "time.h": "c",
     "p_man.h": "c"

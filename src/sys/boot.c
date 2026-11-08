@@ -28,8 +28,8 @@
 #include "boot.h"
 #include "../drivers/video/VGA_linear.h"
 #include "../drivers/input/IO.h"
-#include "../lib/ren_stdlib.h"
-#include "../lib/ren_stdio.h"
+#include "../lib/aer_stdlib.h"
+#include "../lib/aer_stdio.h"
 #include "interrupts.h"
 #include "sys_clck.h"
 #include "f_sys.h"
@@ -217,7 +217,7 @@ int init_boot (void) {
     // the apps that come with AerOS, copied into /bin/ unless they are already there
     int installed = apps_install();
     if (installed > 0) {
-        printf("< APPS .. > %d built-in file(s) added to /bin/ and /sys/\n", installed);
+        printf("< APPS .. > %d built-in file(s) added or updated\n", installed);
     }
 
     // beep once

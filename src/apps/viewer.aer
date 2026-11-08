@@ -1,5 +1,5 @@
 
-# viewer.ren - AerOS BMP viewer with diagnostics and conversion
+# viewer.aer - AerOS BMP viewer with diagnostics and conversion
 #
 # Supports:
 #   1, 4, 8, 16, 24 and 32-bit uncompressed BMP

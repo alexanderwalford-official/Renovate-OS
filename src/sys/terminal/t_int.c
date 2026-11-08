@@ -16,10 +16,10 @@
                 HandleInput()          find the command in cli_commands[] and run it
 
     The commands are grouped in this file roughly as HELP lists them: files, system, encrypted
-    files (sys/fcrypt.h), sound (sys/sound.h), apps and RenLang, then accounts.
+    files (sys/fcrypt.h), sound (sys/sound.h), apps and AerLang, then accounts.
 
     Because the terminal is itself a RUNNING process, the RUN command (which runs a line of
-    RenLang as a new process) works by nesting: the new process is run from inside the
+    AerLang as a new process) works by nesting: the new process is run from inside the
     terminal's process, and the process manager knows not to start the terminal again.
 
     Programs started with RUN can take over the whole screen (the splash screen, the error
@@ -45,7 +45,7 @@
 #include "../boot.h"
 #include "../power.h"
 #include "../p_man.h"
-#include "../../lang/renlang.h"
+#include "../../lang/aerlang.h"
 #include "editor.h"
 #include "../../drivers/video/bga.h"
 #include "../../lib/crypto.h"
@@ -127,7 +127,7 @@ int cli_rend_main (void) {
     }
     // the normal terminal colours (light grey on black) for everything after the banner
     console_set_color(BRIGHT, BLACK);
-    printf("Type HELP for a list of commands.\n\n");
+    printf("Type HELP for a list of commands, or DOCS to read the manual.\n\n");
     // forget any keys pressed while something else had the screen (e.g. the splash screen or a menu),
     // so they don't turn up at the start of the next command
     ClearInputbuffer();
@@ -279,7 +279,7 @@ static void cli_pman (char* args) {
     stack_print();
 }
 
-// RUN <code>: run a line of RenLang as a new process, e.g. "run s:hello" or "run print_stack"
+// RUN <code>: run a line of AerLang as a new process, e.g. "run s:hello" or "run print_stack"
 // the process lives just for this command: create, execute, destroy
 // unknown code shows the red error screen, the terminal is redrawn afterwards (see HandleInput)
 static void cli_run (char* args) {
@@ -301,7 +301,7 @@ static void cli_run (char* args) {
 static void cli_read_file (char* args) {
     char dir[FS_PATH_MAX];
     char name[FS_NAME_MAX];
-    // "notes.txt" -> cd + "notes.txt", "/sys/conf.ren" -> "/sys/" + "conf.ren"
+    // "notes.txt" -> cd + "notes.txt", "/sys/conf.aer" -> "/sys/" + "conf.aer"
     // fails for an empty or invalid name
     if (!fs_split_path(args, dir, sizeof(dir), name, sizeof(name))) {
         printf("Usage: RD <file>\n");
@@ -540,10 +540,10 @@ static void cli_shutdown (char* args) {
     sys_shutdown();
 }
 
-// the interactive RenLang prompt
-static void cli_ren (char* args) {
+// the interactive AerLang prompt
+static void cli_aer (char* args) {
     (void)args;
-    ren_repl();
+    aer_repl();
 }
 
 // save the resolution for the next start, as a GRUB environment block in the AEROS disk's root:
@@ -602,11 +602,22 @@ static void cli_resolution (char* args) {
 
 static void cli_edit (char* args) {
     if (*args == '\0') {
-        printf("Usage: EDIT <file>   (e.g. edit hello.ren)\n");
+        printf("Usage: EDIT <file>   (e.g. edit hello.aer)\n");
         return;
     }
     if (cli_refuse_encrypted(args)) return;
     editor_open(args);
+}
+
+// DOCS [topic]: the manual in the reader app, "docs sound" opens /docs/sound.md
+static void cli_docs (char* args) {
+    char path[FS_PATH_MAX];
+    if (*args == '\0') {
+        strlcpy(path, "/docs/index.md", sizeof(path));
+    } else {
+        snprintf(path, sizeof(path), "/docs/%s%s", args, strchr(args, '.') ? "" : ".md");
+    }
+    aer_run_file("/bin/read.aer", path);
 }
 
 // is there a program file with this name, here or in /bin/?
@@ -619,14 +630,14 @@ static bool program_exists (const char* file) {
     return fs_file_exists(dir, name) || (!strchr(file, '/') && fs_file_exists("/bin/", name));
 }
 
-// run "command args" as a RenLang program if command names one ("hello" or "hello.ren"),
+// run "command args" as an AerLang program if command names one ("hello" or "hello.aer"),
 // returns false if there is no such program
 static bool cli_run_program (const char* command, const char* args) {
     char line[P_INST_MAX];
     strlcpy(line, command, sizeof(line));
     size_t length = strlen(line);
-    if (length < 4 || strcasecmp(line + length - 4, ".ren") != 0) {
-        strlcat(line, ".ren", sizeof(line));
+    if (!aer_is_program_name(line, length)) {
+        strlcat(line, ".aer", sizeof(line));
     }
     if (!program_exists(line)) {
         return false;
@@ -803,8 +814,9 @@ static const struct cli_command {
     { "reboot",   cli_reboot,        "REBOOT          - RESTART THE COMPUTER" },
     { "shutdown", cli_shutdown,       "SHUTDOWN        - TURN OFF THE COMPUTER" },
     { "res",      cli_resolution,     "RES [WxH]       - SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)" },
-    { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
-    { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
+    { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .AER, CTRL+Q QUIT)" },
+    { "aer",      cli_aer,            "AER             - THE AERLANG PROMPT, TYPE CODE TO RUN IT" },
+    { "docs",     cli_docs,           "DOCS [TOPIC]    - READ THE MANUAL (e.g. DOCS SOUND), READ <FILE> FOR ANY FILE" },
     { "encrypt",  cli_encrypt,        "ENCRYPT <FILE>  - LOCK A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW THE FILE)" },
     { "decrypt",  cli_decrypt,        "DECRYPT <FILE>  - UNLOCK AN ENCRYPTED FILE" },
     { "whoami",   cli_whoami,        "WHOAMI          - PRINT WHO IS LOGGED IN" },
@@ -813,7 +825,7 @@ static const struct cli_command {
     { "deluser",  cli_delete_user,    "DELUSER <NAME>  - DELETE A USER ACCOUNT" },
     { "passwd",   cli_password,       "PASSWD          - CHANGE YOUR PASSWORD" },
     { "logout",   cli_logout,         "LOGOUT          - LOG OUT, BACK TO THE LOGIN SCREEN" },
-    { "",         0,                  "<APP> [ARGS]    - RUN A RENLANG PROGRAM, e.g. HELLO (/bin/hello.ren)" },
+    { "",         0,                  "<APP> [ARGS]    - RUN AN AERLANG PROGRAM, e.g. HELLO (/bin/hello.aer)" },
 };
 
 // how many commands are in the table (the size of the whole array divided by the size of one entry)
@@ -860,7 +872,7 @@ void HandleInput (char* in) {
     if (i < CLI_COMMAND_COUNT) {
         cli_commands[i].run(args);
     } else if (cli_run_program(command, args)) {
-        // it was a RenLang program (e.g. "hello" runs /bin/hello.ren)
+        // it was an AerLang program (e.g. "hello" runs /bin/hello.aer)
     } else {
         printf("> %s\n", command);
         printf("Unrecognised command, please try again.\n");

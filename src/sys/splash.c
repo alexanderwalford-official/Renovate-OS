@@ -24,7 +24,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "splash_logo.h"
-#include "../lib/ren_stdlib.h"
+#include "../lib/aer_stdlib.h"
 #include "../drivers/video/VGA_linear.h"
 
 // the borrowed colours

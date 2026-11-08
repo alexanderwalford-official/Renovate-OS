@@ -1,4 +1,4 @@
-# guess.ren - guess the number
+# guess.aer - guess the number
 
 print("I'm thinking of a number from 1 to 100.")
 let secret = random(100) + 1
