@@ -1,10 +1,12 @@
-# AerOS
- Official repo for AerOS, written entirely in C and assembly language.
+# aerOS
+Official repo for AerOS, written entirely in C and assembly language.
  
  ![alt text](media/thumb.png)
  
 ## What is AerOS?
-It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "AerLang". 
+It's an opensource operating system and its design is remarkably simple considering the feature set. That's one of the major selling points. 
+
+Like many other operating systems, apps that shape the user experience can be edited in realtime. If you don't like how the text editor works, change it using said editor and save your changes. Then reload the app to test said changes immediately. No recompiling needed.
 
 ## Documentation
 AerOS is written to be read. Every source file starts with an explanation of what it does and how, and these guides tie it all together:
@@ -15,7 +17,7 @@ AerOS is written to be read. Every source file starts with an explanation of wha
 - [Sound](docs/AUDIO.md): the AC'97 driver and WAV / MP3 playback
 
 ## But why basic C?
-It offers a programming interface that is more convient than assembly language. However, assembly language will be used to implement core functionality as that is the only way this can be accomplished. 
+It offers a programming interface that is more convient than assembly language. However, assembly language will be used to implement lower level functionality as that is the only way this can be accomplished. 
 
 ## Why not just use the Linux kernel?
 Building an operating system from the ground up that can run on bare metal is quite the accomplishment. By using a custom codebase, AerOS can be made far more versitile and even faster than Linux. AerOS is supposed to be the prime example of what a perfectly balanced platform should look like; with the implementation of only running RenGets that meet our specifications. 
