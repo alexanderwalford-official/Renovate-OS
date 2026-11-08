@@ -34,7 +34,7 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Sound driver for error reporting. (PC speaker beep)
 - [x] Implement local filesystem. (FAT16 / FAT32 on IDE disks labelled AEROS, temporary VFS without one)
 - [x] Process management.
-- [ ] Programming interface. 🚧
-- [ ] Graphics driver. 🚧
+- [x] Programming interface. (RenLang: an interpreter, a prompt and a text editor, see docs/RENLANG.md)
+- [x] Graphics driver. (framebuffer console, pixels, shapes, text and BMP pictures for apps)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..
