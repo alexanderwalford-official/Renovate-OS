@@ -14,6 +14,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "../drivers/video/VGA_linear.h"
 
 // boot options, chosen from the boot options menu (press X on the splash screen)
 #define BOOT_OPT_NORMAL 0 // look for a AEROS disk (VFS if there isn't one) and show the boot log for a moment
@@ -25,6 +26,8 @@ extern bool boot_options_requested; // set by the splash screen when X is presse
 
 // what the bootloader told us about the machine
 extern bool boot_multiboot_valid; // true if a multiboot bootloader (GRUB) started us and gave us its info
+extern bool boot_framebuffer_valid; // true if GRUB set up a graphics framebuffer (UEFI PCs)
+extern vga_framebuffer_t boot_framebuffer; // where it is and its pixel format, for vga_init
 extern uint32_t sys_mem_lower_kb; // KB of memory below 1MB
 extern uint32_t sys_mem_upper_kb; // KB of memory above 1MB
 

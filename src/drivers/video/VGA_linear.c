@@ -2,9 +2,21 @@
 // https://wiki.osdev.org/Printing_To_Screen
 // https://wiki.osdev.org/Text_Mode_Cursor
 //
-// Drawing text is plain memory writes into the cell array at 0xB8000 (see VGA_linear.h for the
-// cell format). The blinking cursor and the blink / bright background setting are different:
-// they live in registers inside the VGA chip, reached through I/O ports.
+// The screen is always an 80 x 25 grid of cells (see VGA_linear.h for the cell format), shown in
+// one of two ways:
+//
+// - VGA text mode, on PCs started through the BIOS. Drawing is plain memory writes into the cell
+//   array at 0xB8000 and the graphics card turns them into characters itself. The blinking cursor
+//   and the blink / bright background setting live in registers inside the VGA chip, reached
+//   through I/O ports.
+//
+// - A framebuffer, on PCs started through UEFI. UEFI has no text mode, so GRUB sets up a graphics
+//   mode instead and tells us where its pixels are. We keep the same 80 x 25 grid and draw every
+//   cell ourselves with the built-in font (font8x16.c), 9 x 16 pixels per cell like real VGA,
+//   scaled up by the biggest whole number that fits the screen and centred.
+//
+// Either way every cell is also kept in cells[], so the framebuffer can be redrawn after a palette
+// or font change, and only cells that really change get drawn (which keeps scrolling quick).
 //
 // Many VGA registers hide behind an "index / data" pair of ports: you write the number of the
 // register you want into the index port, then read or write its value through the data port.
@@ -24,6 +36,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "font8x16.h"
 #include "../input/GIO.h"
 #include "../serial/serial.h"
 
@@ -31,6 +44,9 @@
 // (these are the colour mode addresses, a monochrome card uses 0x3B4 / 0x3B5)
 #define VGA_CRTC_INDEX 0x3D4
 #define VGA_CRTC_DATA  0x3D5
+
+// the size of one cell in framebuffer pixels (before scaling)
+#define CELL_HEIGHT 16
 
 // the text buffer itself, AerOS has no paging so the physical address works as a pointer
 volatile uint16_t* const video = (volatile uint16_t*)0xB8000;
@@ -43,44 +59,242 @@ enum color console_bg = BLACK;
 static uint8_t console_x = 0;
 static uint8_t console_y = 0;
 
-// whether the hardware cursor is currently switched on, so console_update_cursor only has to
-// re-enable it after clear() hid it instead of reprogramming it on every character
+// whether the cursor is currently switched on, so console_update_cursor only has to re-enable it
+// after clear() hid it instead of reprogramming it on every character
 static bool vga_cursor_visible = false;
+static unsigned int cursor_index = 0; // the cell the cursor is in
 
-// switch the hardware cursor on and set its shape
+// every cell on screen, the framebuffer is drawn from this
+static uint16_t cells[COLS * ROWS];
+
+// the framebuffer, when there is one
+static bool fb_mode = false;
+static struct {
+    uint8_t* base;        // first pixel
+    uint32_t pitch;       // bytes from one line of pixels to the next
+    uint32_t bytes;       // bytes per pixel: 2, 3 or 4
+    uint8_t red_pos, red_size, green_pos, green_size, blue_pos, blue_size;
+    uint32_t width, height; // the whole screen in pixels
+    uint32_t cell_width;  // 9 like real VGA, or 8 when the screen is too narrow for 720 pixels
+    uint32_t scale;       // every font pixel becomes a scale x scale block
+    uint32_t left, top;   // where the 80 x 25 grid starts, to centre it
+} fb;
+static int border_color = BLACK; // the colour of the margin around the grid
+
+// the 16 colours as red, green, blue: the standard VGA colours until the palette is changed
+static uint8_t palette[16][3] = {
+    { 0x00, 0x00, 0x00 }, { 0x00, 0x00, 0xAA }, { 0x00, 0xAA, 0x00 }, { 0x00, 0xAA, 0xAA },
+    { 0xAA, 0x00, 0x00 }, { 0xAA, 0x00, 0xAA }, { 0xAA, 0x55, 0x00 }, { 0xAA, 0xAA, 0xAA },
+    { 0x55, 0x55, 0x55 }, { 0x55, 0x55, 0xFF }, { 0x55, 0xFF, 0x55 }, { 0x55, 0xFF, 0xFF },
+    { 0xFF, 0x55, 0x55 }, { 0xFF, 0x55, 0xFF }, { 0xFF, 0xFF, 0x55 }, { 0xFF, 0xFF, 0xFF },
+};
+static uint32_t fb_colors[16];     // the same colours packed into the framebuffer's pixel format
+static uint8_t fb_font[256][16];   // a copy of font8x16, so vga_set_glyph can change it
+
+// framebuffer drawing
+
+// pack a colour into the framebuffer's pixel format, using the bit positions GRUB reported
+static uint32_t fb_pack(const uint8_t* rgb) {
+    return ((uint32_t)(rgb[0] >> (8 - fb.red_size)) << fb.red_pos) |
+           ((uint32_t)(rgb[1] >> (8 - fb.green_size)) << fb.green_pos) |
+           ((uint32_t)(rgb[2] >> (8 - fb.blue_size)) << fb.blue_pos);
+}
+
+static void fb_put(uint8_t* pixel, uint32_t color) {
+    switch (fb.bytes) {
+        case 4: *(uint32_t*)pixel = color; break;
+        case 3: pixel[0] = color & 0xFF; pixel[1] = (color >> 8) & 0xFF; pixel[2] = (color >> 16) & 0xFF; break;
+        default: *(uint16_t*)pixel = (uint16_t)color; break;
+    }
+}
+
+// draw one cell from cells[], including the underline cursor if it is in this cell
+static void fb_draw_cell(unsigned int index) {
+    uint8_t ch = cells[index] & 0xFF;
+    uint8_t attr = cells[index] >> 8;
+    uint32_t fg = fb_colors[attr & 0x0F];
+    uint32_t bg = fb_colors[attr >> 4];
+    const uint8_t* glyph = fb_font[ch];
+    // like real VGA, the box drawing characters 0xC0 - 0xDF repeat their last column in the 9th,
+    // so lines join up across cells; everything else gets a blank 9th column
+    bool repeat_last = ch >= 0xC0 && ch <= 0xDF;
+    bool cursor = vga_cursor_visible && index == cursor_index;
+
+    uint32_t x0 = fb.left + (index % COLS) * fb.cell_width * fb.scale;
+    uint32_t y0 = fb.top + (index / COLS) * CELL_HEIGHT * fb.scale;
+
+    for (uint32_t row = 0; row < CELL_HEIGHT; row++) {
+        // the cursor is an underline over the last two rows, in the text colour
+        uint32_t bits = (cursor && row >= 14) ? 0x1FF : ((uint32_t)glyph[row] << 1);
+        if (repeat_last && (glyph[row] & 1)) {
+            bits |= 1;
+        }
+        for (uint32_t sy = 0; sy < fb.scale; sy++) {
+            uint8_t* pixel = fb.base + (y0 + row * fb.scale + sy) * fb.pitch + x0 * fb.bytes;
+            for (uint32_t col = 0; col < fb.cell_width; col++) {
+                uint32_t color = (bits & (0x100 >> col)) ? fg : bg;
+                for (uint32_t sx = 0; sx < fb.scale; sx++) {
+                    fb_put(pixel, color);
+                    pixel += fb.bytes;
+                }
+            }
+        }
+    }
+}
+
+// paint the margin around the 80 x 25 grid (the screen is rarely an exact multiple of 720 x 400),
+// so a full screen layout like the splash fills the whole screen
+static void fb_fill_border(int color_index) {
+    border_color = color_index;
+    uint32_t color = fb_colors[color_index];
+    uint32_t right = fb.left + COLS * fb.cell_width * fb.scale;
+    uint32_t bottom = fb.top + ROWS * CELL_HEIGHT * fb.scale;
+    for (uint32_t y = 0; y < fb.height; y++) {
+        bool grid_row = y >= fb.top && y < bottom;
+        uint8_t* pixel = fb.base + y * fb.pitch;
+        for (uint32_t x = 0; x < fb.width; x++, pixel += fb.bytes) {
+            if (grid_row && x == fb.left) {
+                // jump over the grid itself
+                pixel += (right - x) * fb.bytes;
+                x = right;
+                if (x >= fb.width) {
+                    break;
+                }
+            }
+            fb_put(pixel, color);
+        }
+    }
+}
+
+// redraw every cell that uses colour index (as text or background) or shows character ch
+// (pass -1 for whichever one doesn't apply)
+static void fb_redraw(int color_index, int ch) {
+    for (unsigned int i = 0; i < COLS * ROWS; i++) {
+        uint8_t attr = cells[i] >> 8;
+        if ((attr & 0x0F) == color_index || (attr >> 4) == color_index || (cells[i] & 0xFF) == ch) {
+            fb_draw_cell(i);
+        }
+    }
+}
+
+// take over the framebuffer GRUB set up, returns false if we can't draw on it
+static bool fb_setup(const vga_framebuffer_t* info) {
+    uint32_t bytes = (info->bpp + 7) / 8;
+    if (info->address == 0 || (bytes != 2 && bytes != 3 && bytes != 4)) {
+        return false;
+    }
+    fb.base = (uint8_t*)(uintptr_t)info->address;
+    fb.pitch = info->pitch;
+    fb.bytes = bytes;
+    fb.red_pos = info->red_pos;
+    fb.red_size = info->red_size;
+    fb.green_pos = info->green_pos;
+    fb.green_size = info->green_size;
+    fb.blue_pos = info->blue_pos;
+    fb.blue_size = info->blue_size;
+
+    // 720 x 400 like real VGA if it fits, otherwise 8 pixel wide cells (640 x 400)
+    fb.cell_width = (info->width >= COLS * 9) ? 9 : 8;
+    uint32_t scale_x = info->width / (COLS * fb.cell_width);
+    uint32_t scale_y = info->height / (ROWS * CELL_HEIGHT);
+    fb.scale = (scale_x < scale_y) ? scale_x : scale_y;
+    if (fb.scale == 0) {
+        return false; // smaller than 640 x 400
+    }
+    fb.width = info->width;
+    fb.height = info->height;
+    fb.left = (info->width - COLS * fb.cell_width * fb.scale) / 2;
+    fb.top = (info->height - ROWS * CELL_HEIGHT * fb.scale) / 2;
+
+    for (int i = 0; i < 16; i++) {
+        fb_colors[i] = fb_pack(palette[i]);
+    }
+    for (int ch = 0; ch < 256; ch++) {
+        for (int row = 0; row < CELL_HEIGHT; row++) {
+            fb_font[ch][row] = font8x16[ch][row];
+        }
+    }
+
+    // black out the whole screen once, including the border around the grid
+    for (uint32_t y = 0; y < info->height; y++) {
+        uint8_t* pixel = fb.base + y * fb.pitch;
+        for (uint32_t x = 0; x < info->width; x++) {
+            fb_put(pixel, fb_colors[BLACK]);
+            pixel += fb.bytes;
+        }
+    }
+    return true;
+}
+
+bool vga_framebuffer_active(void) {
+    return fb_mode;
+}
+
+// change one cell, on screen and in cells[]
+static void cell_set(unsigned int index, uint16_t entry) {
+    if (cells[index] == entry) {
+        return;
+    }
+    cells[index] = entry;
+    if (fb_mode) {
+        fb_draw_cell(index);
+    } else {
+        video[index] = entry;
+    }
+}
+
+// cursor
+
+// switch the cursor on and set its shape
 // start / end: first and last scanline (0-15 in the 16 pixel tall cell) the cursor covers
 // the registers are read first so the bits we don't own are kept, and clearing bit 5 of register
 // 0x0A (via the 0xC0 mask) is what actually turns the cursor on
+// (the framebuffer cursor is always the underline)
 void vga_enable_cursor(uint8_t start, uint8_t end) {
+    vga_cursor_visible = true;
+    if (fb_mode) {
+        fb_draw_cell(cursor_index);
+        return;
+    }
     outb(VGA_CRTC_INDEX, 0x0A);
     outb(VGA_CRTC_DATA, (inb(VGA_CRTC_DATA) & 0xC0) | start);
     outb(VGA_CRTC_INDEX, 0x0B);
     outb(VGA_CRTC_DATA, (inb(VGA_CRTC_DATA) & 0xE0) | end);
-    vga_cursor_visible = true;
 }
 
-// switch the hardware cursor off: 0x20 sets the "cursor disable" bit (bit 5) of register 0x0A
+// switch the cursor off: 0x20 sets the "cursor disable" bit (bit 5) of register 0x0A
 void vga_disable_cursor(void) {
+    vga_cursor_visible = false;
+    if (fb_mode) {
+        fb_draw_cell(cursor_index);
+        return;
+    }
     outb(VGA_CRTC_INDEX, 0x0A);
     outb(VGA_CRTC_DATA, 0x20);
-    vga_cursor_visible = false;
 }
 
-// move the hardware cursor to column x, row y
+// move the cursor to column x, row y
 // the CRTC wants the linear cell index, split over two 8 bit registers (0x0F low, 0x0E high)
 void vga_move_cursor(uint8_t x, uint8_t y) {
-    uint16_t pos = (uint16_t)(y * COLS + x);
+    unsigned int old = cursor_index;
+    cursor_index = (unsigned int)(y * COLS + x);
+    if (fb_mode) {
+        if (vga_cursor_visible && old != cursor_index) {
+            fb_draw_cell(old);
+            fb_draw_cell(cursor_index);
+        }
+        return;
+    }
     outb(VGA_CRTC_INDEX, 0x0F);
-    outb(VGA_CRTC_DATA, (uint8_t)(pos & 0xFF));
+    outb(VGA_CRTC_DATA, (uint8_t)(cursor_index & 0xFF));
     outb(VGA_CRTC_INDEX, 0x0E);
-    outb(VGA_CRTC_DATA, (uint8_t)(pos >> 8));
+    outb(VGA_CRTC_DATA, (uint8_t)(cursor_index >> 8));
 }
 
 // write the same cell (character + colours) into all 80 * 25 = 2000 cells of the screen
-// (a plain loop rather than memset: video memory is volatile and the kernel is built with -fno-builtin)
 static void vga_fill(uint16_t entry) {
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
-        video[i] = entry;
+        cell_set(i, entry);
     }
 }
 
@@ -92,7 +306,7 @@ void putc(uint8_t x, uint8_t y, enum color fg, enum color bg, char c) {
     if (x >= COLS || y >= ROWS) {
         return;
     }
-    video[y * COLS + x] = VGA_ENTRY(c, fg, bg);
+    cell_set(y * COLS + x, VGA_ENTRY(c, fg, bg));
 }
 
 // draw a string starting at column x, row y
@@ -117,7 +331,7 @@ void puts(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* s) {
         if (cy >= ROWS) {
             return;
         }
-        video[cy * COLS + cx] = VGA_ENTRY(*s, fg, bg);
+        cell_set(cy * COLS + cx, VGA_ENTRY(*s, fg, bg));
         cx++;
     }
 }
@@ -125,11 +339,14 @@ void puts(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* s) {
 // fill the whole screen with colour bg (spaces drawn in bg on bg) and hand the screen over to
 // positional drawing
 void clear(enum color bg) {
-    vga_fill(VGA_ENTRY(' ', bg, bg));
     // full screen layouts (splash, error screens) draw with puts, so hide the console cursor
+    vga_disable_cursor();
+    vga_fill(VGA_ENTRY(' ', bg, bg));
+    if (fb_mode) {
+        fb_fill_border(bg);
+    }
     console_x = 0;
     console_y = 0;
-    vga_disable_cursor();
     // the terminal compares this counter before and after running a command, a change means the
     // command drew its own screen and the terminal needs to redraw itself
     vga_clear_count++;
@@ -141,13 +358,13 @@ void console_set_color(enum color fg, enum color bg) {
     console_bg = bg;
 }
 
-// put the blinking hardware cursor where the console cursor is
+// put the blinking cursor where the console cursor is
 // if clear() hid it, it is first switched back on as an underline (scanlines 14-15)
 void console_update_cursor(void) {
+    vga_move_cursor(console_x, console_y);
     if (!vga_cursor_visible) {
         vga_enable_cursor(14, 15);
     }
-    vga_move_cursor(console_x, console_y);
 }
 
 // move the console cursor to column x, row y, clamping to the screen so later writes stay in bounds
@@ -167,6 +384,9 @@ void console_get_cursor(uint8_t* x, uint8_t* y) {
 // unlike clear() this keeps the cursor visible and doesn't count as a full screen takeover
 void console_clear(void) {
     vga_fill(VGA_ENTRY(' ', console_fg, console_bg));
+    if (fb_mode) {
+        fb_fill_border(console_bg);
+    }
     console_x = 0;
     console_y = 0;
     console_update_cursor();
@@ -178,10 +398,10 @@ void console_clear(void) {
 // good, there is no scrollback.
 static void console_scroll(void) {
     for (unsigned int i = 0; i < COLS * (ROWS - 1); i++) {
-        video[i] = video[i + COLS];
+        cell_set(i, cells[i + COLS]);
     }
     for (unsigned int x = 0; x < COLS; x++) {
-        video[(ROWS - 1) * COLS + x] = VGA_ENTRY(' ', console_fg, console_bg);
+        cell_set((ROWS - 1) * COLS + x, VGA_ENTRY(' ', console_fg, console_bg));
     }
 }
 
@@ -270,26 +490,35 @@ void console_backspace(void) {
 }
 
 // one-time screen setup, called first thing during boot
-// The blink setting lives in the attribute controller, which is awkward: port 0x3C0 is both its
-// index and its data port, and an internal flip-flop decides which one the next write goes to.
-// Reading the input status register (0x3DA) resets the flip-flop to "index", so after that the
-// sequence is: write index to 0x3C0, read the current value from 0x3C1, write the new value to 0x3C0.
-// The index 0x30 is register 0x10 (attribute mode control) with bit 5 (0x20) set. Bit 5 is
-// "palette address source": if it is clear while we write, the card stops displaying the screen.
-// In the mode control register bit 3 (0x08) is "blink enable". With it clear, bit 7 of each cell's
-// colour byte stops meaning "blink" and becomes the bright bit of the background colour.
-void vga_init(void) {
+// In text mode we switch blinking off. The blink setting lives in the attribute controller, which
+// is awkward: port 0x3C0 is both its index and its data port, and an internal flip-flop decides
+// which one the next write goes to. Reading the input status register (0x3DA) resets the flip-flop
+// to "index", so after that the sequence is: write index to 0x3C0, read the current value from
+// 0x3C1, write the new value to 0x3C0. The index 0x30 is register 0x10 (attribute mode control)
+// with bit 5 (0x20) set. Bit 5 is "palette address source": if it is clear while we write, the
+// card stops displaying the screen. In the mode control register bit 3 (0x08) is "blink enable".
+// With it clear, bit 7 of each cell's colour byte stops meaning "blink" and becomes the bright bit
+// of the background colour.
+void vga_init(const vga_framebuffer_t* framebuffer) {
     // the copyright sign, a circle with a C in it
     static const uint8_t copyright[16] = {
         0x00, 0x00, 0x3C, 0x42, 0x99, 0xA5, 0xA1, 0xA1,
         0xA5, 0x99, 0x42, 0x3C, 0x00, 0x00, 0x00, 0x00
     };
 
-    inb(0x3DA);                // reset the attribute controller flip-flop
-    outb(0x3C0, 0x30);         // select the mode control register (bit 5 keeps the screen on)
-    uint8_t mode = inb(0x3C1);
-    outb(0x3C0, mode & ~0x08); // clear the blink bit
+    fb_mode = framebuffer != 0 && fb_setup(framebuffer);
+    if (!fb_mode) {
+        inb(0x3DA);                // reset the attribute controller flip-flop
+        outb(0x3C0, 0x30);         // select the mode control register (bit 5 keeps the screen on)
+        uint8_t mode = inb(0x3C1);
+        outb(0x3C0, mode & ~0x08); // clear the blink bit
+    }
     vga_set_glyph((uint8_t)VGA_COPYRIGHT[0], copyright);
+
+    // cells[] starts out not matching anything on screen, so the first clear draws every cell
+    for (unsigned int i = 0; i < COLS * ROWS; i++) {
+        cells[i] = 0xFFFF;
+    }
     console_set_color(BRIGHT, BLACK);
     console_clear();
 }
@@ -310,6 +539,17 @@ static uint8_t vga_dac_index(enum color color) {
 // one after another through 0x3C9, each 6 bits (0 - 63)
 // https://wiki.osdev.org/VGA_Hardware#Port_0x3C8
 void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b) {
+    if (fb_mode) {
+        palette[color][0] = r;
+        palette[color][1] = g;
+        palette[color][2] = b;
+        fb_colors[color] = fb_pack(palette[color]);
+        fb_redraw(color, -1);
+        if (border_color == (int)color) {
+            fb_fill_border(color);
+        }
+        return;
+    }
     outb(0x3C8, vga_dac_index(color));
     outb(0x3C9, r >> 2);
     outb(0x3C9, g >> 2);
@@ -317,6 +557,12 @@ void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b) {
 }
 
 void vga_get_palette(enum color color, uint8_t* r, uint8_t* g, uint8_t* b) {
+    if (fb_mode) {
+        *r = palette[color][0];
+        *g = palette[color][1];
+        *b = palette[color][2];
+        return;
+    }
     outb(0x3C7, vga_dac_index(color));
     *r = (uint8_t)(inb(0x3C9) << 2);
     *g = (uint8_t)(inb(0x3C9) << 2);
@@ -339,8 +585,17 @@ static void vga_write_reg(uint16_t port, uint8_t index, uint8_t value) {
 // (0xB8000 only shows planes 0 and 1: the characters and their colours). To reach it we briefly
 // point the card's memory window at plane 2 alone, write the glyph, then put everything back.
 // Each character has a 32 byte slot in the font, of which the 16 rows of an 8x16 font are used.
+// In framebuffer mode the font is our own copy, so the glyph just replaces it there.
 // https://wiki.osdev.org/VGA_Fonts
 void vga_set_glyph(uint8_t character, const uint8_t* glyph) {
+    if (fb_mode) {
+        for (int row = 0; row < CELL_HEIGHT; row++) {
+            fb_font[character][row] = glyph[row];
+        }
+        fb_redraw(-1, character);
+        return;
+    }
+
     uint8_t map_mask = vga_read_reg(0x3C4, 0x02);
     uint8_t memory_mode = vga_read_reg(0x3C4, 0x04);
     uint8_t read_map = vga_read_reg(0x3CE, 0x04);

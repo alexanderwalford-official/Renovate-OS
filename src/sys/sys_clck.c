@@ -75,8 +75,11 @@ void clck_init(void) {
 }
 
 // milliseconds since the timer started, see sys_clck.h
+// milliseconds counted by the busy wait in sleep_ms, used instead of ticks when the timer is dead
+static uint32_t busy_ms = 0;
+
 uint32_t clck_uptime_ms(void) {
-    return ticks;
+    return clck_ready ? ticks : busy_ms;
 }
 
 // wait ms milliseconds, see sys_clck.h for when each method is used
@@ -98,8 +101,26 @@ void sleep_ms(uint32_t ms) {
             for (int j = 0; j < 1000; j++) {
                 io_wait();
             }
+            busy_ms++;
         }
     }
+}
+
+// Some newer PCs let the firmware switch the old PIT chip off to save power, and then IRQ0 never
+// comes. Everything that waits on ticks would wait forever, so once interrupts are on we give the
+// timer about 50ms to tick. If it doesn't, clck_ready goes false and every wait becomes a busy wait.
+bool clck_verify(void) {
+    if (!clck_ready || !interrupts_enabled()) {
+        return false;
+    }
+    uint32_t start = ticks;
+    for (int i = 0; i < 50000 && ticks == start; i++) {
+        io_wait();
+    }
+    if (ticks == start) {
+        clck_ready = false;
+    }
+    return clck_ready;
 }
 
 // block thread 0 for time milliseconds, marking it busy while it waits, see sys_clck.h

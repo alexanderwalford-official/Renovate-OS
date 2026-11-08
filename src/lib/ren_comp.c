@@ -56,9 +56,9 @@ int splash_screen (void) {
     // unsigned subtraction still gives the right answer if the millisecond counter wraps around
     while (clck_uptime_ms() - start < 4000) {
         if (!kb_haschar()) {
-            // nothing pressed yet: sleep until the next interrupt (the timer wakes us every 1ms)
-            // instead of spinning the CPU at full speed
-            cpu_idle();
+            // nothing pressed yet: wait a little before checking again. sleep_ms also works when
+            // the timer is dead (a bare "hlt" would then sleep until a key is pressed)
+            sleep_ms(10);
             continue;
         }
         // any other key is read and ignored, the wait carries on

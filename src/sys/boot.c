@@ -39,11 +39,26 @@
 // the start of the information structure GRUB hands to the kernel
 // the real structure carries on with many more fields (boot_device, cmdline, mods, mmap ...),
 // we only read through a pointer, so declaring just the start is fine
-typedef struct multiboot_info {
-    uint32_t flags; // which of the fields below (and the ones we left out) are valid
+typedef struct __attribute__((packed)) multiboot_info {
+    uint32_t flags; // which of the fields below are valid
     uint32_t mem_lower; // KB of memory below 1MB
     uint32_t mem_upper; // KB of memory above 1MB
+    uint32_t unused[19]; // boot device, command line, modules, symbols, memory map, drives, VBE ...
+    uint64_t framebuffer_addr; // from here on: the screen GRUB set up (flags bit 12)
+    uint32_t framebuffer_pitch;
+    uint32_t framebuffer_width;
+    uint32_t framebuffer_height;
+    uint8_t framebuffer_bpp;
+    uint8_t framebuffer_type; // 0 = palette, 1 = RGB pixels, 2 = VGA text mode
+    // gotcha: the multiboot spec says the colour layout starts at offset 110, but GRUB declares it
+    // in a union with a 32 bit field, so the compiler aligned it to 112 and that is where GRUB writes it
+    uint8_t padding[2];
+    uint8_t red_pos, red_size, green_pos, green_size, blue_pos, blue_size;
 } multiboot_info_t;
+
+// bit 12 of the info flags: the framebuffer fields are valid
+#define MULTIBOOT_INFO_FRAMEBUFFER 0x00001000
+#define MULTIBOOT_FRAMEBUFFER_RGB  1
 
 // the boot options menu (sys/recovery.c) can change this before init_boot() runs
 int boot_option = BOOT_OPT_NORMAL;
@@ -54,6 +69,8 @@ bool boot_options_requested = false;
 bool boot_multiboot_valid = false;
 uint32_t sys_mem_lower_kb = 0; // conventional memory, at most 640 KB
 uint32_t sys_mem_upper_kb = 0; // memory from 1MB up to the first hole in the memory map
+bool boot_framebuffer_valid = false; // GRUB gave us a graphics framebuffer instead of text mode
+vga_framebuffer_t boot_framebuffer;
 
 // read what the bootloader told us about the machine
 // magic = eax from GRUB, info_addr = ebx from GRUB (the physical address of the structure)
@@ -71,6 +88,23 @@ void boot_parse_multiboot (uint32_t magic, uint32_t info_addr) {
         sys_mem_lower_kb = info->mem_lower;
         sys_mem_upper_kb = info->mem_upper;
     }
+    // a graphics framebuffer (UEFI PCs). Without paging we can only reach the first 4GB, so a
+    // framebuffer above that can't be used and we stay with VGA text mode
+    if ((info->flags & MULTIBOOT_INFO_FRAMEBUFFER) && info->framebuffer_type == MULTIBOOT_FRAMEBUFFER_RGB &&
+        info->framebuffer_addr < 0x100000000ULL) {
+        boot_framebuffer.address = (uint32_t)info->framebuffer_addr;
+        boot_framebuffer.pitch = info->framebuffer_pitch;
+        boot_framebuffer.width = info->framebuffer_width;
+        boot_framebuffer.height = info->framebuffer_height;
+        boot_framebuffer.bpp = info->framebuffer_bpp;
+        boot_framebuffer.red_pos = info->red_pos;
+        boot_framebuffer.red_size = info->red_size;
+        boot_framebuffer.green_pos = info->green_pos;
+        boot_framebuffer.green_size = info->green_size;
+        boot_framebuffer.blue_pos = info->blue_pos;
+        boot_framebuffer.blue_size = info->blue_size;
+        boot_framebuffer_valid = true;
+    }
 }
 
 // the boot log
@@ -85,8 +119,18 @@ int init_boot (void) {
 
     // each driver sets its *_ready flag at the end of its init function in kernel.c, so a [FAIL]
     // here means that step never ran (handy if someone reorders or removes a line in main())
+    if (vga_framebuffer_active()) {
+        printf("[ OK ] Screen: %ux%u framebuffer, %u bits per pixel\n", boot_framebuffer.width,
+               boot_framebuffer.height, (unsigned int)boot_framebuffer.bpp);
+    } else {
+        printf("[ OK ] Screen: VGA text mode\n");
+    }
     printf("%s Descriptor tables & interrupts (GDT / IDT / PIC)\n", interrupts_ready ? "[ OK ]" : "[FAIL]");
-    printf("%s System timer at %u Hz\n", clck_ready ? "[ OK ]" : "[FAIL]", (unsigned int)PIT_HZ);
+    if (clck_ready) {
+        printf("[ OK ] System timer at %u Hz\n", (unsigned int)PIT_HZ);
+    } else {
+        printf("[WARN] System timer is not ticking, using busy waits instead\n");
+    }
     printf("%s PS/2 keyboard\n", keyboard_ready ? "[ OK ]" : "[FAIL]");
     // only a warning, nothing needs the memory size yet (the heap is a fixed size array)
     if (boot_multiboot_valid) {

@@ -52,22 +52,24 @@ int main(uint32_t mb_info_addr, uint32_t mb_magic) {
 
     // hardware setup, this has to happen before any process runs
     // the order matters:
-    // - the screen comes first so that anything that goes wrong later can at least be seen
-    // - the multiboot info is read early, before anything has a chance to overwrite the memory it sits in
+    // - the multiboot info is read first, before anything has a chance to overwrite the memory it sits in,
+    //   and because it says whether the screen is VGA text mode or a framebuffer (UEFI)
+    // - the screen comes next so that anything that goes wrong later can at least be seen
     // - the GDT has to be ours before the IDT points at code segments in it (GRUB's GDT may not stay valid)
     // - the timer and keyboard install IRQ handlers, so they need the IDT and the remapped PIC first
     // - interrupts are only switched on at the very end. If an IRQ arrived before the IDT was ready the CPU
     //   would have nowhere to jump, fault, fail to handle that too and reset (a "triple fault")
     // every process below depends on this: the splash screen times itself with the timer and listens for
     // the keyboard, both of which only work once IRQ0 / IRQ1 are being delivered
-    vga_init();                                   // screen & cursor
+    boot_parse_multiboot(mb_magic, mb_info_addr); // memory size and the screen GRUB set up
+    vga_init(boot_framebuffer_valid ? &boot_framebuffer : 0); // screen & cursor
     serial_init();                                // debug output on COM1
-    boot_parse_multiboot(mb_magic, mb_info_addr); // memory size
     gdt_init();                                   // segments
     idt_init();                                   // exception & IRQ handlers, PIC remap
     clck_init();                                  // 1000Hz system timer (IRQ0)
     init_keyboard();                              // PS/2 keyboard (IRQ1)
     interrupts_enable();                          // "sti", from here on the timer and keyboard are live
+    clck_verify();                                // fall back to busy waits if the PIT is switched off
 
     // each startup step is its own process: create it (it waits as DEAD), execute it, then destroy it
     // so its slot on the process stack is free again. Because the slot is freed every time, each of

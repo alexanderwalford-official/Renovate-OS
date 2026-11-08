@@ -25,6 +25,7 @@
 #define VGA_LINEAR_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 // the 16 colours of the standard VGA text palette (inherited from CGA)
 // bit 3 is the "intensity" bit: colours 8-15 are the bright versions of colours 0-7
@@ -70,9 +71,25 @@ extern volatile unsigned int vga_clear_count;
 extern enum color console_fg;
 extern enum color console_bg;
 
-// one-time VGA setup: allow all 16 background colours (instead of blinking text) and show the cursor
-// also clears the screen to light grey on black; it is the very first thing the kernel initialises
-void vga_init(void);
+// a linear framebuffer the bootloader set up for us (UEFI PCs have no VGA text mode)
+typedef struct {
+    uint32_t address;            // physical address of the first pixel (must be below 4GB)
+    uint32_t pitch;              // bytes from one line of pixels to the next
+    uint32_t width, height;      // in pixels
+    uint8_t bpp;                 // bits per pixel: 16, 24 or 32
+    uint8_t red_pos, red_size;   // where each colour sits inside a pixel, and how many bits it has
+    uint8_t green_pos, green_size;
+    uint8_t blue_pos, blue_size;
+} vga_framebuffer_t;
+
+// one-time screen setup, the very first thing the kernel initialises
+// framebuffer = NULL uses VGA text mode (switching blinking off so all 16 background colours work),
+// otherwise the 80 x 25 screen is drawn into the framebuffer (falling back to text mode if it
+// can't be used). Also clears the screen to light grey on black.
+void vga_init(const vga_framebuffer_t* framebuffer);
+
+// true if the screen is a framebuffer drawn by us, false for VGA text mode
+bool vga_framebuffer_active(void);
 
 // show the blinking hardware cursor, using scanlines start..end of the character cell
 // (a cell is 16 scanlines tall: 14..15 is the usual underline, 0..15 a full block)

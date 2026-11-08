@@ -25,7 +25,7 @@ DISK = disk.img
 DISK_SECTORS = 131072
 QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
 
-.PHONY: all clean clean-disk move run run-kernel run-img run-vfs disk-ls disk-put setup-dev
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev
 
 all: main.iso
 
@@ -89,10 +89,15 @@ run-kernel: main.elf $(DISK)
 run-vfs: main.iso
 	$(QEMU) -cdrom main.iso -smp 1 -serial stdio
 
+# boot the ISO like a modern UEFI PC (OVMF firmware). The ISO only contains UEFI boot files when
+# grub-efi-amd64-bin is installed (make setup-dev), and the 64 bit firmware needs the 64 bit QEMU
+run-uefi: main.iso $(DISK)
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom main.iso $(QEMU_DISK) -m 256 -serial stdio
+
 # boot the ISO as a hard drive image
 run-img: main.iso
 	$(QEMU) -hda main.iso
 
 # install the relevant packages
 setup-dev:
-	sudo apt install build-essential gcc-multilib nasm xorriso mtools grub-pc-bin grub-common qemu-system-x86
+	sudo apt install build-essential gcc-multilib nasm xorriso mtools grub-pc-bin grub-efi-amd64-bin grub-common qemu-system-x86 ovmf
