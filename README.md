@@ -28,11 +28,11 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 ## To-Do List
 - [x] Successful build for printing text.
 - [x] Implement boot process that calls the main methods.
-- [x] Implement a memory pool and a way to assign / un-assign memory. (1MB kernel heap: malloc / free / realloc)
+- [x] Implement a memory pool and a way to assign / un-assign memory. (4MB kernel heap: malloc / free / realloc)
 - [x] Hardware drivers for user input. (PS/2 keyboard on IRQ1)
 - [x] Switch to interrupt instead of maths for delays. (PIT timer at 1000Hz)
 - [x] Sound driver for error reporting. (PC speaker beep)
-- [ ] Implement local filesystem. 🚧 VFS 100%
+- [x] Implement local filesystem. (FAT16 / FAT32 on IDE disks labelled RENOVATE, temporary VFS without one)
 - [x] Process management.
 - [ ] Programming interface. 🚧
 - [ ] Graphics driver. 🚧

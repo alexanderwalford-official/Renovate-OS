@@ -2,17 +2,39 @@
     ren_stdlib.h
     General utilities (freestanding replacement for <stdlib.h>):
     number conversion, random numbers, sorting and a kernel heap (malloc / free).
+
+    Like the rest of lib/, this exists because the kernel is built freestanding with
+    no C library to lean on (see ren_ctype.h for the longer explanation). The names and
+    signatures match the standard ones, so code here reads just like normal C.
+
+    What's inside:
+    - integer helpers: abs, itoa / utoa (number to text), strtol / strtoul / atoi (text to number)
+    - a small pseudo random number generator: rand / srand
+    - qsort, used by the process manager to line its processes up shortest first
+    - the kernel heap: malloc / free / calloc / realloc over a fixed 4MB pool,
+      plus strdup / strndup which copy a string onto the heap
+    The heap's inner workings are explained at length in ren_stdlib.c.
+
+    What's missing compared with a hosted libc: there's no errno (failures are reported
+    through return values only), no exit() / abort() (there's no process to exit back
+    to, the kernel IS the program), no getenv(), and nothing to do with floating point.
+
+    Handy references:
+        https://wiki.osdev.org/C_Library
+        https://wiki.osdev.org/Memory_Allocation
+        https://en.cppreference.com/w/c/program
 */
 #ifndef REN_STDLIB_H
 #define REN_STDLIB_H
 
 #include <stddef.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include "ren_ctype.h"
-#include "ren_string.h"
 
 // <limits.h> pulls in the host's C library headers, so take the limits from the compiler instead
+// GCC predefines __INT_MAX__ and __LONG_MAX__ for whatever target it is compiling for,
+// so these are always right for 32 bit x86 (where int and long are both 32 bits).
+// The MIN values follow from two's complement: the negative range is one bigger than the positive one.
+// The unsigned MAX values are "every bit set", which is twice the signed MAX plus one.
+// The #ifndef means that if some other header already defined them we quietly use those.
 #ifndef INT_MAX
 #define INT_MAX   __INT_MAX__
 #define INT_MIN   (-INT_MAX - 1)
@@ -22,361 +44,78 @@
 #define ULONG_MAX (LONG_MAX * 2UL + 1UL)
 #endif
 
+// the usual "it worked" / "it didn't" status codes
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
+// the biggest number rand() can return (rand gives 15 random bits, 0..32767)
 #define RAND_MAX 32767
 
+// smaller / bigger of two values
+// gotcha: these are macros, so an argument gets evaluated twice. MIN(i++, 10) bumps i twice,
+// and MIN(slow_function(), 10) calls it twice. Store such things in a variable first.
 #ifndef MIN
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 #ifndef MAX
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #endif
+// number of elements in an array: total size in bytes divided by the size of one element
+// gotcha: only works on a real array. On a pointer (including an array passed into a
+// function, which turns into a pointer) it silently gives sizeof(pointer) / sizeof(element).
 #define ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
 
-/* ---------------- integers ---------------- */
+// integers
 
-int abs(int value) {
-    return value < 0 ? -value : value;
-}
+// absolute value (abs(INT_MIN) can't be represented and stays INT_MIN)
+int abs(int value);
+// absolute value of a long
+long labs(long value);
+// write value as text in base 2..36 into str, returns str (str needs up to 33 bytes for base 2)
+char* utoa(unsigned int value, char* str, int base);
+// like utoa but signed: base 10 gets a '-', other bases show the raw two's complement bits
+char* itoa(int value, char* str, int base);
+// parse a number from text, base 0 means "work it out" (0x.. hex, 0.. octal, else decimal)
+// *endptr (if not NULL) is set to just after the number; out of range values clamp to LONG_MIN / LONG_MAX
+long strtol(const char* nptr, char** endptr, int base);
+// unsigned version of strtol, clamps to ULONG_MAX
+unsigned long strtoul(const char* nptr, char** endptr, int base);
+// quick decimal parse with no error reporting ("42abc" gives 42, "abc" gives 0)
+int atoi(const char* s);
+// atoi for a long
+long atol(const char* s);
 
-long labs(long value) {
-    return value < 0 ? -value : value;
-}
+// random numbers
+// not remotely secure, but fine for games and demos
 
-// convert an unsigned int to a string in any base from 2 to 36
-char* utoa(unsigned int value, char* str, int base) {
-    char* ptr = str;
-    if (base < 2 || base > 36) {
-        *str = '\0';
-        return str;
-    }
-    do {
-        *ptr++ = "0123456789abcdefghijklmnopqrstuvwxyz"[value % (unsigned int)base];
-        value /= (unsigned int)base;
-    } while (value);
-    *ptr = '\0';
-    return strrev(str);
-}
+// next pseudo random number, 0..RAND_MAX
+int rand(void);
+// restart the sequence from seed (the same seed always gives the same sequence)
+void srand(unsigned int seed);
 
-// convert int to string (moved here from drivers/input/IO.h)
-// negative numbers get a '-' in base 10, other bases show the two's complement bits
-char* itoa(int value, char* str, int base)
-{
-    char* rc;
-    char* ptr;
-    char* low;
-    // Check for supported base.
-    if ( base < 2 || base > 36 )
-    {
-        *str = '\0';
-        return str;
-    }
-    if ( value < 0 && base != 10 )
-    {
-        return utoa((unsigned int)value, str, base);
-    }
-    rc = ptr = str;
-    // Set '-' for negative decimals.
-    if ( value < 0 && base == 10 )
-    {
-        *ptr++ = '-';
-    }
-    // Remember where the numbers start.
-    low = ptr;
-    // The actual conversion.
-    do
-    {
-        // Modulo is negative for negative value. This trick makes abs() unnecessary.
-        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz"[35 + value % base];
-        value /= base;
-    } while ( value );
-    // Terminating the string.
-    *ptr-- = '\0';
-    // Invert the numbers.
-    while ( low < ptr )
-    {
-        char tmp = *low;
-        *low++ = *ptr;
-        *ptr-- = tmp;
-    }
-    return rc;
-}
+// sort count elements of size bytes each, compare returns <0, 0 or >0 like strcmp
+// (it's really an insertion sort, which keeps equal elements in their original order)
+void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, const void*));
 
-// shared parser for strtol / strtoul
-unsigned long ren_strtoul_core(const char* nptr, char** endptr, int base, int* negative, int* overflow) {
-    const char* s = nptr;
-    unsigned long acc = 0;
-    int any = 0;
+// kernel heap
 
-    *negative = 0;
-    *overflow = 0;
-
-    while (isspace((unsigned char)*s)) {
-        s++;
-    }
-    if (*s == '-' || *s == '+') {
-        *negative = (*s == '-');
-        s++;
-    }
-    if ((base == 0 || base == 16) && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') && isxdigit((unsigned char)s[2])) {
-        s += 2;
-        base = 16;
-    } else if (base == 0) {
-        base = (s[0] == '0') ? 8 : 10;
-    }
-    if (base < 2 || base > 36) {
-        if (endptr) {
-            *endptr = (char*)nptr;
-        }
-        return 0;
-    }
-
-    unsigned long cutoff = ULONG_MAX / (unsigned long)base;
-    unsigned long cutlim = ULONG_MAX % (unsigned long)base;
-    for (;; s++) {
-        int c = (unsigned char)*s;
-        int digit;
-        if (isdigit(c)) {
-            digit = c - '0';
-        } else if (isalpha(c)) {
-            digit = tolower(c) - 'a' + 10;
-        } else {
-            break;
-        }
-        if (digit >= base) {
-            break;
-        }
-        any = 1;
-        if (acc > cutoff || (acc == cutoff && (unsigned long)digit > cutlim)) {
-            *overflow = 1;
-        } else {
-            acc = acc * (unsigned long)base + (unsigned long)digit;
-        }
-    }
-    if (endptr) {
-        *endptr = (char*)(any ? s : nptr);
-    }
-    return acc;
-}
-
-long strtol(const char* nptr, char** endptr, int base) {
-    int negative, overflow;
-    unsigned long value = ren_strtoul_core(nptr, endptr, base, &negative, &overflow);
-    if (negative) {
-        if (overflow || value > (unsigned long)LONG_MAX + 1UL) {
-            return LONG_MIN;
-        }
-        if (value == (unsigned long)LONG_MAX + 1UL) {
-            return LONG_MIN;
-        }
-        return -(long)value;
-    }
-    if (overflow || value > (unsigned long)LONG_MAX) {
-        return LONG_MAX;
-    }
-    return (long)value;
-}
-
-unsigned long strtoul(const char* nptr, char** endptr, int base) {
-    int negative, overflow;
-    unsigned long value = ren_strtoul_core(nptr, endptr, base, &negative, &overflow);
-    if (overflow) {
-        return ULONG_MAX;
-    }
-    return negative ? (unsigned long)(-(long)value) : value;
-}
-
-int atoi(const char* s) {
-    return (int)strtol(s, NULL, 10);
-}
-
-long atol(const char* s) {
-    return strtol(s, NULL, 10);
-}
-
-/* ---------------- random numbers ---------------- */
-
-unsigned long ren_rand_next = 1;
-
-int rand(void) {
-    ren_rand_next = ren_rand_next * 1103515245UL + 12345UL;
-    return (int)((ren_rand_next / 65536UL) % 32768UL);
-}
-
-void srand(unsigned int seed) {
-    ren_rand_next = seed;
-}
-
-/* ---------------- sorting ---------------- */
-
-// sorts an array (insertion sort: small, stable and fine for the sizes used in the kernel)
-void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, const void*)) {
-    unsigned char* b = (unsigned char*)base;
-    for (size_t i = 1; i < count; i++) {
-        for (size_t j = i; j > 0; j--) {
-            unsigned char* left = b + (j - 1) * size;
-            unsigned char* right = b + j * size;
-            if (compare(left, right) <= 0) {
-                break;
-            }
-            for (size_t k = 0; k < size; k++) {
-                unsigned char tmp = left[k];
-                left[k] = right[k];
-                right[k] = tmp;
-            }
-        }
-    }
-}
-
-/* ---------------- kernel heap ---------------- */
-/*
-    A simple first-fit allocator over a fixed 1MB memory pool.
-    Every allocation is preceded by a small header, neighbouring free blocks are merged on free().
-*/
-
-#define HEAP_SIZE  (1024u * 1024u)
-#define HEAP_ALIGN 16u
-#define HEAP_MAGIC 0xC0FFEE42u
-
-typedef struct heap_block {
-    size_t size;              // usable bytes after this header
-    uint32_t magic;           // HEAP_MAGIC, used to catch bad pointers passed to free()
-    struct heap_block* next;  // next block in memory
-    uint32_t free;            // 1 = free, 0 = in use
-} heap_block_t;
-
-uint8_t heap_area[HEAP_SIZE] __attribute__((aligned(16)));
-heap_block_t* heap_head = NULL;
-
-void heap_init(void) {
-    heap_head = (heap_block_t*)heap_area;
-    heap_head->size = HEAP_SIZE - sizeof(heap_block_t);
-    heap_head->magic = HEAP_MAGIC;
-    heap_head->next = NULL;
-    heap_head->free = 1;
-}
-
-void* malloc(size_t size) {
-    if (size == 0 || size > HEAP_SIZE) {
-        return NULL;
-    }
-    if (heap_head == NULL) {
-        heap_init();
-    }
-    size = (size + HEAP_ALIGN - 1) & ~(size_t)(HEAP_ALIGN - 1);
-
-    for (heap_block_t* block = heap_head; block != NULL; block = block->next) {
-        if (!block->free || block->size < size) {
-            continue;
-        }
-        // split the block if the remainder is big enough to be useful
-        if (block->size >= size + sizeof(heap_block_t) + HEAP_ALIGN) {
-            heap_block_t* rest = (heap_block_t*)((uint8_t*)(block + 1) + size);
-            rest->size = block->size - size - sizeof(heap_block_t);
-            rest->magic = HEAP_MAGIC;
-            rest->next = block->next;
-            rest->free = 1;
-            block->size = size;
-            block->next = rest;
-        }
-        block->free = 0;
-        return (void*)(block + 1);
-    }
-    return NULL; // out of memory
-}
-
-void free(void* ptr) {
-    if (ptr == NULL) {
-        return;
-    }
-    heap_block_t* block = (heap_block_t*)ptr - 1;
-    if (block->magic != HEAP_MAGIC || block->free) {
-        return; // not from malloc, or freed twice
-    }
-    block->free = 1;
-
-    // merge neighbouring free blocks
-    for (heap_block_t* b = heap_head; b != NULL && b->next != NULL;) {
-        if (b->free && b->next->free) {
-            b->size += sizeof(heap_block_t) + b->next->size;
-            b->next = b->next->next;
-        } else {
-            b = b->next;
-        }
-    }
-}
-
-void* calloc(size_t count, size_t size) {
-    if (size != 0 && count > (size_t)-1 / size) {
-        return NULL; // overflow
-    }
-    void* ptr = malloc(count * size);
-    if (ptr) {
-        memset(ptr, 0, count * size);
-    }
-    return ptr;
-}
-
-void* realloc(void* ptr, size_t size) {
-    if (ptr == NULL) {
-        return malloc(size);
-    }
-    if (size == 0) {
-        free(ptr);
-        return NULL;
-    }
-    heap_block_t* block = (heap_block_t*)ptr - 1;
-    if (block->magic != HEAP_MAGIC) {
-        return NULL;
-    }
-    if (block->size >= size) {
-        return ptr;
-    }
-    void* bigger = malloc(size);
-    if (bigger == NULL) {
-        return NULL;
-    }
-    memcpy(bigger, ptr, block->size);
-    free(ptr);
-    return bigger;
-}
-
-char* strdup(const char* s) {
-    size_t len = strlen(s) + 1;
-    char* copy = (char*)malloc(len);
-    if (copy) {
-        memcpy(copy, s, len);
-    }
-    return copy;
-}
-
-char* strndup(const char* s, size_t n) {
-    size_t len = strnlen(s, n);
-    char* copy = (char*)malloc(len + 1);
-    if (copy) {
-        memcpy(copy, s, len);
-        copy[len] = '\0';
-    }
-    return copy;
-}
+// allocate size bytes (16 byte aligned), or NULL if there's no room; the memory is NOT cleared
+void* malloc(size_t size);
+// give memory from malloc / calloc / realloc / strdup back; NULL is fine, bad pointers are ignored
+void free(void* ptr);
+// allocate count * size bytes and zero them, NULL on overflow or no room
+void* calloc(size_t count, size_t size);
+// resize an allocation, may move it (use the returned pointer); on failure the old one is untouched
+void* realloc(void* ptr, size_t size);
+// copy a string onto the heap (free() it when you're done)
+char* strdup(const char* s);
+// copy at most n characters of a string onto the heap, always terminated (free() it when done)
+char* strndup(const char* s, size_t n);
 
 // heap statistics (in bytes)
-size_t heap_total(void) {
-    return HEAP_SIZE;
-}
 
-size_t heap_used(void) {
-    if (heap_head == NULL) {
-        return 0;
-    }
-    size_t used = 0;
-    for (heap_block_t* b = heap_head; b != NULL; b = b->next) {
-        if (!b->free) {
-            used += b->size + sizeof(heap_block_t);
-        }
-    }
-    return used;
-}
+// the size of the whole heap pool
+size_t heap_total(void);
+// how much of it is currently handed out, block headers included
+size_t heap_used(void);
 
 #endif /* REN_STDLIB_H */

@@ -6,18 +6,26 @@ LD = ld
 #   -fno-stack-protector / -fno-pie / -fcf-protection=none : Ubuntu's gcc turns these on by default, they need runtime support we don't have
 #   -mno-sse / -mno-mmx : SSE is not enabled on the CPU, using it would crash
 #   -fno-tree-loop-distribute-patterns : stops gcc turning our own memset/memcpy loops into calls to themselves
+#   -ffunction-sections / --gc-sections : functions nothing calls are left out of the kernel
 CFLAGS = -m32 -march=i686 -std=gnu99 -ffreestanding -fno-builtin -fno-stack-protector \
          -fno-pie -fno-pic -fcf-protection=none -fno-asynchronous-unwind-tables \
          -fno-tree-loop-distribute-patterns -mno-mmx -mno-sse -mno-sse2 \
-         -Os -Wall -Wextra
-LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack
+         -ffunction-sections -fdata-sections -Os -Wall -Wextra -MMD -MP
+LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
-# every header is part of the kernel (it is built as one file), so rebuild when any of them change
-HEADERS = $(wildcard lib/*.h sys/*.h sys/*/*.h drivers/*/*.h drivers/*/*/*.h drivers/*/*/*/*.h)
+# every .c file is compiled on its own into obj/, then linked together
+SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c)
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES))
 
 QEMU = qemu-system-i386
 
-.PHONY: all clean move run run-kernel run-img setup-dev
+# the disk Renovate OS saves files to: a FAT32 image labelled RENOVATE (64MB)
+# it is kept between builds, "make clean-disk" deletes it
+DISK = disk.img
+DISK_SECTORS = 131072
+QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
+
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs disk-ls disk-put setup-dev
 
 all: main.iso
 
@@ -27,33 +35,59 @@ main.iso: main.elf iso/boot/grub/grub.cfg
 	grub-mkrescue -o '$@' iso
 
 # multiboot config
-main.elf: entry.o main.o linker.ld
-	$(LD) $(LDFLAGS) -o '$@' entry.o main.o
+main.elf: $(OBJECTS) linker.ld
+	$(LD) $(LDFLAGS) -o '$@' $(OBJECTS)
 
 # assembly entry point
-entry.o: entry.asm
+obj/entry.o: entry.asm
+	@mkdir -p obj
 	$(AS) -f elf32 '$<' -o '$@'
 
 # kernel
-main.o: kernel.c $(HEADERS)
+obj/%.o: %.c
+	@mkdir -p '$(dir $@)'
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
+
+# header dependencies written by -MMD
+-include $(OBJECTS:.o=.d)
 
 # delete old compiled files
 clean:
-	rm -f *.elf *.o *.iso iso/boot/*.elf
+	rm -rf obj *.elf *.o *.iso iso/boot/*.elf
 
 # copy the file to the host
 move:
 	#sudo rm /home/vboxuser/share/main.iso
 	sudo cp main.iso /home/vboxuser/share/
 
-# boot the ISO through GRUB (terminal output is mirrored to this console via the serial port)
-run: main.iso
-	$(QEMU) -cdrom main.iso -smp 1 -serial stdio
+# create the disk (mtools formats it, no root needed)
+$(DISK):
+	truncate -s $$(( $(DISK_SECTORS) * 512 )) '$@'
+	mformat -i '$@' -T $(DISK_SECTORS) -h 16 -s 63 -F -v RENOVATE ::
 
-# boot the kernel directly, skipping GRUB
-run-kernel: main.elf
-	$(QEMU) -kernel main.elf -serial stdio
+clean-disk:
+	rm -f $(DISK)
+
+# list every file on the disk
+disk-ls: $(DISK)
+	mdir -i $(DISK) -/ ::
+
+# copy a file onto the disk, e.g. "make disk-put FILE=hello.ren" (DIR=/bin to put it in a folder)
+disk-put: $(DISK)
+	mcopy -i $(DISK) -o '$(FILE)' ::$(DIR)/
+
+# boot the ISO through GRUB with the disk attached (terminal output is mirrored to this console via the serial port)
+# -boot d starts from the CD, otherwise the BIOS would try the (non bootable) disk first
+run: main.iso $(DISK)
+	$(QEMU) -cdrom main.iso $(QEMU_DISK) -boot d -smp 1 -serial stdio
+
+# boot the kernel directly with the disk attached, skipping GRUB
+run-kernel: main.elf $(DISK)
+	$(QEMU) -kernel main.elf $(QEMU_DISK) -serial stdio
+
+# boot without a disk (temporary VFS mode)
+run-vfs: main.iso
+	$(QEMU) -cdrom main.iso -smp 1 -serial stdio
 
 # boot the ISO as a hard drive image
 run-img: main.iso

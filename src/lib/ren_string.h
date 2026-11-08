@@ -4,302 +4,113 @@
 
     NOTE: GCC may emit calls to memcpy / memset / memmove / memcmp by itself (for example
     when copying structs), so these must exist with exactly these names and signatures.
+
+    Why does GCC call functions we never wrote a call to?
+    Even in a -ffreestanding build, GCC assumes these four memory functions exist
+    (the GCC manual says so in its "Standards" section). When you write something like
+    "big_struct a = b;" or "char buf[256] = {0};" the compiler is free to turn that into
+    a call to memcpy or memset rather than writing out a long run of mov instructions.
+    So if they were missing, or had a slightly different name or signature, the kernel
+    would fail to link (or worse, misbehave) for reasons that are hard to spot.
+
+    Two compiler flags in the Makefile work together with this file:
+    - -fno-builtin stops GCC from swapping OUR calls to strlen() and friends for its own
+      built in versions, so the code here is always the code that runs.
+    - -fno-tree-loop-distribute-patterns stops GCC noticing that the loop inside our
+      memset "looks like a memset" and replacing it with... a call to memset. That
+      would make memset call itself forever!
+
+    A quick word on "restrict": it is a promise to the compiler that the two pointers
+    never point into the same memory, which lets it optimise more freely. memcpy and
+    the str*cpy / str*cat family take restrict pointers, so overlapping source and
+    destination is not allowed for them. If your regions might overlap, use memmove.
+
+    All the strings here are ordinary C strings: an array of chars ending in a '\0'
+    byte (the "terminator"). Lengths never include that terminator.
+
+    Handy references:
+        https://wiki.osdev.org/C_Library
+        https://en.cppreference.com/w/c/string/byte
 */
 #ifndef REN_STRING_H
 #define REN_STRING_H
 
 #include <stddef.h>
-#include <stdint.h>
-#include "ren_ctype.h"
 
-/* ---------------- memory ---------------- */
+// memory
 
-void* memset(void* dest, int value, size_t count) {
-    unsigned char* d = (unsigned char*)dest;
-    while (count--) {
-        *d++ = (unsigned char)value;
-    }
-    return dest;
-}
+// fill count bytes at dest with the byte value (only the low 8 bits of value are used), returns dest
+void* memset(void* dest, int value, size_t count);
+// copy count bytes from src to dest, returns dest (the regions must NOT overlap)
+void* memcpy(void* restrict dest, const void* restrict src, size_t count);
+// copy count bytes from src to dest, returns dest
+void* memmove(void* dest, const void* src, size_t count); // safe when the regions overlap
+// compare count bytes: 0 if equal, otherwise <0 or >0 depending on the first byte that differs
+int memcmp(const void* a, const void* b, size_t count);
+// find the first byte equal to c in the first count bytes of s, or NULL if it isn't there
+void* memchr(const void* s, int c, size_t count);
 
-void* memcpy(void* restrict dest, const void* restrict src, size_t count) {
-    unsigned char* d = (unsigned char*)dest;
-    const unsigned char* s = (const unsigned char*)src;
-    while (count--) {
-        *d++ = *s++;
-    }
-    return dest;
-}
+// length
 
-// like memcpy, but safe when the two regions overlap
-void* memmove(void* dest, const void* src, size_t count) {
-    unsigned char* d = (unsigned char*)dest;
-    const unsigned char* s = (const unsigned char*)src;
-    if (d == s || count == 0) {
-        return dest;
-    }
-    if (d < s) {
-        while (count--) {
-            *d++ = *s++;
-        }
-    } else {
-        d += count;
-        s += count;
-        while (count--) {
-            *--d = *--s;
-        }
-    }
-    return dest;
-}
+// number of characters before the '\0' terminator
+size_t strlen(const char* s);
+// like strlen but never looks at more than max characters (safe on unterminated buffers)
+size_t strnlen(const char* s, size_t max);
 
-int memcmp(const void* a, const void* b, size_t count) {
-    const unsigned char* x = (const unsigned char*)a;
-    const unsigned char* y = (const unsigned char*)b;
-    for (; count; --count, ++x, ++y) {
-        if (*x != *y) {
-            return (int)*x - (int)*y;
-        }
-    }
-    return 0;
-}
+// comparison
+// all of these return 0 when the strings match, <0 when a sorts first, >0 when b sorts first
 
-void* memchr(const void* s, int c, size_t count) {
-    const unsigned char* p = (const unsigned char*)s;
-    for (; count; --count, ++p) {
-        if (*p == (unsigned char)c) {
-            return (void*)p;
-        }
-    }
-    return NULL;
-}
+// compare two strings
+int strcmp(const char* a, const char* b);
+// compare at most the first n characters
+int strncmp(const char* a, const char* b, size_t n);
+// compare ignoring upper / lower case, so "Hello" matches "hELLO"
+int strcasecmp(const char* a, const char* b);
+// compare at most n characters ignoring case
+int strncasecmp(const char* a, const char* b, size_t n);
 
-/* ---------------- length ---------------- */
+// copying
+// dest must already have enough room, these don't allocate anything
 
-size_t strlen(const char* s) {
-    size_t len = 0;
-    while (s[len] != '\0') {
-        len++;
-    }
-    return len;
-}
+// copy src (including its '\0') into dest, returns dest (no size check at all!)
+char* strcpy(char* restrict dest, const char* restrict src);
+// copy exactly n characters, padding with '\0', but leaves dest UNterminated if src is too long
+char* strncpy(char* restrict dest, const char* restrict src, size_t n);
+// copy into a buffer of size bytes, always terminated, returns strlen(src) (>= size means it was cut short)
+size_t strlcpy(char* restrict dest, const char* restrict src, size_t size);
+// append src to the end of dest, returns dest (no size check at all!)
+char* strcat(char* restrict dest, const char* restrict src);
+// append at most n characters of src and then a '\0', returns dest
+char* strncat(char* restrict dest, const char* restrict src, size_t n);
+// append into a buffer of size bytes, always terminated, returns the length it tried to make
+size_t strlcat(char* restrict dest, const char* restrict src, size_t size);
 
-size_t strnlen(const char* s, size_t max) {
-    size_t len = 0;
-    while (len < max && s[len] != '\0') {
-        len++;
-    }
-    return len;
-}
+// searching
 
-/* ---------------- comparison ---------------- */
+// first occurrence of the character c in s (c may be '\0' to find the end), or NULL
+char* strchr(const char* s, int c);
+// last occurrence of the character c in s, or NULL
+char* strrchr(const char* s, int c);
+// first place needle appears inside haystack, or NULL (an empty needle matches straight away)
+char* strstr(const char* haystack, const char* needle);
+// how many characters at the start of s are all in the set accept
+size_t strspn(const char* s, const char* accept);
+// how many characters at the start of s are all NOT in the set reject
+size_t strcspn(const char* s, const char* reject);
+// first character in s that is in the set accept, or NULL
+char* strpbrk(const char* s, const char* accept);
+// split a string into tokens, keeping its place in *saveptr (safe to use from several places at once)
+char* strtok_r(char* str, const char* delim, char** saveptr);
+// split a string into tokens, keeping its place in a hidden static (only one job at a time)
+char* strtok(char* str, const char* delim);
 
-int strcmp(const char* a, const char* b) {
-    while (*a && *a == *b) {
-        a++;
-        b++;
-    }
-    return (int)(unsigned char)*a - (int)(unsigned char)*b;
-}
+// non-standard extras, all work in place
 
-int strncmp(const char* a, const char* b, size_t n) {
-    for (; n; --n, ++a, ++b) {
-        if (*a != *b || *a == '\0') {
-            return (int)(unsigned char)*a - (int)(unsigned char)*b;
-        }
-    }
-    return 0;
-}
-
-// case-insensitive compare (POSIX)
-int strcasecmp(const char* a, const char* b) {
-    while (*a && tolower((unsigned char)*a) == tolower((unsigned char)*b)) {
-        a++;
-        b++;
-    }
-    return tolower((unsigned char)*a) - tolower((unsigned char)*b);
-}
-
-int strncasecmp(const char* a, const char* b, size_t n) {
-    for (; n; --n, ++a, ++b) {
-        int x = tolower((unsigned char)*a);
-        int y = tolower((unsigned char)*b);
-        if (x != y || x == '\0') {
-            return x - y;
-        }
-    }
-    return 0;
-}
-
-/* ---------------- copying ---------------- */
-
-char* strcpy(char* restrict dest, const char* restrict src) {
-    char* d = dest;
-    while ((*d++ = *src++) != '\0') {
-    }
-    return dest;
-}
-
-// copies at most n characters, pads with '\0' (and does NOT terminate if src is too long, like the standard)
-char* strncpy(char* restrict dest, const char* restrict src, size_t n) {
-    size_t i = 0;
-    for (; i < n && src[i] != '\0'; i++) {
-        dest[i] = src[i];
-    }
-    for (; i < n; i++) {
-        dest[i] = '\0';
-    }
-    return dest;
-}
-
-// safe copy (BSD): always terminates, returns strlen(src) so truncation can be detected
-size_t strlcpy(char* restrict dest, const char* restrict src, size_t size) {
-    size_t src_len = strlen(src);
-    if (size > 0) {
-        size_t n = (src_len >= size) ? size - 1 : src_len;
-        memcpy(dest, src, n);
-        dest[n] = '\0';
-    }
-    return src_len;
-}
-
-char* strcat(char* restrict dest, const char* restrict src) {
-    strcpy(dest + strlen(dest), src);
-    return dest;
-}
-
-char* strncat(char* restrict dest, const char* restrict src, size_t n) {
-    char* d = dest + strlen(dest);
-    while (n-- && *src) {
-        *d++ = *src++;
-    }
-    *d = '\0';
-    return dest;
-}
-
-// safe append (BSD): always terminates, returns the length it tried to create
-size_t strlcat(char* restrict dest, const char* restrict src, size_t size) {
-    size_t dest_len = strnlen(dest, size);
-    if (dest_len == size) {
-        return size + strlen(src);
-    }
-    return dest_len + strlcpy(dest + dest_len, src, size - dest_len);
-}
-
-/* ---------------- searching ---------------- */
-
-char* strchr(const char* s, int c) {
-    for (;; s++) {
-        if (*s == (char)c) {
-            return (char*)s;
-        }
-        if (*s == '\0') {
-            return NULL;
-        }
-    }
-}
-
-char* strrchr(const char* s, int c) {
-    const char* last = NULL;
-    for (;; s++) {
-        if (*s == (char)c) {
-            last = s;
-        }
-        if (*s == '\0') {
-            return (char*)last;
-        }
-    }
-}
-
-char* strstr(const char* haystack, const char* needle) {
-    size_t needle_len = strlen(needle);
-    if (needle_len == 0) {
-        return (char*)haystack;
-    }
-    for (; *haystack; haystack++) {
-        if (*haystack == *needle && strncmp(haystack, needle, needle_len) == 0) {
-            return (char*)haystack;
-        }
-    }
-    return NULL;
-}
-
-// length of the prefix of s made only of characters in accept
-size_t strspn(const char* s, const char* accept) {
-    size_t n = 0;
-    while (s[n] && strchr(accept, s[n])) {
-        n++;
-    }
-    return n;
-}
-
-// length of the prefix of s made only of characters NOT in reject
-size_t strcspn(const char* s, const char* reject) {
-    size_t n = 0;
-    while (s[n] && !strchr(reject, s[n])) {
-        n++;
-    }
-    return n;
-}
-
-char* strpbrk(const char* s, const char* accept) {
-    s += strcspn(s, accept);
-    return *s ? (char*)s : NULL;
-}
-
-// re-entrant tokenizer: splits str on any character in delim (modifies str)
-char* strtok_r(char* str, const char* delim, char** saveptr) {
-    if (str == NULL) {
-        str = *saveptr;
-    }
-    if (str == NULL) {
-        return NULL;
-    }
-    str += strspn(str, delim);
-    if (*str == '\0') {
-        *saveptr = NULL;
-        return NULL;
-    }
-    char* end = str + strcspn(str, delim);
-    if (*end != '\0') {
-        *end = '\0';
-        *saveptr = end + 1;
-    } else {
-        *saveptr = NULL;
-    }
-    return str;
-}
-
-char* strtok(char* str, const char* delim) {
-    static char* saved = NULL;
-    return strtok_r(str, delim, &saved);
-}
-
-/* ---------------- non-standard extras ---------------- */
-
-// reverse a string in place
-char* strrev(char* s) {
-    size_t len = strlen(s);
-    for (size_t i = 0; i + 1 < len - i; i++) {
-        char tmp = s[i];
-        s[i] = s[len - 1 - i];
-        s[len - 1 - i] = tmp;
-    }
-    return s;
-}
-
-// convert a string to upper / lower case in place
-char* strupr(char* s) {
-    for (char* p = s; *p; p++) {
-        *p = (char)toupper((unsigned char)*p);
-    }
-    return s;
-}
-
-char* strlwr(char* s) {
-    for (char* p = s; *p; p++) {
-        *p = (char)tolower((unsigned char)*p);
-    }
-    return s;
-}
+// reverse the characters of s, returns s
+char* strrev(char* s);
+// make every letter in s upper case, returns s
+char* strupr(char* s);
+// make every letter in s lower case, returns s
+char* strlwr(char* s);
 
 #endif /* REN_STRING_H */

@@ -1,86 +1,38 @@
+/*
+    boot.h
+    Everything the boot sequence knows about itself and the machine it is running on:
+    - which boot option was picked (normal / fast / demo) from the boot options menu
+    - what GRUB told us about the machine through the multiboot information structure
+    - init_boot(), the boot log the user sees before the terminal starts
+
+    The order things happen in (see kernel.c):
+        boot_parse_multiboot() -> splash screen -> boot options menu (optional) -> init_boot() -> terminal
+*/
+
 #ifndef BOOT_H
 #define BOOT_H
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "../drivers/video/VGA_linear.h"
-#include "../drivers/audio/tone.h"
-#include "../drivers/input/IO.h"
-#include "../lib/primary_definitions.h"
-#include "interrupts.h"
-#include "f_sys.h"
-#include "sys_clck.h"
-
-#define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
-#define MULTIBOOT_INFO_MEMORY      0x00000001
-#define BOOT_LOG_DELAY             2000 // how long the boot log stays on screen (ms)
 
 // boot options, chosen from the boot options menu (press X on the splash screen)
-#define BOOT_OPT_NORMAL 0
+#define BOOT_OPT_NORMAL 0 // look for a RENOVATE disk (VFS if there isn't one) and show the boot log for a moment
 #define BOOT_OPT_FAST   1 // skip the boot log delay
+#define BOOT_OPT_DEMO   2 // VFS mode, the disks are never touched
 
-int boot_option = BOOT_OPT_NORMAL;
-bool boot_options_requested = false;
+extern int boot_option; // one of the BOOT_OPT_ values, BOOT_OPT_NORMAL unless the menu changed it
+extern bool boot_options_requested; // set by the splash screen when X is pressed, kernel.c then opens the menu
 
-// the start of the information structure GRUB hands to the kernel
-typedef struct multiboot_info {
-    uint32_t flags;
-    uint32_t mem_lower; // KB of memory below 1MB
-    uint32_t mem_upper; // KB of memory above 1MB
-} multiboot_info_t;
+// what the bootloader told us about the machine
+extern bool boot_multiboot_valid; // true if a multiboot bootloader (GRUB) started us and gave us its info
+extern uint32_t sys_mem_lower_kb; // KB of memory below 1MB
+extern uint32_t sys_mem_upper_kb; // KB of memory above 1MB
 
-bool boot_multiboot_valid = false;
-uint32_t sys_mem_lower_kb = 0;
-uint32_t sys_mem_upper_kb = 0;
+// read the multiboot information GRUB left for us (magic and info_addr come from eax / ebx in entry.asm)
+// fills in the globals above, does nothing if the magic number is wrong (not started by multiboot)
+void boot_parse_multiboot (uint32_t magic, uint32_t info_addr);
 
-// read what the bootloader told us about the machine
-void boot_parse_multiboot(uint32_t magic, uint32_t info_addr) {
-    if (magic != MULTIBOOT_BOOTLOADER_MAGIC || info_addr == 0) {
-        return;
-    }
-    const multiboot_info_t* info = (const multiboot_info_t*)(uintptr_t)info_addr;
-    boot_multiboot_valid = true;
-    if (info->flags & MULTIBOOT_INFO_MEMORY) {
-        sys_mem_lower_kb = info->mem_lower;
-        sys_mem_upper_kb = info->mem_upper;
-    }
-}
-
-int init_boot () {
-
-    // clear screen
-    console_set_color(BLACK, BRIGHT);
-    console_clear();
-
-    printf("[E:b1f1] Renovate OS boot sequence started\n\n");
-
-    printf("%s Descriptor tables & interrupts (GDT / IDT / PIC)\n", interrupts_ready ? "[ OK ]" : "[FAIL]");
-    printf("%s System timer at %u Hz\n", clck_ready ? "[ OK ]" : "[FAIL]", (unsigned int)PIT_HZ);
-    printf("%s PS/2 keyboard\n", keyboard_ready ? "[ OK ]" : "[FAIL]");
-    if (boot_multiboot_valid) {
-        printf("[ OK ] Memory: %u KB lower, %u KB upper\n", sys_mem_lower_kb, sys_mem_upper_kb);
-    } else {
-        printf("[WARN] No memory information from the bootloader\n");
-    }
-    printf("[ OK ] Kernel heap: %u KB\n", (unsigned int)(heap_total() / 1024));
-
-    char now[FS_DATETIME_MAX];
-    printf("[ OK ] Real time clock: %s\n\n", rtc_datetime(now, sizeof(now)));
-
-    // initialise the temproary file system
-    fs_init("n");
-
-    // beep once
-    //beep(0);
-
-    printf("\n[VFS:UP]\n");
-
-    // wait
-    if (boot_option != BOOT_OPT_FAST) {
-        clck_hang(BOOT_LOG_DELAY);
-    }
-
-    return 0;
-}
+// print the boot log, start the file system and (unless fast boot) pause so it can be read. Returns 0
+int init_boot (void);
 
 #endif /* BOOT_H */
