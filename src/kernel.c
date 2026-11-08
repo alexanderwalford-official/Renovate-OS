@@ -6,19 +6,15 @@
 */
 
 #include <stdint.h>
-#include "lib/primary_definitions.h"
-#include "drivers/video/VGA_linear.h"
-#include "drivers/serial/serial.h"
+#include "drivers/input/GIO.h"
 #include "drivers/input/IO.h"
-#include "drivers/audio/tone.h"
+#include "drivers/serial/serial.h"
+#include "drivers/video/VGA_linear.h"
 #include "sys/interrupts.h"
 #include "sys/sys_clck.h"
 #include "sys/p_man.h"
-#include "sys/f_sys.h"
 #include "sys/boot.h"
 #include "sys/recovery.h"
-#include "sys/terminal/t_int.h"
-#include "lib/ren_comp.h"
 
 // called from entry.asm with the multiboot information address and magic number GRUB left in ebx / eax
 int main(uint32_t mb_info_addr, uint32_t mb_magic) {

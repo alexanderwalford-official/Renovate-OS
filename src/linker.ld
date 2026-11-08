@@ -4,7 +4,7 @@ SECTIONS
   . = 0x00100000;
   /* the multiboot header must be within the first 8KB of the kernel */
   .mbheader : {
-    *(.mbheader)
+    KEEP(*(.mbheader))
   }
   /* GCC also emits .text.startup, .rodata.str1.1 etc., so match every sub-section */
   .text : {

@@ -5,3 +5,4 @@
 *.elf
 src/main.iso
 src/disk.img
+src/obj/

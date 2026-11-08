@@ -6,14 +6,16 @@ LD = ld
 #   -fno-stack-protector / -fno-pie / -fcf-protection=none : Ubuntu's gcc turns these on by default, they need runtime support we don't have
 #   -mno-sse / -mno-mmx : SSE is not enabled on the CPU, using it would crash
 #   -fno-tree-loop-distribute-patterns : stops gcc turning our own memset/memcpy loops into calls to themselves
+#   -ffunction-sections / --gc-sections : functions nothing calls are left out of the kernel
 CFLAGS = -m32 -march=i686 -std=gnu99 -ffreestanding -fno-builtin -fno-stack-protector \
          -fno-pie -fno-pic -fcf-protection=none -fno-asynchronous-unwind-tables \
          -fno-tree-loop-distribute-patterns -mno-mmx -mno-sse -mno-sse2 \
-         -Os -Wall -Wextra
-LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack
+         -ffunction-sections -fdata-sections -Os -Wall -Wextra -MMD -MP
+LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
-# every header is part of the kernel (it is built as one file), so rebuild when any of them change
-HEADERS = $(wildcard lib/*.h sys/*.h sys/*/*.h drivers/*/*.h drivers/*/*/*.h drivers/*/*/*/*.h)
+# every .c file is compiled on its own into obj/, then linked together
+SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c)
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES))
 
 QEMU = qemu-system-i386
 
@@ -33,20 +35,25 @@ main.iso: main.elf iso/boot/grub/grub.cfg
 	grub-mkrescue -o '$@' iso
 
 # multiboot config
-main.elf: entry.o main.o linker.ld
-	$(LD) $(LDFLAGS) -o '$@' entry.o main.o
+main.elf: $(OBJECTS) linker.ld
+	$(LD) $(LDFLAGS) -o '$@' $(OBJECTS)
 
 # assembly entry point
-entry.o: entry.asm
+obj/entry.o: entry.asm
+	@mkdir -p obj
 	$(AS) -f elf32 '$<' -o '$@'
 
 # kernel
-main.o: kernel.c $(HEADERS)
+obj/%.o: %.c
+	@mkdir -p '$(dir $@)'
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
+
+# header dependencies written by -MMD
+-include $(OBJECTS:.o=.d)
 
 # delete old compiled files
 clean:
-	rm -f *.elf *.o *.iso iso/boot/*.elf
+	rm -rf obj *.elf *.o *.iso iso/boot/*.elf
 
 # copy the file to the host
 move:
