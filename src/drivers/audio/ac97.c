@@ -50,7 +50,8 @@
 #define STATUS_CLEAR_ALL   0x1E // the flags that are cleared by writing 1 to them
 
 #define DESCRIPTORS        32   // the card's list always has 32 entries
-#define CHUNK_FRAMES       4096 // stereo frames per descriptor, about 85ms at 48000 Hz
+#define CHUNK_FRAMES       4096 // stereo frames per descriptor in ac97_play, about 85ms at 48000 Hz
+#define DESCRIPTOR_MAX_FRAMES (AC97_START_MAX / DESCRIPTORS) // a descriptor holds at most 0xFFFE samples
 #define STALL_MS           2000 // no progress for this long means the card has stopped responding
 
 // one buffer descriptor, the layout is fixed by the hardware
@@ -70,6 +71,7 @@ static pci_device_t card;
 static descriptor_t list[DESCRIPTORS] __attribute__((aligned(8)));
 
 bool ac97_init (void) {
+    if (ac97_ready) return true; // already set up (resetting now would cut off a sound that's playing)
     if (!pci_find_class(PCI_CLASS_MULTIMEDIA, PCI_SUBCLASS_AUDIO, &card)) return false;
     nam = pci_io_bar(&card, 0);
     nabm = pci_io_bar(&card, 1);
@@ -127,6 +129,31 @@ static void fill (int slot, const int16_t* frames, uint32_t count, uint32_t chun
     list[slot].address = (uint32_t)(uintptr_t)(frames + first * 2);
     list[slot].samples = (uint16_t)(length * 2);
     list[slot].flags = FLAG_SILENCE_IF_EMPTY;
+}
+
+// start playing and return straight away, the card carries on by itself
+// every descriptor gets as much as it can hold, so the whole list covers AC97_START_MAX frames
+uint32_t ac97_start (const int16_t* frames, uint32_t count) {
+    if (!ac97_ready || count == 0) return 0;
+    reset_channel();
+    uint32_t queued = 0, slots = 0;
+    while (queued < count && slots < DESCRIPTORS) {
+        uint32_t length = count - queued < DESCRIPTOR_MAX_FRAMES ? count - queued : DESCRIPTOR_MAX_FRAMES;
+        list[slots].address = (uint32_t)(uintptr_t)(frames + queued * 2);
+        list[slots].samples = (uint16_t)(length * 2);
+        list[slots].flags = FLAG_SILENCE_IF_EMPTY;
+        queued += length;
+        slots++;
+    }
+    outl(nabm + NABM_PO_BDBAR, (uint32_t)(uintptr_t)list);
+    outb(nabm + NABM_PO_LVI, (uint8_t)(slots - 1));
+    outw(nabm + NABM_PO_STATUS, STATUS_CLEAR_ALL);
+    outb(nabm + NABM_PO_CONTROL, CONTROL_RUN);
+    return queued;
+}
+
+void ac97_stop (void) {
+    if (ac97_ready) reset_channel();
 }
 
 bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)) {

@@ -18,6 +18,7 @@
 #include "../lib/mp3.h"
 #include "../drivers/audio/ac97.h"
 #include "f_sys.h"
+#include "apps.h"
 
 // decoded sound: count stereo frames of 16 bit samples at rate Hz
 typedef struct {
@@ -122,15 +123,8 @@ static int resample (pcm_t* pcm, uint32_t rate) {
     return SOUND_OK;
 }
 
-static int load (const char* path, pcm_t* pcm) {
-    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
-    uint32_t size = 0;
-    if (!fs_split_path(path, dir, sizeof(dir), name, sizeof(name)) || !fs_file_exists(dir, name)) {
-        return SOUND_ERR_NOT_FOUND;
-    }
-    uint8_t* data = (uint8_t*)fs_read_bytes(dir, name, &size);
-    if (data == 0) return SOUND_ERR_NO_MEMORY;
-
+// a WAV or MP3 file's contents -> 16 bit stereo at a rate the card plays (it is told the rate too)
+static int decode (const uint8_t* data, uint32_t size, pcm_t* pcm) {
     int result = SOUND_ERR_FORMAT;
     if (wav_detect(data, size)) {
         result = wav_decode(data, size, pcm);
@@ -138,23 +132,65 @@ static int load (const char* path, pcm_t* pcm) {
         pcm->frames = mp3_decode(data, size, &pcm->count, &pcm->rate);
         result = pcm->frames ? SOUND_OK : SOUND_ERR_FORMAT;
     }
-    free(data);
+    if (result == SOUND_OK) {
+        uint32_t rate = ac97_set_rate(pcm->rate);
+        if (rate != pcm->rate) result = resample(pcm, rate);
+    }
     return result;
+}
+
+// the sound playing in the background (the startup sound), kept until it is stopped
+static int16_t* background = 0;
+
+static void stop_background (void) {
+    ac97_stop();
+    free(background);
+    background = 0;
 }
 
 int sound_play_file (const char* path, bool (*should_stop)(void)) {
     if (!ac97_ready) return SOUND_ERR_NO_CARD;
-    pcm_t pcm = { 0, 0, 0 };
-    int result = load(path, &pcm);
-    if (result == SOUND_OK) {
-        uint32_t rate = ac97_set_rate(pcm.rate);
-        if (rate != pcm.rate) result = resample(&pcm, rate);
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    if (!fs_split_path(path, dir, sizeof(dir), name, sizeof(name)) || !fs_file_exists(dir, name)) {
+        return SOUND_ERR_NOT_FOUND;
     }
+    uint32_t size = 0;
+    uint8_t* data = (uint8_t*)fs_read_bytes(dir, name, &size);
+    if (data == 0) return SOUND_ERR_NO_MEMORY;
+
+    stop_background(); // one sound at a time
+    pcm_t pcm = { 0, 0, 0 };
+    int result = decode(data, size, &pcm);
+    free(data);
     if (result == SOUND_OK && !ac97_play(pcm.frames, pcm.count, should_stop)) {
         result = SOUND_ERR_CARD;
     }
     free(pcm.frames);
     return result;
+}
+
+void sound_startup (void) {
+    if (!ac97_init()) return;
+    // the file system isn't set up yet (the boot options can still choose demo mode), so the
+    // disk is read directly. No disk, or no file on it yet (the first boot), uses the built-in copy
+    char status[64];
+    uint32_t size = 0;
+    uint8_t* file = 0;
+    if (fat_mount_auto(status, sizeof(status))) {
+        file = (uint8_t*)fat_read_file("/sys/", "startup.wav", &size);
+    }
+    const uint8_t* data = file ? file : apps_builtin("startup.wav", &size);
+
+    // an empty (or any other unplayable) file just means no sound
+    pcm_t pcm = { 0, 0, 0 };
+    if (data && decode(data, size, &pcm) == SOUND_OK) {
+        stop_background();
+        background = pcm.frames;
+        ac97_start(pcm.frames, pcm.count);
+    } else {
+        free(pcm.frames);
+    }
+    free(file);
 }
 
 const char* sound_strerror (int error) {

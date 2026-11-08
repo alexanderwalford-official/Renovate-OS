@@ -23,6 +23,11 @@
 // play a file from start to finish (or until should_stop, which may be NULL, returns true)
 int sound_play_file (const char* path, bool (*should_stop)(void));
 
+// start the startup sound and return straight away (it plays on while the OS carries on booting)
+// it is /sys/startup.wav, which can be replaced with any WAV or MP3 (or an empty file for silence).
+// The built-in copy plays when there is no disk, and is put back if the file is deleted
+void sound_startup (void);
+
 const char* sound_strerror (int error);
 
 #endif /* SOUND_H */

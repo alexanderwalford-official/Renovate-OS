@@ -34,6 +34,17 @@ const char* ac97_name (void);
 // (cards without variable rate support always play at 48000 Hz)
 uint32_t ac97_set_rate (uint32_t hz);
 
+// the most ac97_start can queue: 32 descriptors of 32767 stereo frames, about 21 seconds at 48000 Hz
+#define AC97_START_MAX (32u * 32767u)
+
+// start playing count stereo frames in the background and return straight away
+// the frames must stay in memory until the sound ends or ac97_stop() is called, anything past
+// AC97_START_MAX is left out. Returns how many frames were queued
+uint32_t ac97_start (const int16_t* frames, uint32_t count);
+
+// stop whatever is playing
+void ac97_stop (void);
+
 // play count stereo frames (left, right, left, right... 16 bit signed) and wait until they finish
 // should_stop is checked while playing, returning true stops the sound early (it may be NULL)
 // returns false if the card stopped responding

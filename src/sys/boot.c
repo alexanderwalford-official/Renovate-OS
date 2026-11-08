@@ -213,7 +213,7 @@ int init_boot (void) {
     // the apps that come with AerOS, copied into /bin/ unless they are already there
     int installed = apps_install();
     if (installed > 0) {
-        printf("< APPS .. > %d app file(s) added to /bin/\n", installed);
+        printf("< APPS .. > %d built-in file(s) added to /bin/ and /sys/\n", installed);
     }
 
     // beep once

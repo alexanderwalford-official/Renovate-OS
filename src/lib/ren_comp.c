@@ -28,6 +28,7 @@
 #include "../sys/boot.h"
 #include "../sys/recovery.h"
 #include "../sys/splash.h"
+#include "../sys/sound.h"
 #include "../sys/f_sys.h"
 #include "../lang/renlang.h"
 #include "../sys/p_man.h"
@@ -50,6 +51,8 @@ int comp_handler (char* arg) {
 int splash_screen (void) {
     // the orange AerOS boot screen (sys/splash.c)
     splash_draw();
+    // the startup chime plays in the background, so X still works straight away
+    sound_startup();
 
     // wait up to 4 seconds, pressing X opens the boot options
     // throw away anything typed before the logo appeared, so only a key pressed now counts
