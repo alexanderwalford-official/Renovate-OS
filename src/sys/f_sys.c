@@ -9,7 +9,7 @@
        them, so neither the FAT driver nor the memory tables ever have to deal with "." or "..".
 
     2. Picking a backend. fs_init() runs once at boot and sets fs_mode:
-       - "n" (normal boot): look for a FAT disk labelled RENOVATE. Found one? DISK mode, every
+       - "n" (normal boot): look for a FAT disk labelled AEROS. Found one? DISK mode, every
          call is passed on to sys/fat.c. Otherwise VFS mode.
        - "d" (demo boot): straight to VFS mode, the disks are never even read.
        After that every public fs_ function is a tiny wrapper: resolve the path, then
@@ -29,7 +29,7 @@
 
 // dynamic vars
 int fs_mode = FS_MODE_MEMORY;  // VFS until fs_init() finds a disk
-char fs_disk_status[96] = "";  // filled in by fat_mount_auto(), e.g. "no RENOVATE disk found"
+char fs_disk_status[96] = "";  // filled in by fat_mount_auto(), e.g. "no AEROS disk found"
 int f_c = 0;                   // how many files[] slots are in use (VFS mode)
 int d_c = 0;                   // how many directories[] slots are in use (VFS mode, includes "/")
 char cd[FS_PATH_MAX] = "/";    // the current directory, always absolute and ending in '/'
@@ -478,7 +478,7 @@ static void fs_init_base (void) {
 int fs_init (const char* arg) {
     bool demo = StrCompare(arg, "d");
     if (StrCompare(arg, "n") || demo) {
-        // look for a RENOVATE disk and use it if there is one (demo mode never touches the disks)
+        // look for a AEROS disk and use it if there is one (demo mode never touches the disks)
         // (&& stops early, so in demo mode fat_mount_auto() is never even called)
         if (!demo && fat_mount_auto(fs_disk_status, sizeof(fs_disk_status))) {
             fs_mode = FS_MODE_DISK;
@@ -489,7 +489,7 @@ int fs_init (const char* arg) {
             if (demo) {
                 printf("[INFO] Demo mode: disks are not loaded, files will not be saved\n");
             } else {
-                // fs_disk_status says why, e.g. "no RENOVATE disk found" or "primary master is not labelled RENOVATE"
+                // fs_disk_status says why, e.g. "no AEROS disk found" or "primary master is not labelled AEROS"
                 printf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
             }
             printf("< INIT TMP FS .. >\n");

@@ -19,7 +19,7 @@ OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES))
 
 QEMU = qemu-system-i386
 
-# the disk Renovate OS saves files to: a FAT32 image labelled RENOVATE (64MB)
+# the disk AerOS saves files to: a FAT32 image labelled AEROS (64MB)
 # it is kept between builds, "make clean-disk" deletes it
 DISK = disk.img
 DISK_SECTORS = 131072
@@ -63,7 +63,7 @@ move:
 # create the disk (mtools formats it, no root needed)
 $(DISK):
 	truncate -s $$(( $(DISK_SECTORS) * 512 )) '$@'
-	mformat -i '$@' -T $(DISK_SECTORS) -h 16 -s 63 -F -v RENOVATE ::
+	mformat -i '$@' -T $(DISK_SECTORS) -h 16 -s 63 -F -v AEROS ::
 
 clean-disk:
 	rm -f $(DISK)

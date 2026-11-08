@@ -32,7 +32,7 @@
 #define VGA_CRTC_INDEX 0x3D4
 #define VGA_CRTC_DATA  0x3D5
 
-// the text buffer itself, Renovate OS has no paging so the physical address works as a pointer
+// the text buffer itself, AerOS has no paging so the physical address works as a pointer
 volatile uint16_t* const video = (volatile uint16_t*)0xB8000;
 volatile unsigned int vga_clear_count = 0;
 
@@ -279,10 +279,88 @@ void console_backspace(void) {
 // In the mode control register bit 3 (0x08) is "blink enable". With it clear, bit 7 of each cell's
 // colour byte stops meaning "blink" and becomes the bright bit of the background colour.
 void vga_init(void) {
+    // the copyright sign, a circle with a C in it
+    static const uint8_t copyright[16] = {
+        0x00, 0x00, 0x3C, 0x42, 0x99, 0xA5, 0xA1, 0xA1,
+        0xA5, 0x99, 0x42, 0x3C, 0x00, 0x00, 0x00, 0x00
+    };
+
     inb(0x3DA);                // reset the attribute controller flip-flop
     outb(0x3C0, 0x30);         // select the mode control register (bit 5 keeps the screen on)
     uint8_t mode = inb(0x3C1);
     outb(0x3C0, mode & ~0x08); // clear the blink bit
+    vga_set_glyph((uint8_t)VGA_COPYRIGHT[0], copyright);
     console_set_color(BRIGHT, BLACK);
     console_clear();
+}
+
+// which of the DAC's 256 colours a text colour (0-15) uses
+// the attribute controller holds that mapping in its palette registers 0x00 - 0x0F. In a standard
+// text mode most map straight across, but brown is 0x14 and the bright colours are 0x38 - 0x3F
+// https://wiki.osdev.org/VGA_Hardware#Port_0x3C0
+static uint8_t vga_dac_index(enum color color) {
+    inb(0x3DA);                              // flip-flop back to "index"
+    outb(0x3C0, 0x20 | (color & 0x0F));      // palette register, with bit 5 set to keep the screen on
+    uint8_t index = inb(0x3C1);
+    inb(0x3DA);                              // reading 0x3C1 left the flip-flop on "data", reset it
+    return index;
+}
+
+// the DAC takes a register number on 0x3C8 (write) or 0x3C7 (read), then red, green and blue
+// one after another through 0x3C9, each 6 bits (0 - 63)
+// https://wiki.osdev.org/VGA_Hardware#Port_0x3C8
+void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b) {
+    outb(0x3C8, vga_dac_index(color));
+    outb(0x3C9, r >> 2);
+    outb(0x3C9, g >> 2);
+    outb(0x3C9, b >> 2);
+}
+
+void vga_get_palette(enum color color, uint8_t* r, uint8_t* g, uint8_t* b) {
+    outb(0x3C7, vga_dac_index(color));
+    *r = (uint8_t)(inb(0x3C9) << 2);
+    *g = (uint8_t)(inb(0x3C9) << 2);
+    *b = (uint8_t)(inb(0x3C9) << 2);
+}
+
+// read / write one register of the sequencer (0x3C4) or graphics controller (0x3CE):
+// the index goes to the port, the value to the port after it
+static uint8_t vga_read_reg(uint16_t port, uint8_t index) {
+    outb(port, index);
+    return inb(port + 1);
+}
+
+static void vga_write_reg(uint16_t port, uint8_t index, uint8_t value) {
+    outb(port, index);
+    outb(port + 1, value);
+}
+
+// In text mode the font sits in plane 2 of the VGA's memory, where the CPU normally can't see it
+// (0xB8000 only shows planes 0 and 1: the characters and their colours). To reach it we briefly
+// point the card's memory window at plane 2 alone, write the glyph, then put everything back.
+// Each character has a 32 byte slot in the font, of which the 16 rows of an 8x16 font are used.
+// https://wiki.osdev.org/VGA_Fonts
+void vga_set_glyph(uint8_t character, const uint8_t* glyph) {
+    uint8_t map_mask = vga_read_reg(0x3C4, 0x02);
+    uint8_t memory_mode = vga_read_reg(0x3C4, 0x04);
+    uint8_t read_map = vga_read_reg(0x3CE, 0x04);
+    uint8_t gfx_mode = vga_read_reg(0x3CE, 0x05);
+    uint8_t misc = vga_read_reg(0x3CE, 0x06);
+
+    vga_write_reg(0x3C4, 0x02, 0x04); // CPU writes go to plane 2 only
+    vga_write_reg(0x3C4, 0x04, 0x06); // plain sequential addressing (odd / even off)
+    vga_write_reg(0x3CE, 0x04, 0x02); // CPU reads come from plane 2
+    vga_write_reg(0x3CE, 0x05, 0x00); // odd / even off
+    vga_write_reg(0x3CE, 0x06, 0x04); // memory window at 0xA0000, 64KB
+
+    volatile uint8_t* slot = (volatile uint8_t*)0xA0000 + character * 32;
+    for (int row = 0; row < 16; row++) {
+        slot[row] = glyph[row];
+    }
+
+    vga_write_reg(0x3C4, 0x02, map_mask);
+    vga_write_reg(0x3C4, 0x04, memory_mode);
+    vga_write_reg(0x3CE, 0x04, read_map);
+    vga_write_reg(0x3CE, 0x05, gfx_mode);
+    vga_write_reg(0x3CE, 0x06, misc);
 }

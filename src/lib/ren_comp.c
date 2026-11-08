@@ -27,6 +27,7 @@
 #include "../sys/sys_clck.h"
 #include "../sys/boot.h"
 #include "../sys/recovery.h"
+#include "../sys/splash.h"
 #include "../sys/p_man.h"
 #include "../sys/terminal/t_int.h"
 
@@ -45,13 +46,8 @@ int comp_handler (char* arg) {
 // gotcha: running it again from the terminal ("run splash_screen") still sets the flag, but nothing
 // looks at it after boot, so pressing X then does nothing
 int splash_screen (void) {
-    clear(BRIGHT);
-    puts(27, 7, BLACK, BRIGHT, "______________________");
-    puts(33, 9, BLACK, BRIGHT, "Renovate OS");
-    puts(28, 10, BLACK, BRIGHT, "Alexander Walford 2026");
-    puts(27, 11, BLACK, BRIGHT, "______________________");
-    puts(33, 13, BLACK, BRIGHT, "V 0.1 ALPHA");
-    puts(27, 18, BLACK, BRIGHT, "< X FOR BOOT OPTIONS >");
+    // the orange AerOS boot screen (sys/splash.c)
+    splash_draw();
 
     // wait up to 4 seconds, pressing X opens the boot options
     // throw away anything typed before the logo appeared, so only a key pressed now counts
@@ -74,6 +70,8 @@ int splash_screen (void) {
     }
 
     // with no keyboard nothing ever arrives, so we simply wait the full 4 seconds and carry on
+    // then blank the screen and give the palette its normal colours back
+    splash_close();
     return 0;
 }
 

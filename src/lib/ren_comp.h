@@ -1,10 +1,10 @@
 #ifndef REN_COMP_H
 #define REN_COMP_H
 
-// RenLang for Renovate OS compiler
+// RenLang for AerOS compiler
 
 /*
-    RenLang is the tiny language every Renovate OS process is written in. Each process holds
+    RenLang is the tiny language every AerOS process is written in. Each process holds
     one line of it, and compile() "compiles" that line by matching it against the instructions
     it knows and calling the matching kernel function straight away (so it is really closer to
     an interpreter than a compiler). See compile() in ren_comp.c for the full instruction list,

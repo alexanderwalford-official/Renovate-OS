@@ -2,7 +2,7 @@
     interrupts.c
     GDT, IDT, PIC and the interrupt entry stubs, see interrupts.h.
 
-    This file is where Renovate OS takes control of the CPU's interrupt machinery. In order:
+    This file is where AerOS takes control of the CPU's interrupt machinery. In order:
 
       1. gdt_init()   builds a 3 entry GDT (null, kernel code, kernel data) using the flat 4GB
                       model and reloads every segment register so the CPU actually uses it.

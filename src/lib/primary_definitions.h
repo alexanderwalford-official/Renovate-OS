@@ -1,7 +1,7 @@
 /*
     primary_definitions.h
     The core helper library. Including this gives you the freestanding C library
-    replacements (ren_ctype / ren_string / ren_stdlib / ren_stdio) plus the Renovate
+    replacements (ren_ctype / ren_string / ren_stdlib / ren_stdio) plus the AerOS
     specific helpers below.
 
     Think of this as the kernel's "include everything" header. Most modules (the terminal,
@@ -9,7 +9,7 @@
     - the fixed size integer types (uint8_t, uint32_t...), bool / true / false, size_t / NULL
     - the whole of our little C library: strings, memory, number conversion, malloc, printf
     - the VGA console functions, so anything can draw on the screen
-    - the Renovate string helpers below, which predate the C library and give the kernel a
+    - the AerOS string helpers below, which predate the C library and give the kernel a
       slightly friendlier, Python flavoured way of handling strings (contains, split, remove...)
 
     Why lib/ has its own C library at all is explained at the top of ren_ctype.h and

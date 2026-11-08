@@ -32,7 +32,7 @@
         to vectors 8-15, which collides with the CPU exceptions (IRQ0, the timer, would look exactly
         like a double fault!), so we move them out of the way to 32-47.
 
-    How an interrupt travels through Renovate OS:
+    How an interrupt travels through AerOS:
       device raises its IRQ line -> PIC -> CPU looks up the IDT gate -> tiny assembly stub for
       that vector (interrupts.c) -> isr_common_stub saves every register as a "struct regs" ->
       isr_dispatch() in C -> either the exception panic screen, or the driver's irq_handler_t

@@ -1,6 +1,6 @@
 ; ============================================================================================
 ; entry.asm
-; The very first Renovate OS code that runs: the multiboot header and the jump into C.
+; The very first AerOS code that runs: the multiboot header and the jump into C.
 ;
 ; Multiboot is a standard contract between a bootloader (GRUB) and a kernel. GRUB looks for a
 ; small "multiboot header" in the first 8KB of the kernel file, checks it, loads the kernel's

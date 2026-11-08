@@ -78,7 +78,7 @@
 
     Keeping the disk safe
     ---------------------
-    - We only mount a volume labelled RENOVATE (see fat_mount()).
+    - We only mount a volume labelled AEROS (see fat_mount()).
     - Changes are made in an order where a crash halfway can at worst leave "lost clusters"
       (marked used but owned by nobody, chkdsk / fsck tidy those up), never an entry pointing
       at garbage. E.g. new file data is written before its directory entry, and old data is
@@ -1146,7 +1146,7 @@ static bool fat_root_label (char* out) {
 }
 
 // try to mount the FAT volume on a drive
-// returns FS_OK, FS_ERR_NOT_FOUND (no FAT volume), FS_ERR_BAD_NAME (not labelled RENOVATE) or FS_ERR_IO
+// returns FS_OK, FS_ERR_NOT_FOUND (no FAT volume), FS_ERR_BAD_NAME (not labelled AEROS) or FS_ERR_IO
 // bus / slave = which IDE drive. Reads the boot sector, works out the layout into fat_vol and only
 // sets fat_vol.mounted once the label check has passed. See the BPB table at the top of this file
 static int fat_mount (int bus, int slave) {
@@ -1235,7 +1235,7 @@ static int fat_mount (int bus, int slave) {
 }
 
 // try the four IDE drive positions in order (primary master, primary slave, secondary master,
-// secondary slave) and keep the first RENOVATE volume. Only ATA hard disks are tried, CD drives
+// secondary slave) and keep the first AEROS volume. Only ATA hard disks are tried, CD drives
 // (ATAPI, where the boot ISO usually is) are skipped.
 // status gets a line for the boot log either way: what was mounted, or why nothing was
 bool fat_mount_auto (char* status, size_t size) {
@@ -1255,7 +1255,7 @@ bool fat_mount_auto (char* status, size_t size) {
                          bus_names[bus], slave ? "slave" : "master", fat_vol.total_sectors / 2048);
                 return true;
             }
-            // remember the first FAT volume that wasn't labelled RENOVATE, so we can tell the user
+            // remember the first FAT volume that wasn't labelled AEROS, so we can tell the user
             if (result == FS_ERR_BAD_NAME && !unlabelled) {
                 unlabelled = true;
                 snprintf(unlabelled_where, sizeof(unlabelled_where), "%s %s", bus_names[bus], slave ? "slave" : "master");

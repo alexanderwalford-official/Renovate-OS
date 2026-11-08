@@ -1,5 +1,5 @@
 /*
-    Renovate OS
+    AerOS
     Developed by Alexander Walford for Renovate Software LTD 2023
 
     X86 32 bit protected mode, loaded by GRUB (multiboot)

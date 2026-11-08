@@ -4,9 +4,9 @@
 #include <stdbool.h>
 
 /*
-    p_man.h - the Renovate OS process manager
+    p_man.h - the AerOS process manager
 
-    A "process" in Renovate OS is not a separate program with its own memory and registers
+    A "process" in AerOS is not a separate program with its own memory and registers
     like on Linux or Windows. It is a line of RenLang code (e.g. "splash_screen", "terminal",
     "s:hello") sitting in a slot on the process stack, waiting to be handed to the compiler
     (lib/ren_comp.c), which runs it. Everything is single threaded and cooperative: a process

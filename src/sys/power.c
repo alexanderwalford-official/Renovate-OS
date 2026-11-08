@@ -15,7 +15,7 @@
                 (or emulator) reset it.
 
       shutdown  real hardware needs ACPI: finding the FADT and the \_S5 sleep values in the AML
-                bytecode of the DSDT table, which Renovate OS does not do yet. Emulators however
+                bytecode of the DSDT table, which AerOS does not do yet. Emulators however
                 answer at fixed I/O ports, so we just try those.
 
     https://wiki.osdev.org/Reboot

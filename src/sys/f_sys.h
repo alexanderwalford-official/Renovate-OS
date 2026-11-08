@@ -1,7 +1,7 @@
 /*
     f_sys.h
     The file system the rest of the OS uses. It runs in one of two modes:
-    - DISK mode: a FAT disk labelled RENOVATE was found, every file is saved to it (sys/fat.c).
+    - DISK mode: a FAT disk labelled AEROS was found, every file is saved to it (sys/fat.c).
     - VFS mode: no disk, files live in a temporary (in memory) file system and are lost on restart.
     (There is also DEMO mode, picked from the boot menu: it is just VFS mode where we never even
     look at the disks, see fs_init("d"). Handy when booting on someone else's computer.)

@@ -81,7 +81,7 @@ int init_boot (void) {
     console_set_color(BLACK, BRIGHT);
     console_clear();
 
-    printf("[E:b1f1] Renovate OS boot sequence started\n\n");
+    printf("[E:b1f1] AerOS boot sequence started\n\n");
 
     // each driver sets its *_ready flag at the end of its init function in kernel.c, so a [FAIL]
     // here means that step never ran (handy if someone reorders or removes a line in main())
@@ -101,7 +101,7 @@ int init_boot (void) {
     printf("[ OK ] Real time clock: %s\n\n", rtc_datetime(now, sizeof(now)));
 
     // initialise the file system (the disk, or the temporary one if there is no disk)
-    // "n" = normal: mount a FAT disk labelled RENOVATE if there is one, otherwise use the VFS
+    // "n" = normal: mount a FAT disk labelled AEROS if there is one, otherwise use the VFS
     // "d" = demo: go straight to the VFS without probing the disks at all
     fs_init(boot_option == BOOT_OPT_DEMO ? "d" : "n");
 

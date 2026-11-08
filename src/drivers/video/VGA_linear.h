@@ -84,6 +84,19 @@ void vga_disable_cursor(void);
 // move the hardware cursor to column x, row y (it does not check that the position is on screen)
 void vga_move_cursor(uint8_t x, uint8_t y);
 
+// palette: each of the 16 colours above is really an index into the VGA's 256 entry colour table
+// (the DAC), so any of them can be turned into a different colour. r / g / b are 0 - 255, the
+// hardware keeps the top 6 bits of each. Changes show up instantly on everything already on screen.
+void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b);
+void vga_get_palette(enum color color, uint8_t* r, uint8_t* g, uint8_t* b);
+
+// replace the picture of one character in the VGA font with our own 8x16 bitmap
+// (glyph = 16 rows, top first, bit 7 = leftmost pixel). Every cell showing that character changes.
+void vga_set_glyph(uint8_t character, const uint8_t* glyph);
+
+// the font has no copyright sign, so vga_init draws one into this unused character (0x01, a smiley)
+#define VGA_COPYRIGHT "\x01"
+
 // positional drawing, for full screen layouts (splash, error screens)
 
 // draw a single character at a COLUMN, ROW (anything off screen is ignored)

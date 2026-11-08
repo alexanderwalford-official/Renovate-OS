@@ -16,7 +16,7 @@
 #include <stdbool.h>
 
 // boot options, chosen from the boot options menu (press X on the splash screen)
-#define BOOT_OPT_NORMAL 0 // look for a RENOVATE disk (VFS if there isn't one) and show the boot log for a moment
+#define BOOT_OPT_NORMAL 0 // look for a AEROS disk (VFS if there isn't one) and show the boot log for a moment
 #define BOOT_OPT_FAST   1 // skip the boot log delay
 #define BOOT_OPT_DEMO   2 // VFS mode, the disks are never touched
 
