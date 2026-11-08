@@ -58,7 +58,7 @@ int init_boot (void) {
     printf("[ OK ] Real time clock: %s\n\n", rtc_datetime(now, sizeof(now)));
 
     // initialise the file system (the disk, or the temporary one if there is no disk)
-    fs_init("n");
+    fs_init(boot_option == BOOT_OPT_DEMO ? "d" : "n");
 
     // beep once
     //beep(0);

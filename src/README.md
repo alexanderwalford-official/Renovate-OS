@@ -20,6 +20,7 @@
 - File names created on the OS must be 8.3 (e.g. `notes.txt`). Long names copied from Windows / Linux can be read.
 - Copy a file onto the disk: `make disk-put FILE=hello.ren` (add `DIR=/bin` for a folder), list it: `make disk-ls`.
 - Start again with an empty disk: `make clean-disk`.
+- To try the OS without touching any disk, press X on the splash screen and pick `[3] Demo mode`.
 
 ## Layout
 - `entry.asm` - multiboot header and entry point, calls `main()` in `kernel.c`.

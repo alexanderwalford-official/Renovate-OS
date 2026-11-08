@@ -54,6 +54,9 @@ int cli_rend_main (void) {
     if (fs_mode == FS_MODE_DISK) {
         console_set_color(LIGHT_GREEN, BLACK);
         printf("[ * ] You are in DISK mode, your files are saved to the %s disk.\n", fat_vol.label);
+    } else if (boot_option == BOOT_OPT_DEMO) {
+        console_set_color(YELLOW, BLACK);
+        printf("[ ! ] You are in DEMO mode, no disks are loaded and files will not be written.\n");
     } else {
         console_set_color(RED, BLACK);
         printf("[ ! ] You are in VFS mode, your files will not be written.\n");

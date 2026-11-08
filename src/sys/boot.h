@@ -7,6 +7,7 @@
 // boot options, chosen from the boot options menu (press X on the splash screen)
 #define BOOT_OPT_NORMAL 0
 #define BOOT_OPT_FAST   1 // skip the boot log delay
+#define BOOT_OPT_DEMO   2 // VFS mode, the disks are never touched
 
 extern int boot_option;
 extern bool boot_options_requested;

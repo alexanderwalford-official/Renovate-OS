@@ -378,15 +378,20 @@ static void fs_init_base (void) {
 
 // fs init: "n" = find a disk (or use the temporary file system) and create the base files, "p" = print the current directory
 int fs_init (const char* arg) {
-    if (StrCompare(arg, "n")) {
-        // look for a RENOVATE disk and use it if there is one
-        if (fat_mount_auto(fs_disk_status, sizeof(fs_disk_status))) {
+    bool demo = StrCompare(arg, "d");
+    if (StrCompare(arg, "n") || demo) {
+        // look for a RENOVATE disk and use it if there is one (demo mode never touches the disks)
+        if (!demo && fat_mount_auto(fs_disk_status, sizeof(fs_disk_status))) {
             fs_mode = FS_MODE_DISK;
             printf("[ OK ] Disk: %s\n", fs_disk_status);
             printf("< INIT DISK FS .. >\n");
         } else {
             fs_mode = FS_MODE_MEMORY;
-            printf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
+            if (demo) {
+                printf("[INFO] Demo mode: disks are not loaded, files will not be saved\n");
+            } else {
+                printf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
+            }
             printf("< INIT TMP FS .. >\n");
         }
         fs_init_base();
