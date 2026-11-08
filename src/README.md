@@ -31,6 +31,8 @@
 - Keyboard: PS/2 or a laptop's built-in keyboard. USB keyboards only work where the firmware emulates PS/2 ("USB legacy support").
 - Saving to disk needs an IDE / SATA-in-IDE-mode drive. On other machines AerOS runs in VFS mode.
 - If the firmware has switched the old PIT timer off, AerOS notices and uses busy waits instead.
+- Screen resolution: `RES 1280x720`. In QEMU, Bochs and VirtualBox it changes straight away. On any PC
+  with an AEROS disk it is also saved (as `/grubenv`) and GRUB starts AerOS at that size from then on.
 
 ## Layout
 - `entry.asm` - multiboot header and entry point, calls `main()` in `kernel.c`.
