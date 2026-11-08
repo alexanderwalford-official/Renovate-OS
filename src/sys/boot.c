@@ -30,6 +30,7 @@
 #include "sys_clck.h"
 #include "f_sys.h"
 #include "apps.h"
+#include "../lib/crypto.h"
 
 // the value a multiboot bootloader leaves in eax (not the same as the 0x1BADB002 in our header)
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -193,7 +194,9 @@ int init_boot (void) {
 
     // rtc_datetime() fills in now and returns it, so it can go straight into printf
     char now[FS_DATETIME_MAX];
-    printf("[ OK ] Real time clock: %s\n\n", rtc_datetime(now, sizeof(now)));
+    printf("[ OK ] Real time clock: %s\n", rtc_datetime(now, sizeof(now)));
+    // check SHA-256, HMAC, PBKDF2 and AES against published test vectors before trusting them with passwords
+    printf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
 
     // initialise the file system (the disk, or the temporary one if there is no disk)
     // "n" = normal: mount a FAT disk labelled AEROS if there is one, otherwise use the VFS

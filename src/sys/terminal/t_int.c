@@ -43,6 +43,8 @@
 #include "../../lang/renlang.h"
 #include "editor.h"
 #include "../../drivers/video/bga.h"
+#include "../../lib/crypto.h"
+#include "../accounts/auth.h"
 
 // the longest line the user can type, including the terminating '\0'
 #define CLI_INPUT_MAX 128
@@ -67,19 +69,28 @@ int flash_pointer (int times, int lc) {
     return 0;
 }
 
-// start the terminal, ent = 0 bypasses the login (accounts are not implemented yet)
+// false once LOGOUT is typed, which sends the terminal back to the login screen
+static bool cli_logged_in = false;
+
+// start the terminal, ent = 1 asks who is using it first (ent = 0 skips the login, as "guest")
 // this is the terminal loop. It only ends if cli_active goes false, which nothing does yet: the user
-// leaves the terminal with REBOOT or SHUTDOWN, and those never return
+// leaves the terminal with REBOOT or SHUTDOWN, and those never return. LOGOUT ends the inner loop,
+// and the outer one shows the login screen again
 int cli_init (int ent) {
-    (void)ent; // TODO: login using sys/accounts/auth.h once accounts exist
     cli_active = true;
-    cli_rend_main();
     while (cli_active) {
-        cli_prompt();
-        // waits for Enter, the line comes back without the newline (and is added to the up / down history)
-        // gotcha: with no keyboard it returns an empty line straight away, so the prompt just repeats
-        GetString(cli_input, sizeof(cli_input));
-        HandleInput(cli_input);
+        if (ent) {
+            auth_login(); // returns once someone has logged in (straight away as guest without a disk)
+        }
+        cli_logged_in = true;
+        cli_rend_main();
+        while (cli_active && cli_logged_in) {
+            cli_prompt();
+            // waits for Enter, the line comes back without the newline (and is added to the up / down history)
+            // gotcha: with no keyboard it returns an empty line straight away, so the prompt just repeats
+            GetString(cli_input, sizeof(cli_input));
+            HandleInput(cli_input);
+        }
     }
     return 0;
 }
@@ -118,11 +129,13 @@ int cli_rend_main (void) {
     return 0;
 }
 
-// the prompt, a fixed "0/" followed by the current directory (cd always starts and ends with '/')
-// e.g. "0//: " at the root, "0//sys/: " in /sys
+// the prompt, the user's name, a fixed "@0/" and the current directory (cd always starts and ends with '/')
+// e.g. "alex@0//: " at the root, "alex@0//sys/: " in /sys
 void cli_prompt (void) {
+    console_set_color(LIGHT_GREEN, BLACK);
+    printf("%s", auth_user);
     console_set_color(BRIGHT, BLACK);
-    printf("0/%s: ", cd);
+    printf("@0/%s: ", cd);
 }
 
 // every command takes the rest of the line (trimmed, "" when there is none)
@@ -518,6 +531,135 @@ static bool cli_run_program (const char* command, const char* args) {
     return true;
 }
 
+// accounts (see sys/accounts/auth.h)
+
+#define CLI_PASSWORD_MAX 64
+
+// the account commands only make sense with a disk to keep the accounts on
+static bool cli_accounts_available (void) {
+    if (!auth_required()) {
+        printf("Accounts need an AEROS disk, without one everyone is guest.\n");
+        return false;
+    }
+    return true;
+}
+
+// ask for a password without showing it
+static void cli_ask_secret (const char* question, char* out, int size) {
+    printf("%s", question);
+    GetSecret(out, size);
+}
+
+// ask for a new password twice, false (with a message) if it was empty or the two didn't match
+static bool cli_ask_new_password (char* out, int size) {
+    char again[CLI_PASSWORD_MAX];
+    cli_ask_secret("New password: ", out, size);
+    cli_ask_secret("Again:        ", again, sizeof(again));
+    bool ok = out[0] != '\0' && strcmp(out, again) == 0;
+    if (!ok) {
+        printf("The passwords %s, nothing was changed.\n", out[0] ? "don't match" : "can't be empty");
+    }
+    crypto_wipe(again, sizeof(again));
+    return ok;
+}
+
+// ask for the logged in user's own password before doing something drastic
+static bool cli_confirm_password (void) {
+    char password[CLI_PASSWORD_MAX];
+    cli_ask_secret("Your password: ", password, sizeof(password));
+    bool ok = auth_check(auth_user, password);
+    crypto_wipe(password, sizeof(password));
+    if (!ok) {
+        printf("Wrong password.\n");
+    }
+    return ok;
+}
+
+// WHOAMI: print who is logged in
+static void cli_whoami (char* args) {
+    (void)args;
+    printf("%s\n", auth_user);
+}
+
+static void cli_print_user (const char* name, void* ctx) {
+    (void)ctx;
+    printf("%s%s\n", name, StrCompare(name, auth_user) ? "  (you)" : "");
+}
+
+// USERS: list every account
+static void cli_users (char* args) {
+    (void)args;
+    if (cli_accounts_available()) {
+        auth_list(cli_print_user, 0);
+    }
+}
+
+// ADDUSER <NAME>: make a new account
+static void cli_add_user (char* args) {
+    if (!cli_accounts_available()) return;
+    strlwr(args);
+    if (*args == '\0') {
+        printf("Usage: ADDUSER <NAME>\n");
+        return;
+    }
+    if (auth_exists(args)) {
+        printf("%s already exists.\n", args);
+        return;
+    }
+    char password[CLI_PASSWORD_MAX];
+    if (cli_ask_new_password(password, sizeof(password))) {
+        int result = auth_add(args, password);
+        if (result == AUTH_OK) {
+            printf("Made the account %s.\n", args);
+        } else {
+            printf("Couldn't make the account: %s\n", auth_strerror(result));
+        }
+    }
+    crypto_wipe(password, sizeof(password));
+}
+
+// DELUSER <NAME>: delete someone else's account (your own password is asked for first)
+static void cli_delete_user (char* args) {
+    if (!cli_accounts_available()) return;
+    strlwr(args);
+    if (*args == '\0') {
+        printf("Usage: DELUSER <NAME>\n");
+        return;
+    }
+    if (StrCompare(args, auth_user)) {
+        printf("You can't delete the account you are logged in as.\n");
+        return;
+    }
+    if (!auth_exists(args)) {
+        printf("There is no user called %s.\n", args);
+        return;
+    }
+    if (!cli_confirm_password()) return;
+    int result = auth_delete(args);
+    printf(result == AUTH_OK ? "Deleted %s.\n" : "Couldn't delete %s.\n", args);
+}
+
+// PASSWD: change your own password
+static void cli_password (char* args) {
+    (void)args;
+    if (!cli_accounts_available() || !cli_confirm_password()) return;
+    char password[CLI_PASSWORD_MAX];
+    if (cli_ask_new_password(password, sizeof(password))) {
+        int result = auth_set_password(auth_user, password);
+        printf(result == AUTH_OK ? "Password changed.\n" : "Couldn't save the new password.\n");
+    }
+    crypto_wipe(password, sizeof(password));
+}
+
+// LOGOUT: back to the login screen
+static void cli_logout (char* args) {
+    (void)args;
+    if (!cli_accounts_available()) return;
+    ClearInputHistory(); // the next person shouldn't be able to scroll back through these commands
+    strlcpy(cd, "/", sizeof(cd)); // the next user starts at the root
+    cli_logged_in = false;
+}
+
 // the commands, in the order HELP lists them (names are not case sensitive)
 // name = what the user types (lowercase here, matched with strcasecmp so LA, la and La all work)
 // run  = the handler, given the trimmed rest of the line
@@ -549,6 +691,12 @@ static const struct cli_command {
     { "res",      cli_resolution,     "RES [WxH]       - SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)" },
     { "edit",     cli_edit,          "EDIT <FILE>     - EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .REN, CTRL+Q QUIT)" },
     { "ren",      cli_ren,            "REN             - THE RENLANG PROMPT, TYPE CODE TO RUN IT" },
+    { "whoami",   cli_whoami,         "WHOAMI          - PRINT WHO IS LOGGED IN" },
+    { "users",    cli_users,          "USERS           - LIST THE USER ACCOUNTS" },
+    { "adduser",  cli_add_user,       "ADDUSER <NAME>  - MAKE A NEW USER ACCOUNT" },
+    { "deluser",  cli_delete_user,    "DELUSER <NAME>  - DELETE A USER ACCOUNT" },
+    { "passwd",   cli_password,       "PASSWD          - CHANGE YOUR PASSWORD" },
+    { "logout",   cli_logout,         "LOGOUT          - LOG OUT, BACK TO THE LOGIN SCREEN" },
     { "",         0,                  "<APP> [ARGS]    - RUN A RENLANG PROGRAM, e.g. HELLO (/bin/hello.ren)" },
 };
 

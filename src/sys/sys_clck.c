@@ -29,6 +29,7 @@
 #include "interrupts.h"
 #include "../drivers/input/GIO.h"
 #include "../lib/primary_definitions.h"
+#include "../lib/crypto.h"
 
 // CMOS index port and data port. Bit 7 of the byte written to 0x70 also switches off NMIs (non
 // maskable interrupts), every register number we write is below 0x80 so NMIs stay enabled
@@ -50,6 +51,8 @@ static void timer_handler(struct regs* r) {
     // the saved registers are not needed, this just silences the unused parameter warning
     (void)r;
     ticks++;
+    // the exact cycle each tick lands on jitters a little, which helps the random generator
+    crypto_add_entropy(ticks);
 }
 
 // program PIT channel 0 for PIT_HZ interrupts a second and hook IRQ0, see sys_clck.h

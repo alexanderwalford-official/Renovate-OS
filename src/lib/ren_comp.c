@@ -158,8 +158,8 @@ int compile (const char* code) {
         if (cli_active) {
             printf("The terminal is already running.\n");
         } else {
-            // 0 = skip the login, there are no user accounts yet
-            cli_init(0);
+            // 1 = log in first (only asked for in DISK mode, see sys/accounts/auth.h)
+            cli_init(1);
         }
     }
     else if (StrCompare(code, "iso_launch_options")) {

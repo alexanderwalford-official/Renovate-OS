@@ -42,6 +42,7 @@
 #include "../../lib/ren_string.h"
 #include "../../lib/ren_stdio.h"
 #include "../../sys/interrupts.h"
+#include "../../lib/crypto.h"
 
 // 8042 PS/2 controller ports (0x64 is the status register on read and the command register on write)
 #define KBC_DATA    0x60
@@ -235,7 +236,32 @@ bool kb_take_break(void) {
 // is, the controller holds on to the byte and won't send us the next one.
 static void keyboard_handler(struct regs* r) {
     (void)r;
-    kb_process_scancode(inb(KBC_DATA));
+    uint8_t scancode = inb(KBC_DATA);
+    crypto_add_entropy(scancode); // key press timing feeds the random number generator
+    kb_process_scancode(scancode);
+}
+
+// like GetString, but shows '*' for every character and keeps no history (for passwords)
+char* GetSecret (char* in, int size) {
+    int len = 0;
+    for (;;) {
+        int key = GetChar();
+        if (key == 0 || key == '\n' || key == '\r') {
+            break;
+        }
+        if (key == '\b') {
+            if (len > 0) {
+                len--;
+                console_backspace();
+            }
+        } else if (isprint(key) && len < size - 1) {
+            in[len++] = (char)key;
+            console_putchar('*');
+        }
+    }
+    in[len] = '\0';
+    console_putchar('\n');
+    return in;
 }
 
 // true if at least one key is waiting (the buffer is empty when head and tail meet)
@@ -298,6 +324,13 @@ static void input_history_add(const char* line) {
     if (input_history_count < INPUT_HISTORY_SIZE) {
         input_history_count++;
     }
+}
+
+// forget every remembered line, so the next user to log in can't scroll back through them
+void ClearInputHistory(void) {
+    memset(input_history, 0, sizeof(input_history));
+    input_history_count = 0;
+    input_history_next = 0;
 }
 
 // the line editor: read keys until enter, echoing them and keeping in up to date as we go
