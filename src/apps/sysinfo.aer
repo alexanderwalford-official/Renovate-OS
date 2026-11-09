@@ -27,12 +27,16 @@ let TOP = 0             # the line at the top of the screen
 let VERSION = ""
 
 func min(a, b)
-    if a < b then return a end
+    if a < b then
+        return a
+    end
     return b
 end
 
 func max(a, b)
-    if a > b then return a end
+    if a > b then
+        return a
+    end
     return b
 end
 
@@ -45,7 +49,9 @@ func repeat(s, n)
 end
 
 func pad(s, n)
-    if len(s) >= n then return s end
+    if len(s) >= n then
+        return s
+    end
     return s + sub(SPACES, 0, n - len(s))
 end
 
@@ -55,12 +61,20 @@ end
 
 # "1 MB used of 250 MB (37%)" -> 37, -1 if the value doesn't end in a percentage
 func percent_of(value)
-    if not ends_with(value, "%)") then return -1 end
+    if not ends_with(value, "%)") then
+        return -1
+    end
     let i = len(value) - 1
-    while i >= 0 and value[i] != "(" do i = i - 1 end
-    if i < 0 then return -1 end
+    while i >= 0 and value[i] != "(" do
+        i = i - 1
+    end
+    if i < 0 then
+        return -1
+    end
     let n = int(sub(value, i + 1, len(value) - i - 3))
-    if n == nil then return -1 end
+    if n == nil then
+        return -1
+    end
     return max(0, min(n, 100))
 end
 
@@ -105,19 +119,27 @@ func gather()
     for row in system_info() do
         if row[0] != group then
             group = row[0]
-            if len(LINES) > 0 then push(LINES, []) end
+            if len(LINES) > 0 then
+                push(LINES, [])
+            end
             push(LINES, [[group, C_HEADING]])
             push(LINES, [[repeat(chr(196), len(group)), C_HEADING]])
         end
-        if group == "AerOS" and row[1] == "Version" then VERSION = row[2] end
+        if group == "AerOS" and row[1] == "Version" then
+            VERSION = row[2]
+        end
         let pieces = wrap_value(row[2])
         for k = 0 to len(pieces) - 1 do
             let name = ""
-            if k == 0 then name = row[1] end
+            if k == 0 then
+                name = row[1]
+            end
             push(LINES, [["   " + pad(name, NAME_WIDTH) + "  ", C_NAME], [pieces[k], C_VALUE]])
         end
         let percent = percent_of(row[2])
-        if percent >= 0 then push(LINES, bar_line(percent)) end
+        if percent >= 0 then
+            push(LINES, bar_line(percent))
+        end
     end
     TOP = max(0, min(TOP, len(LINES) - ROWS))
 end
@@ -141,7 +163,9 @@ func draw()
             end
         end
         color(C_VALUE, BLACK)
-        if used < 80 then write(sub(SPACES, 0, 80 - used)) end
+        if used < 80 then
+            write(sub(SPACES, 0, 80 - used))
+        end
     end
     # the help bar is 79 characters, writing the very last cell would scroll the screen
     at(0, ROWS + 1)

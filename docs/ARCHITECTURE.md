@@ -207,16 +207,17 @@ add one, also add it to the table in `src/sys/apps.c` and link to it from `index
 loop forever:
     auth_login()          (DISK mode only)
     draw the banner
-    until LOGOUT:
-        prompt "alex@0//: "  ->  read a line  ->  look the first word up in cli_commands[]
+    until OUT (log out):
+        prompt "alex@0//: "  ->  read a line  ->  look the first word up in commands[]
                                                   or run it as /bin/<word>.aer
 ```
 
-`HELP` lists every command from the same table, so a new command only needs one table line.
-Tab completion uses it too. The line is read with `GetLine()` (in `drivers/input/IO.c`),
-which hands Tab to `cli_complete()`. That completes the first word from the command table and
-the `.aer` programs in `/bin/` and the current folder, and later words from the file system.
-A new command is completed as soon as it is in the table.
+Everything about a command's name comes from that one table: `HLP` (help) lists it, Tab
+completion offers it, and its "Usage:" message is built from it. So a new command only needs
+one table line, and renaming a command means changing one word. The line is read with
+`GetLine()` (in `drivers/input/IO.c`), which hands Tab to `cli_complete()`. That completes
+the first word from the command table and the `.aer` programs in `/bin/` and the current
+folder, and later words from the file system.
 
 ## AerLang
 
@@ -259,17 +260,21 @@ In `src/sys/terminal/t_int.c`:
 
 ```c
 // VER: print the version
-static void cli_version (char* args) {
-    (void)args;
-    printf("AerOS 0.01 ALPHA\n");
+static void cli_version (char* arguments) {
+    (void)arguments; // VER takes no arguments
+    printf("AerOS " AEROS_VERSION "\n");
 }
 ```
 
-and one line in `cli_commands[]` (the help text is what `HELP` prints, at most 79 characters):
+and one line in `commands[]`: the name you type, what goes after it (for help and the "Usage:"
+message, "" if nothing), the description help shows, and the function:
 
 ```c
-    { "ver",      cli_version,        "VER             - PRINT THE AEROS VERSION" },
+    { "ver",      "",           "PRINT THE AEROS VERSION",                                    cli_version },
 ```
+
+A command that needs something after it can call `show_usage(NULL)` when it is missing, which
+prints e.g. `Usage: VER` built from the table.
 
 ### Add an AerLang function
 

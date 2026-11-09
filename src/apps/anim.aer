@@ -17,7 +17,9 @@ let MESSAGE = "AerOS draws all of this with three AerLang functions."
 let SPACES = "                                                                                "
 
 func pad(s, n)
-    if len(s) >= n then return s end
+    if len(s) >= n then
+        return s
+    end
     return s + sub(SPACES, 0, n - len(s))
 end
 
@@ -30,7 +32,9 @@ end
 # goes 0, 1, 2 ... span - 1 and back down again, one step every ms milliseconds
 func bounce(t, span, ms)
     let p = t / ms % (2 * span - 2)
-    if p < span then return p end
+    if p < span then
+        return p
+    end
     return 2 * span - 2 - p
 end
 

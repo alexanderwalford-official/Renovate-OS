@@ -96,8 +96,12 @@ static void boot_add_memory (const multiboot_info_t* info) {
         // only the part above the kernel and below 4GB (no paging, so nothing higher can be reached)
         uint64_t start = e->base;
         uint64_t stop = e->base + e->length;
-        if (start < (uintptr_t)end) start = (uintptr_t)end;
-        if (stop > 0x100000000ULL) stop = 0x100000000ULL;
+        if (start < (uintptr_t)end) {
+            start = (uintptr_t)end;
+        }
+        if (stop > 0x100000000ULL) {
+            stop = 0x100000000ULL;
+        }
         if (stop > start && stop - start > best_end - best_start) {
             best_start = start;
             best_end = stop;

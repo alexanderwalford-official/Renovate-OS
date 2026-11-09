@@ -175,7 +175,9 @@ int compile (const char* code) {
         char program[FS_PATH_MAX];
         const char* space = strchr(code, ' ');
         size_t length = space ? (size_t)(space - code) : strlen(code);
-        if (length >= sizeof(program)) length = sizeof(program) - 1;
+        if (length >= sizeof(program)) {
+            length = sizeof(program) - 1;
+        }
         memcpy(program, code, length);
         program[length] = '\0';
         result = aer_run_file(program, space ? space + 1 : "");

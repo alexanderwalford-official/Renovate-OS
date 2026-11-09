@@ -20,7 +20,9 @@ extern void (*busy_hook)(void);
 // "still working": cheap enough to call in a tight loop (the spinner itself only redraws a
 // few times a second)
 static inline void busy (void) {
-    if (busy_hook) busy_hook();
+    if (busy_hook) {
+        busy_hook();
+    }
 }
 
 #endif /* BUSY_H */

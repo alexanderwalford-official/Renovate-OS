@@ -224,8 +224,12 @@ void rtc_read(rtc_time_t* t) {
     // 12, 1, 2 ... 11 AM then 12, 1 ... 11 PM, so 1-11 PM gain 12 hours, 12 AM (midnight)
     // becomes 0 and 12 PM (midday) stays 12
     if (!(status_b & 0x02)) {
-        if (pm && raw.hour < 12) raw.hour = (uint8_t)(raw.hour + 12);
-        if (!pm && raw.hour == 12) raw.hour = 0;
+        if (pm && raw.hour < 12) {
+            raw.hour = (uint8_t)(raw.hour + 12);
+        }
+        if (!pm && raw.hour == 12) {
+            raw.hour = 0;
+        }
     }
 
     // the century register is not on every machine, assume 20xx without it

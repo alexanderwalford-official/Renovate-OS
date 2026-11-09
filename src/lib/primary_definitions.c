@@ -36,8 +36,12 @@ char* StrCombine(const char* str1, const char* str2) {
     // a scratch copy on the stack (1KB of the kernel's 32KB stack, only while we're in here)
     char combined[sizeof(StrCombine_buffer)];
     // treat NULL as an empty string so callers don't need to check
-    if (str1 == NULL) str1 = "";
-    if (str2 == NULL) str2 = "";
+    if (str1 == NULL) {
+        str1 = "";
+    }
+    if (str2 == NULL) {
+        str2 = "";
+    }
 
     // build in a temporary buffer first, so StrCombine(StrCombine(a, b), c) works
     // the problem it solves: in a nested call one of the inputs IS StrCombine_buffer. If we wrote

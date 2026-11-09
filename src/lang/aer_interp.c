@@ -70,17 +70,25 @@ void* aer_alloc (size_t size) {
     b->prev = 0;
     b->next = blocks;
     b->size = size;
-    if (blocks) blocks->prev = b;
+    if (blocks) {
+        blocks->prev = b;
+    }
     blocks = b;
     return b + 1;
 }
 
 void aer_free (void* ptr) {
-    if (ptr == 0) return;
+    if (ptr == 0) {
+        return;
+    }
     aer_block_t* b = (aer_block_t*)ptr - 1;
-    if (b->prev) b->prev->next = b->next;
+    if (b->prev) {
+        b->prev->next = b->next;
+    }
     else blocks = b->next;
-    if (b->next) b->next->prev = b->prev;
+    if (b->next) {
+        b->next->prev = b->prev;
+    }
     free(b);
 }
 
@@ -237,11 +245,15 @@ static bool is_object (value_t v) {
 }
 
 void aer_retain (value_t v) {
-    if (is_object(v)) v.as.obj->refs++;
+    if (is_object(v)) {
+        v.as.obj->refs++;
+    }
 }
 
 void aer_release (value_t v) {
-    if (!is_object(v) || --v.as.obj->refs > 0) return;
+    if (!is_object(v) || --v.as.obj->refs > 0) {
+        return;
+    }
     aer_object_t* o = v.as.obj;
     if (o->type == V_LIST) {
         for (uint32_t i = 0; i < o->length; i++) {
@@ -264,7 +276,9 @@ bool aer_truthy (value_t v) {
 
 // == compares strings by their characters, but lists and bytes by identity (the same object)
 bool aer_equal (value_t a, value_t b) {
-    if (a.type != b.type) return false;
+    if (a.type != b.type) {
+        return false;
+    }
     switch (a.type) {
         case V_NIL: return true;
         case V_STR:
@@ -306,21 +320,38 @@ static void text_value (text_t* t, value_t v, int depth) {
     char number[16];
     switch (v.type) {
         case V_NIL: text_add(t, "nil", 3); break;
-        case V_BOOL: text_add(t, v.as.i ? "true" : "false", v.as.i ? 4 : 5); break;
+        case V_BOOL:
+            if (v.as.i) {
+                text_add(t, "true", 4);
+            } else {
+                text_add(t, "false", 5);
+            }
+            break;
         case V_INT:
             itoa(v.as.i, number, 10);
             text_add(t, number, (uint32_t)strlen(number));
             break;
         case V_STR:
-            if (depth > 0) text_add(t, "\"", 1); // strings inside a list are shown in quotes
+            if (depth > 0) {
+                text_add(t, "\"", 1); // strings inside a list are shown in quotes
+            }
             text_add(t, v.as.obj->data.chars, v.as.obj->length);
-            if (depth > 0) text_add(t, "\"", 1);
+            if (depth > 0) {
+                text_add(t, "\"", 1);
+            }
             break;
         case V_LIST:
-            if (depth > 4) { text_add(t, "[...]", 5); break; } // also stops a list that contains itself
+            // lists more than 4 deep are cut short. That also stops a list that contains itself
+            // from printing forever
+            if (depth > 4) {
+                text_add(t, "[...]", 5);
+                break;
+            }
             text_add(t, "[", 1);
             for (uint32_t i = 0; i < v.as.obj->length; i++) {
-                if (i > 0) text_add(t, ", ", 2);
+                if (i > 0) {
+                    text_add(t, ", ", 2);
+                }
                 text_value(t, v.as.obj->data.items[i], depth + 1);
             }
             text_add(t, "]", 1);
@@ -371,7 +402,9 @@ void aer_print_value (value_t v) {
 
 static aer_var_t* scope_find (aer_scope_t* scope, const char* name) {
     for (int i = 0; i < scope->count; i++) {
-        if (scope->vars[i].name == name) return &scope->vars[i];
+        if (scope->vars[i].name == name) {
+            return &scope->vars[i];
+        }
     }
     return 0;
 }
@@ -430,13 +463,17 @@ static value_t lookup (const char* name, int line) {
 static value_t eval (aer_node_t* n);
 
 static int32_t need_int (value_t v, int line, const char* what) {
-    if (v.type != V_INT) aer_error(line, "%s must be a number, not a %s", what, aer_type_name(v));
+    if (v.type != V_INT) {
+        aer_error(line, "%s must be a number, not a %s", what, aer_type_name(v));
+    }
     return v.as.i;
 }
 
 // target[index]: a list item, a one character string, or a byte as a number
 static value_t index_get (value_t target, value_t index, int line) {
-    if (!is_object(target)) aer_error(line, "can't index a %s", aer_type_name(target));
+    if (!is_object(target)) {
+        aer_error(line, "can't index a %s", aer_type_name(target));
+    }
     int32_t i = need_int(index, line, "an index");
     if (i < 0 || (uint32_t)i >= target.as.obj->length) {
         aer_error(line, "index %d is out of range (length %u)", i, target.as.obj->length);
@@ -478,8 +515,12 @@ static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
     if (op == T_PLUS && (a.type == V_STR || b.type == V_STR || (a.type == V_LIST && b.type == V_LIST))) {
         return concat(a, b);
     }
-    if (op == T_EQ) return aer_bool(aer_equal(a, b));
-    if (op == T_NE) return aer_bool(!aer_equal(a, b));
+    if (op == T_EQ) {
+        return aer_bool(aer_equal(a, b));
+    }
+    if (op == T_NE) {
+        return aer_bool(!aer_equal(a, b));
+    }
 
     if (a.type == V_STR && b.type == V_STR) {
         int c = strcmp(a.as.obj->data.chars, b.as.obj->data.chars);
@@ -504,8 +545,12 @@ static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
         case T_STAR: return aer_int((int32_t)(x * y));
         case T_SLASH:
         case T_PERCENT:
-            if (b.as.i == 0) aer_error(line, "division by zero");
-            if (b.as.i == -1) return aer_int(op == T_SLASH ? (int32_t)(0u - x) : 0); // INT_MIN / -1 would trap
+            if (b.as.i == 0) {
+                aer_error(line, "division by zero");
+            }
+            if (b.as.i == -1) {
+                return aer_int(op == T_SLASH ? (int32_t)(0u - x) : 0); // INT_MIN / -1 would trap
+            }
             return aer_int(op == T_SLASH ? a.as.i / b.as.i : a.as.i % b.as.i);
         case T_LT: return aer_bool(a.as.i < b.as.i);
         case T_LE: return aer_bool(a.as.i <= b.as.i);
@@ -549,7 +594,7 @@ static value_t call (value_t callee, int argc, value_t* argv, int line) {
     }
     aer_scope_t* caller = aer->locals;
     aer->locals = &scope;
-    exec_t result = exec_block(f->b);
+    exec_t result = exec_block(f->body);
     aer->locals = caller;
     scope_free(&scope);
 
@@ -581,8 +626,8 @@ static value_t eval (aer_node_t* n) {
         }
 
         case N_INDEX: {
-            value_t target = eval(n->a);
-            value_t index = eval(n->b);
+            value_t target = eval(n->container);
+            value_t index = eval(n->index);
             value_t item = index_get(target, index, n->line);
             aer_release(target);
             aer_release(index);
@@ -590,7 +635,7 @@ static value_t eval (aer_node_t* n) {
         }
 
         case N_CALL: {
-            value_t callee = eval(n->a);
+            value_t callee = eval(n->callee);
             value_t argv[AER_MAX_ARGS];
             for (int i = 0; i < n->count; i++) {
                 argv[i] = eval(n->items[i]);
@@ -604,7 +649,7 @@ static value_t eval (aer_node_t* n) {
         }
 
         case N_UNARY: {
-            value_t v = eval(n->a);
+            value_t v = eval(n->operand);
             if (n->op == T_NOT) {
                 bool truth = aer_truthy(v);
                 aer_release(v);
@@ -616,15 +661,17 @@ static value_t eval (aer_node_t* n) {
         // "and" / "or" give back one of their operands, so "x or 5" is x unless x is nil / false / 0
         case N_AND:
         case N_OR: {
-            value_t left = eval(n->a);
-            if (aer_truthy(left) == (n->type == N_OR)) return left;
+            value_t left = eval(n->left);
+            if (aer_truthy(left) == (n->type == N_OR)) {
+                return left;
+            }
             aer_release(left);
-            return eval(n->b);
+            return eval(n->right);
         }
 
         case N_BINARY: {
-            value_t a = eval(n->a);
-            value_t b = eval(n->b);
+            value_t a = eval(n->left);
+            value_t b = eval(n->right);
             value_t result = arithmetic(n->op, a, b, n->line);
             aer_release(a);
             aer_release(b);
@@ -652,8 +699,8 @@ static void assign (aer_node_t* target, value_t value) {
         return;
     }
     // a list item or a byte
-    value_t container = eval(target->a);
-    value_t index = eval(target->b);
+    value_t container = eval(target->container);
+    value_t index = eval(target->index);
     int32_t i = need_int(index, target->line, "an index");
     if (container.type != V_LIST && container.type != V_BYTES) {
         aer_error(target->line, "can't change items of a %s", aer_type_name(container));
@@ -676,7 +723,9 @@ static exec_t exec (aer_node_t* n);
 static exec_t exec_block (aer_node_t* block) {
     for (int i = 0; i < block->count; i++) {
         exec_t result = exec(block->items[i]);
-        if (result != EXEC_NEXT) return result;
+        if (result != EXEC_NEXT) {
+            return result;
+        }
     }
     return EXEC_NEXT;
 }
@@ -697,15 +746,15 @@ static exec_t exec (aer_node_t* n) {
     check_stack(n->line);
     switch (n->type) {
         case N_LET:
-            declare(n->name, eval(n->b));
+            declare(n->name, eval(n->new_value));
             return EXEC_NEXT;
 
         case N_ASSIGN:
-            assign(n->a, eval(n->b));
+            assign(n->target, eval(n->new_value));
             return EXEC_NEXT;
 
         case N_EXPR: {
-            value_t v = eval(n->a);
+            value_t v = eval(n->expression);
             if (aer->repl && aer->locals == 0 && v.type != V_NIL) {
                 // at the prompt, show what an expression worked out to
                 aer_print_value(v);
@@ -716,46 +765,73 @@ static exec_t exec (aer_node_t* n) {
         }
 
         case N_IF: {
-            value_t condition = eval(n->a);
+            value_t condition = eval(n->condition);
             bool truth = aer_truthy(condition);
             aer_release(condition);
-            if (truth) return exec_block(n->b);
-            if (n->c) return n->c->type == N_IF ? exec(n->c) : exec_block(n->c);
+            if (truth) {
+                return exec_block(n->then_block);
+            }
+            if (n->else_block) {
+                return n->else_block->type == N_IF ? exec(n->else_block) : exec_block(n->else_block);
+            }
             return EXEC_NEXT;
         }
 
         case N_WHILE:
             for (;;) {
-                value_t condition = eval(n->a);
+                value_t condition = eval(n->condition);
                 bool truth = aer_truthy(condition);
                 aer_release(condition);
-                if (!truth) break;
-                exec_t result = exec_block(n->b);
-                if (result == EXEC_BREAK) break;
-                if (result == EXEC_RETURN) return result;
+                if (!truth) {
+                    break;
+                }
+                exec_t result = exec_block(n->body);
+                if (result == EXEC_BREAK) {
+                    break;
+                }
+                if (result == EXEC_RETURN) {
+                    return result;
+                }
             }
             return EXEC_NEXT;
 
         case N_FOR: {
-            value_t from = eval(n->a);
-            value_t to = eval(n->c);
-            value_t step = n->d ? eval(n->d) : aer_int(1);
+            value_t from = eval(n->from);
+            value_t to = eval(n->to);
+            value_t step = n->step ? eval(n->step) : aer_int(1);
             // 64 bit, so "for i = 0 to 2147483647" can't overflow and loop forever
             int64_t i = need_int(from, n->line, "the start of a for loop");
             int64_t last = need_int(to, n->line, "the end of a for loop");
             int64_t by = need_int(step, n->line, "the step of a for loop");
-            if (by == 0) aer_error(n->line, "a for loop can't step by 0");
-            for (; by > 0 ? i <= last : i >= last; i += by) {
+            if (by == 0) {
+                aer_error(n->line, "a for loop can't step by 0");
+            }
+            // counting up runs while i <= last, counting down (a negative step) while i >= last
+            for (;;) {
+                bool finished;
+                if (by > 0) {
+                    finished = i > last;
+                } else {
+                    finished = i < last;
+                }
+                if (finished) {
+                    break;
+                }
                 set_loop_variable(n->name, aer_int((int32_t)i));
-                exec_t result = exec_block(n->b);
-                if (result == EXEC_BREAK) break;
-                if (result == EXEC_RETURN) return result;
+                exec_t result = exec_block(n->body);
+                if (result == EXEC_BREAK) {
+                    break;
+                }
+                if (result == EXEC_RETURN) {
+                    return result;
+                }
+                i += by; // (continue lands here too, and still moves on to the next number)
             }
             return EXEC_NEXT;
         }
 
         case N_FOR_IN: {
-            value_t collection = eval(n->a);
+            value_t collection = eval(n->collection);
             if (!is_object(collection)) {
                 aer_error(n->line, "can't loop over a %s", aer_type_name(collection));
             }
@@ -763,8 +839,10 @@ static exec_t exec (aer_node_t* n) {
             // the length is checked every time round, so the body may add to or remove from a list
             for (uint32_t i = 0; i < collection.as.obj->length; i++) {
                 set_loop_variable(n->name, index_get(collection, aer_int((int32_t)i), n->line));
-                result = exec_block(n->b);
-                if (result == EXEC_BREAK || result == EXEC_RETURN) break;
+                result = exec_block(n->body);
+                if (result == EXEC_BREAK || result == EXEC_RETURN) {
+                    break;
+                }
             }
             aer_release(collection);
             return result == EXEC_RETURN ? result : EXEC_NEXT;
@@ -774,7 +852,7 @@ static exec_t exec (aer_node_t* n) {
             return EXEC_NEXT; // already defined before the program started
 
         case N_RETURN:
-            aer->return_value = n->a ? eval(n->a) : aer_nil();
+            aer->return_value = n->expression ? eval(n->expression) : aer_nil();
             return EXEC_RETURN;
 
         case N_BREAK: return EXEC_BREAK;
@@ -826,10 +904,16 @@ static void session_begin (const char* name, const char* args) {
     if (args) {
         const char* p = args;
         while (*p) {
-            while (*p == ' ') p++;
+            while (*p == ' ') {
+                p++;
+            }
             const char* start = p;
-            while (*p && *p != ' ') p++;
-            if (p > start) aer_list_push(list.as.obj, aer_string(start, (uint32_t)(p - start)));
+            while (*p && *p != ' ') {
+                p++;
+            }
+            if (p > start) {
+                aer_list_push(list.as.obj, aer_string(start, (uint32_t)(p - start)));
+            }
         }
     }
     aer_define_global("args", list);
@@ -870,7 +954,9 @@ int aer_run_source (const char* source, const char* name, const char* args) {
 }
 
 bool aer_is_program_name (const char* name, size_t length) {
-    if (length < 4) return false;
+    if (length < 4) {
+        return false;
+    }
     const char* extension = name + length - 4;
     return strncasecmp(extension, ".aer", 4) == 0 || strncasecmp(extension, ".ren", 4) == 0;
 }
@@ -883,10 +969,16 @@ static char* find_program (const char* path, char* name_out, size_t name_size) {
     for (int with_extension = 0; with_extension < 2; with_extension++) {
         char full[FS_PATH_MAX];
         strlcpy(full, path, sizeof(full));
-        if (with_extension) strlcat(full, ".aer", sizeof(full));
-        if (!fs_split_path(full, dir, sizeof(dir), name, sizeof(name))) continue;
+        if (with_extension) {
+            strlcat(full, ".aer", sizeof(full));
+        }
+        if (!fs_split_path(full, dir, sizeof(dir), name, sizeof(name))) {
+            continue;
+        }
         for (int f = 0; f < 2; f++) {
-            if (f == 1 && strchr(path, '/')) break; // an explicit path isn't searched for in /bin/
+            if (f == 1 && strchr(path, '/')) {
+                break; // an explicit path isn't searched for in /bin/
+            }
             const char* folder = folders[f] ? folders[f] : dir;
             char* source = fs_read_f(folder, name);
             if (source) {
@@ -921,12 +1013,16 @@ void aer_repl (void) {
         // if the last line ended without a newline (write() does that), start a fresh one
         uint8_t x, y;
         console_get_cursor(&x, &y);
-        if (x != 0) printf("\n");
+        if (x != 0) {
+            printf("\n");
+        }
         console_set_color(LIGHT_CYAN, console_bg);
         printf("aer> ");
         console_set_color(BRIGHT, console_bg);
         GetString(line, sizeof(line));
-        if (strcmp(StrTrim(line), "exit") == 0) break;
+        if (strcmp(StrTrim(line), "exit") == 0) {
+            break;
+        }
         run_program(line);
         aer->locals = 0; // in case an error happened inside a function
     }

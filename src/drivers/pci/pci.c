@@ -45,7 +45,9 @@ bool pci_each (bool (*fn)(const pci_device_t* dev, void* ctx), void* ctx) {
             for (int function = 0; function < 8; function++) {
                 uint32_t id = pci_read(bus, slot, function, 0x00);
                 if ((id & 0xFFFF) == 0xFFFF) {
-                    if (function == 0) break; // no device in this slot at all
+                    if (function == 0) {
+                        break; // no device in this slot at all
+                    }
                     continue;
                 }
                 uint32_t class_word = pci_read(bus, slot, function, 0x08);
@@ -53,9 +55,13 @@ bool pci_each (bool (*fn)(const pci_device_t* dev, void* ctx), void* ctx) {
                     (uint8_t)bus, (uint8_t)slot, (uint8_t)function, (uint16_t)id, (uint16_t)(id >> 16),
                     (uint8_t)(class_word >> 24), (uint8_t)(class_word >> 16)
                 };
-                if (fn(&dev, ctx)) return true;
+                if (fn(&dev, ctx)) {
+                    return true;
+                }
                 // a single function device only answers as function 0
-                if (function == 0 && !(pci_read(bus, slot, 0, 0x0C) & 0x00800000)) break;
+                if (function == 0 && !(pci_read(bus, slot, 0, 0x0C) & 0x00800000)) {
+                    break;
+                }
             }
         }
     }
@@ -70,7 +76,9 @@ typedef struct {
 
 static bool match_class (const pci_device_t* dev, void* ctx) {
     find_class_t* want = ctx;
-    if (dev->class_code != want->class_code || dev->subclass != want->subclass) return false;
+    if (dev->class_code != want->class_code || dev->subclass != want->subclass) {
+        return false;
+    }
     *want->out = *dev;
     return true;
 }

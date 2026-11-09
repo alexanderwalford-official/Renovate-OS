@@ -331,70 +331,105 @@ static uint32_t fat_alloc_cluster (uint32_t prev) {
             fat_set(cluster, 0); // linking failed, give the cluster back
             return 0;
         }
-        // the next search starts just after this one (back to 2 past the end of the disk)
-        fat_vol.next_free = (cluster + 1 < fat_vol.cluster_count + 2) ? cluster + 1 : 2;
+        // the next search starts just after this one, or back at cluster 2 if this was the last
+        uint32_t last_cluster = fat_vol.cluster_count + 1;
+        if (cluster < last_cluster) {
+            fat_vol.next_free = cluster + 1;
+        } else {
+            fat_vol.next_free = 2;
+        }
         return cluster;
     }
     return 0;
 }
 
-// free every cluster in a chain
-// cluster = the first cluster of the chain, 0 (an empty file) is fine and does nothing
+// mark entry `i` of a FAT sector as free (0). On FAT32 the top 4 bits are reserved and are
+// kept as they were
+static void fat_clear_entry (fat_sector_t* sector, uint32_t i) {
+    if (fat_vol.type == 32) {
+        sector->u32[i] &= 0xF0000000;
+    } else {
+        sector->u16[i] = 0;
+    }
+}
+
+// write one changed sector of the FAT to the disk, in every copy of the FAT.
+// The first copy is fat_cache, which has already been changed in memory. Each other copy is
+// read from the disk, has the same entries freed (the `freed` list), and is written back, so
+// it only changes in those places, just as fat_set() would do it. False on a drive error
+static bool fat_write_freed_sector (uint32_t sector_index, const uint16_t* freed, uint32_t freed_count) {
+    for (uint8_t copy = 0; copy < fat_vol.fat_copies; copy++) {
+        uint32_t lba = fat_vol.fat_lba + copy * fat_vol.fat_sectors + sector_index;
+
+        if (copy == 0) {
+            if (!fat_write_sector(lba, &fat_cache)) {
+                fat_cache_lba = FAT_NO_SECTOR; // the disk may not match the cache now: forget it
+                return false;
+            }
+            continue;
+        }
+
+        fat_sector_t sector;
+        if (!fat_read_sector(lba, &sector)) {
+            return false;
+        }
+        for (uint32_t n = 0; n < freed_count; n++) {
+            fat_clear_entry(&sector, freed[n]);
+        }
+        if (!fat_write_sector(lba, &sector)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Free every cluster of a chain. `cluster` is the first one; 0 (an empty file) does nothing.
+//
+// The simple way, fat_set(cluster, 0) for each cluster, costs a read and a write of a FAT
+// sector, in each copy of the FAT, for every single cluster: about 30000 disk transfers for a
+// 20MB file. Instead this frees all the clusters of the chain whose entries are in the same
+// FAT sector (a file's clusters are usually next to each other, so that is up to 256 of them)
+// in memory, then writes that sector once.
 static void fat_free_chain (uint32_t cluster) {
     if (!fat_valid_cluster(cluster)) {
         return;
     }
     fat_invalidate_fsinfo();
     uint32_t per_sector = fat_entries_per_sector();
-    // guard: a damaged disk can have a chain that loops back on itself, a chain can't be longer
-    // than the disk has clusters, so stop after that many steps whatever happens
-    uint32_t guard = 0;
+    const uint32_t most_freed = FAT_SECTOR_SIZE / 2; // the most entries one sector can hold
 
-    // Freeing one entry at a time with fat_set() would cost a read and a write of a FAT sector
-    // per copy of the FAT for every cluster: about 30000 disk transfers for a 20MB file. Instead,
-    // free every entry of the chain that sits in the same FAT sector (a file's clusters are
-    // usually next to each other, so that is up to 256 of them), then write that sector once.
-    while (fat_valid_cluster(cluster) && guard < fat_vol.cluster_count) {
-        uint32_t index = cluster / per_sector; // which sector of the FAT we are in
-        uint16_t freed[FAT_SECTOR_SIZE / 2];   // the entries freed in it (at most 256)
-        uint32_t count = 0;
+    // A damaged disk can have a chain that loops back on itself. No real chain is longer than
+    // the disk has clusters, so stop after that many steps whatever happens
+    uint32_t steps = 0;
 
-        if (fat_get(cluster) == 0xFFFFFFFF) return; // loads the sector into fat_cache
-        while (fat_valid_cluster(cluster) && cluster / per_sector == index && guard < fat_vol.cluster_count
-               && count < FAT_SECTOR_SIZE / 2) {
-            uint32_t i = cluster % per_sector;
-            uint32_t next = fat_get(cluster); // read the link before we wipe it
-            if (fat_vol.type == 32) {
-                fat_cache.u32[i] &= 0xF0000000; // free, keeping the 4 reserved bits
-            } else {
-                fat_cache.u16[i] = 0;
-            }
-            freed[count++] = (uint16_t)i;
-            cluster = next;
-            guard++;
+    while (fat_valid_cluster(cluster) && steps < fat_vol.cluster_count) {
+        uint32_t sector_index = cluster / per_sector; // which sector of the FAT this entry is in
+        uint16_t freed[FAT_SECTOR_SIZE / 2];          // the entries freed in that sector
+        uint32_t freed_count = 0;
+
+        // fat_get loads the sector into fat_cache (or fails on a drive error)
+        if (fat_get(cluster) == 0xFFFFFFFF) {
+            return;
         }
 
-        // the first FAT is the cached sector, already changed. Every other copy gets the same
-        // entries freed, read-modify-write as in fat_set(), so it is changed in just those places
-        for (uint8_t copy = 0; copy < fat_vol.fat_copies; copy++) {
-            uint32_t lba = fat_vol.fat_lba + copy * fat_vol.fat_sectors + index;
-            if (copy == 0) {
-                if (!fat_write_sector(lba, &fat_cache)) {
-                    fat_cache_lba = FAT_NO_SECTOR; // the disk may not match the cache now
-                    return;
-                }
-                continue;
+        // free entries for as long as the chain stays in this sector
+        for (;;) {
+            bool still_in_sector = fat_valid_cluster(cluster) && cluster / per_sector == sector_index;
+            bool room_left = freed_count < most_freed && steps < fat_vol.cluster_count;
+            if (!still_in_sector || !room_left) {
+                break;
             }
-            fat_sector_t sector;
-            if (!fat_read_sector(lba, &sector)) return;
-            for (uint32_t n = 0; n < count; n++) {
-                if (fat_vol.type == 32) {
-                    sector.u32[freed[n]] &= 0xF0000000;
-                } else {
-                    sector.u16[freed[n]] = 0;
-                }
-            }
-            if (!fat_write_sector(lba, &sector)) return;
+            uint32_t entry = cluster % per_sector;
+            uint32_t next = fat_get(cluster); // read where the chain goes before clearing the link
+            fat_clear_entry(&fat_cache, entry);
+            freed[freed_count] = (uint16_t)entry;
+            freed_count++;
+            cluster = next;
+            steps++;
+        }
+
+        if (!fat_write_freed_sector(sector_index, freed, freed_count)) {
+            return;
         }
         busy(); // a big file spans many FAT sectors: let a spinner turn (DEL)
     }
@@ -426,21 +461,34 @@ static uint8_t fat_lfn_checksum (const uint8_t* short_name) {
 // raw = the 11 name bytes of an entry, out needs room for 13 characters ("12345678.123" + '\0')
 // apply_case = false gives the plain upper case name, which is what fat_find() compares against
 static void fat_short_to_name (const uint8_t* raw, uint8_t nt_case, char* out, bool apply_case) {
-    int p = 0;
-    // the name part: up to 8 characters, stop at the space padding
+    bool lower_name = apply_case && (nt_case & FAT_CASE_LOWER_BASE) != 0;
+    bool lower_extension = apply_case && (nt_case & FAT_CASE_LOWER_EXT) != 0;
+    int length = 0;
+
+    // the name part: up to 8 characters, stopping at the space padding
     for (int i = 0; i < 8 && raw[i] != ' '; i++) {
-        char c = (char)((i == 0 && raw[i] == 0x05) ? 0xE5 : raw[i]); // 0x05 stands in for a real 0xE5
-        out[p++] = (apply_case && (nt_case & FAT_CASE_LOWER_BASE)) ? (char)tolower((unsigned char)c) : c;
+        char c = (char)raw[i];
+        if (i == 0 && raw[i] == 0x05) {
+            c = (char)0xE5; // 0x05 in the first byte stands in for a real 0xE5 (0xE5 means "deleted")
+        }
+        if (lower_name) {
+            c = (char)tolower((unsigned char)c);
+        }
+        out[length++] = c;
     }
-    // the extension (bytes 8-10), the dot is only added when there is one
+
+    // the extension, bytes 8 to 10. The dot only goes in when there is one
     if (raw[8] != ' ') {
-        out[p++] = '.';
+        out[length++] = '.';
         for (int i = 8; i < 11 && raw[i] != ' '; i++) {
             char c = (char)raw[i];
-            out[p++] = (apply_case && (nt_case & FAT_CASE_LOWER_EXT)) ? (char)tolower((unsigned char)c) : c;
+            if (lower_extension) {
+                c = (char)tolower((unsigned char)c);
+            }
+            out[length++] = c;
         }
     }
-    out[p] = '\0';
+    out[length] = '\0';
 }
 
 // may this character be used in an 8.3 name? letters, digits and a handful of symbols
@@ -475,18 +523,33 @@ static bool fat_copy_83_part (const char* src, size_t len, uint8_t* out, uint8_t
 // not allowed: an empty name part (".hidden"), more than 8 + 3 characters, a dot with nothing
 // after it ("notes.") or more than one dot ("a.b.c"). We don't write long names, so those are refused
 static bool fat_make_83 (const char* name, uint8_t* out, uint8_t* nt_case) {
+    // split "notes.txt" at the dot into the name ("notes") and the extension ("txt")
     const char* dot = strchr(name, '.');
-    size_t base_len = dot ? (size_t)(dot - name) : strlen(name);
-    size_t ext_len = dot ? strlen(dot + 1) : 0;
+    const char* extension = "";
+    size_t name_length = strlen(name);
+    size_t extension_length = 0;
+    if (dot != NULL) {
+        extension = dot + 1;
+        name_length = (size_t)(dot - name);
+        extension_length = strlen(extension);
+    }
 
-    if (base_len == 0 || base_len > 8 || ext_len > 3 || (dot && ext_len == 0) || (dot && strchr(dot + 1, '.'))) {
+    bool name_fits = name_length >= 1 && name_length <= 8;
+    bool extension_fits = extension_length <= 3;
+    bool dot_with_nothing_after = dot != NULL && extension_length == 0;   // "notes."
+    bool second_dot = dot != NULL && strchr(extension, '.') != NULL;     // "a.b.c"
+    if (!name_fits || !extension_fits || dot_with_nothing_after || second_dot) {
         return false;
     }
+
     memset(out, ' ', 11); // unused characters are spaces
     *nt_case = 0;
-    // name part into bytes 0-7, extension into bytes 8-10
-    return fat_copy_83_part(name, base_len, out, FAT_CASE_LOWER_BASE, nt_case) &&
-           fat_copy_83_part(dot ? dot + 1 : "", ext_len, out + 8, FAT_CASE_LOWER_EXT, nt_case);
+
+    // the name into bytes 0 to 7, the extension into bytes 8 to 10
+    if (!fat_copy_83_part(name, name_length, out, FAT_CASE_LOWER_BASE, nt_case)) {
+        return false;
+    }
+    return fat_copy_83_part(extension, extension_length, out + 8, FAT_CASE_LOWER_EXT, nt_case);
 }
 
 // set the modified (and if created, the created) date & time of an entry to now
@@ -621,11 +684,22 @@ static bool fat_walk_dir (uint32_t dir, fat_visit_t visit, void* ctx) {
                     lfn_valid = false;
                 }
                 if (lfn_valid) {
-                    // part seq holds characters (seq - 1) * 13 to (seq - 1) * 13 + 12 of the name
+                    // part `seq` holds characters (seq - 1) * 13 to (seq - 1) * 13 + 12 of the name
                     for (int i = 0; i < 13; i++) {
-                        uint16_t c = (uint16_t)(raw[lfn_char_offsets[i]] | (raw[lfn_char_offsets[i] + 1] << 8));
-                        // 0x0000 ends the name and 0xFFFF pads it, characters outside ASCII are shown as '?'
-                        lfn[(seq - 1) * 13 + i] = (c == 0xFFFF) ? '\0' : (c < 128) ? (char)c : '?';
+                        const uint8_t* bytes = raw + lfn_char_offsets[i];
+                        uint16_t c = (uint16_t)(bytes[0] | (bytes[1] << 8)); // one UTF-16 character
+
+                        // 0x0000 ends the name and 0xFFFF pads out the rest of the part.
+                        // AerOS only shows ASCII, so anything else is shown as '?'
+                        char shown;
+                        if (c == 0xFFFF) {
+                            shown = '\0';
+                        } else if (c < 128) {
+                            shown = (char)c;
+                        } else {
+                            shown = '?';
+                        }
+                        lfn[(seq - 1) * 13 + i] = shown;
                     }
                     lfn_expect = seq - 1; // the parts count down towards 1
                 }
@@ -706,10 +780,16 @@ static bool fat_resolve_dir (const char* d_path, uint32_t* dir) {
     }
     while (*p) {
         // cut the next part out of the path, between the slashes
-        while (*p == '/') p++;
-        if (*p == '\0') break;
+        while (*p == '/') {
+            p++;
+        }
+        if (*p == '\0') {
+            break;
+        }
         size_t len = strcspn(p, "/");
-        if (len > FAT_NAME_MAX) return false;
+        if (len > FAT_NAME_MAX) {
+            return false;
+        }
         memcpy(component, p, len);
         component[len] = '\0';
         p += len;
@@ -889,7 +969,14 @@ bool fat_dir_exists (const char* d_path) {
 // find a file (not a directory) by directory path and name
 static bool fat_find_file (const char* f_path, const char* name, fat_entry_t* e) {
     uint32_t dir;
-    return fat_resolve_dir(f_path, &dir) && fat_find(dir, name, e) && !(e->entry.attr & FAT_ATTR_DIRECTORY);
+    if (!fat_resolve_dir(f_path, &dir)) {
+        return false; // no such folder
+    }
+    if (!fat_find(dir, name, e)) {
+        return false; // nothing with that name in it
+    }
+    bool is_folder = (e->entry.attr & FAT_ATTR_DIRECTORY) != 0;
+    return !is_folder;
 }
 
 // does this file exist? (a directory with that name doesn't count)
@@ -944,14 +1031,22 @@ int fat_create_file (const char* f_path, const char* name, const char* contents,
     uint32_t dir, first, lba;
     uint16_t slot;
 
-    if (!fat_resolve_dir(f_path, &dir)) return FS_ERR_NOT_FOUND;
+    if (!fat_resolve_dir(f_path, &dir)) {
+        return FS_ERR_NOT_FOUND;
+    }
     // anything with this name already there (a file or a directory) blocks it
-    if (fat_find(dir, name, &existing)) return FS_ERR_EXISTS;
+    if (fat_find(dir, name, &existing)) {
+        return FS_ERR_EXISTS;
+    }
     memset(&d, 0, sizeof(d));
-    if (!fat_make_83(name, d.name, &d.nt_case)) return FS_ERR_BAD_NAME;
+    if (!fat_make_83(name, d.name, &d.nt_case)) {
+        return FS_ERR_BAD_NAME;
+    }
 
     int result = fat_write_chain(contents, length, &first);
-    if (result != FS_OK) return result;
+    if (result != FS_OK) {
+        return result;
+    }
     if (!fat_free_slot(dir, &lba, &slot)) {
         fat_free_chain(first);
         return FS_ERR_FULL;
@@ -978,9 +1073,13 @@ int fat_write_file (const char* f_path, const char* name, const char* text, bool
         return fat_replace_file(f_path, name, text, (uint32_t)strlen(text), false);
     }
     fat_entry_t e;
-    if (!fat_find_file(f_path, name, &e)) return FS_ERR_NOT_FOUND;
+    if (!fat_find_file(f_path, name, &e)) {
+        return FS_ERR_NOT_FOUND;
+    }
     char* old = fat_read_chain(fat_entry_cluster(&e.entry), e.entry.size);
-    if (old == NULL) return FS_ERR_IO;
+    if (old == NULL) {
+        return FS_ERR_IO;
+    }
     // strlen rather than entry.size, in case the chain was shorter than the entry claimed
     size_t old_len = strlen(old);
     char* joined = realloc(old, old_len + strlen(text) + 1);
@@ -1011,12 +1110,16 @@ static void fat_zero_chain (uint32_t cluster) {
 int fat_replace_file (const char* f_path, const char* name, const void* data, uint32_t length, bool wipe_old) {
     fat_entry_t e;
     uint32_t first;
-    if (!fat_find_file(f_path, name, &e)) return FS_ERR_NOT_FOUND;
+    if (!fat_find_file(f_path, name, &e)) {
+        return FS_ERR_NOT_FOUND;
+    }
     uint32_t old_cluster = fat_entry_cluster(&e.entry);
 
     // write the new data first, then point the entry at it, then free the old data
     int result = fat_write_chain(data, length, &first);
-    if (result != FS_OK) return result;
+    if (result != FS_OK) {
+        return result;
+    }
 
     fat_set_entry_cluster(&e.entry, first);
     e.entry.size = length;
@@ -1037,8 +1140,12 @@ int fat_replace_file (const char* f_path, const char* name, const void* data, ui
 // (that way round an entry can never point at clusters that already belong to someone else)
 int fat_delete_file (const char* f_path, const char* name) {
     fat_entry_t e;
-    if (!fat_find_file(f_path, name, &e)) return FS_ERR_NOT_FOUND;
-    if (!fat_mark_deleted(&e)) return FS_ERR_IO;
+    if (!fat_find_file(f_path, name, &e)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (!fat_mark_deleted(&e)) {
+        return FS_ERR_IO;
+    }
     fat_free_chain(fat_entry_cluster(&e.entry));
     return FS_OK;
 }
@@ -1084,16 +1191,26 @@ int fat_create_dir (const char* d_path) {
     uint32_t parent_dir, lba;
     uint16_t slot;
 
-    if (!fat_split_dir(d_path, parent, name)) return FS_ERR_BAD_NAME;
-    if (!fat_resolve_dir(parent, &parent_dir)) return FS_ERR_NOT_FOUND;
-    if (fat_find(parent_dir, name, &existing)) return FS_ERR_EXISTS;
+    if (!fat_split_dir(d_path, parent, name)) {
+        return FS_ERR_BAD_NAME;
+    }
+    if (!fat_resolve_dir(parent, &parent_dir)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (fat_find(parent_dir, name, &existing)) {
+        return FS_ERR_EXISTS;
+    }
     memset(&d, 0, sizeof(d));
-    if (!fat_make_83(name, d.name, &d.nt_case)) return FS_ERR_BAD_NAME;
+    if (!fat_make_83(name, d.name, &d.nt_case)) {
+        return FS_ERR_BAD_NAME;
+    }
     d.attr = FAT_ATTR_DIRECTORY;
     fat_stamp(&d, true); // size stays 0, directories always have size 0
 
     uint32_t cluster = fat_alloc_cluster(0);
-    if (cluster == 0) return FS_ERR_FULL;
+    if (cluster == 0) {
+        return FS_ERR_FULL;
+    }
 
     // ".." points at the parent, 0 when the parent is the root
     // (that is the rule even on FAT32 where the root has a real cluster, and it matches FAT_ROOT)
@@ -1134,8 +1251,18 @@ int fat_delete_dir (const char* d_path) {
     uint32_t parent_dir;
     fat_entry_t e;
 
-    if (!fat_split_dir(d_path, parent, name) || !fat_resolve_dir(parent, &parent_dir) ||
-        !fat_find(parent_dir, name, &e) || !(e.entry.attr & FAT_ATTR_DIRECTORY)) {
+    // find the folder's entry in the folder above it
+    if (!fat_split_dir(d_path, parent, name)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (!fat_resolve_dir(parent, &parent_dir)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (!fat_find(parent_dir, name, &e)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    bool is_folder = (e.entry.attr & FAT_ATTR_DIRECTORY) != 0;
+    if (!is_folder) {
         return FS_ERR_NOT_FOUND;
     }
     // a broken entry pointing at cluster 0 would otherwise walk the root directory
@@ -1144,7 +1271,9 @@ int fat_delete_dir (const char* d_path) {
     if (fat_valid_cluster(cluster) && fat_walk_dir(cluster, fat_any_visit, NULL)) {
         return FS_ERR_NOT_EMPTY;
     }
-    if (!fat_mark_deleted(&e)) return FS_ERR_IO;
+    if (!fat_mark_deleted(&e)) {
+        return FS_ERR_IO;
+    }
     fat_free_chain(cluster);
     return FS_OK;
 }
@@ -1253,29 +1382,50 @@ static int fat_mount (int bus, int slave) {
     // where is the volume? at sector 0 for a "superfloppy" (formatted without a partition table,
     // like our disk.img), otherwise the first FAT partition in the MBR (ata.c works this out)
     int found = drive_parse(bus, slave, &volume_lba);
-    if (found < 0) return FS_ERR_IO;
-    if (found == 0) return FS_ERR_NOT_FOUND;
-    if (!drive_read(bus, slave, volume_lba, 1, bs)) return FS_ERR_IO;
-    if (!drive_is_fat_boot_sector(bs)) return FS_ERR_NOT_FOUND;
+    if (found < 0) {
+        return FS_ERR_IO;
+    }
+    if (found == 0) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (!drive_read(bus, slave, volume_lba, 1, bs)) {
+        return FS_ERR_IO;
+    }
+    if (!drive_is_fat_boot_sector(bs)) {
+        return FS_ERR_NOT_FOUND;
+    }
 
     // the BPB fields, offsets in the table at the top of this file
     uint8_t spc = bs[13];                   // sectors per cluster
     uint16_t reserved = fat_u16(bs + 14);   // reserved sectors (boot sector, FSInfo, backups...)
     uint8_t fats = bs[16];                  // number of FAT copies
     uint16_t root_entries = fat_u16(bs + 17); // FAT16 root directory entries (0 on FAT32)
-    // the old 16 bit fields are 0 when the value doesn't fit (or always on FAT32), then use the 32 bit ones
-    uint32_t total = fat_u16(bs + 19) ? fat_u16(bs + 19) : fat_u32(bs + 32);
-    uint32_t fat_size = fat_u16(bs + 22) ? fat_u16(bs + 22) : fat_u32(bs + 36);
+
+    // The size of the volume and of each FAT each have an old 16 bit field and a newer 32 bit
+    // one. The 16 bit field is 0 when the number doesn't fit in it (and always on FAT32), and
+    // then the 32 bit field holds it
+    uint32_t total = fat_u16(bs + 19);
+    if (total == 0) {
+        total = fat_u32(bs + 32);
+    }
+    uint32_t fat_size = fat_u16(bs + 22);
+    if (fat_size == 0) {
+        fat_size = fat_u32(bs + 36);
+    }
     // root directory size in sectors, rounded up ((x + 511) / 512 rounds a division up)
     uint32_t root_sectors = ((uint32_t)root_entries * 32 + FAT_SECTOR_SIZE - 1) / FAT_SECTOR_SIZE;
     // the data area starts after the reserved sectors, the FATs and the FAT16 root directory
     uint32_t data_start = reserved + fats * fat_size + root_sectors;
 
     // nonsense numbers mean this isn't really a FAT volume
-    if (fat_size == 0 || total <= data_start) return FS_ERR_NOT_FOUND;
+    if (fat_size == 0 || total <= data_start) {
+        return FS_ERR_NOT_FOUND;
+    }
     // everything after data_start is clusters (a few leftover sectors at the end go unused)
     uint32_t clusters = (total - data_start) / spc;
-    if (clusters < 4085) return FS_ERR_NOT_FOUND; // FAT12 (floppy sized) is not supported
+    if (clusters < 4085) {
+        return FS_ERR_NOT_FOUND; // FAT12 (floppy sized) is not supported
+    }
 
     fat_vol.bus = bus;
     fat_vol.slave = slave;
@@ -1303,10 +1453,17 @@ static int fat_mount (int bus, int slave) {
             fat_vol.fat_copies = 1;
         }
         fat_vol.root_cluster = fat_u32(bs + 44);
-        // the FSInfo sector number is relative to the volume, 0 or 0xFFFF means there isn't one
+        // the FSInfo sector number is counted from the start of the volume; 0 or 0xFFFF means
+        // there isn't one
         uint16_t fsinfo = fat_u16(bs + 48);
-        fat_vol.fsinfo_lba = (fsinfo != 0 && fsinfo != 0xFFFF) ? volume_lba + fsinfo : 0;
-        if (!fat_valid_cluster(fat_vol.root_cluster)) return FS_ERR_NOT_FOUND;
+        bool has_fsinfo = fsinfo != 0 && fsinfo != 0xFFFF;
+        fat_vol.fsinfo_lba = 0;
+        if (has_fsinfo) {
+            fat_vol.fsinfo_lba = volume_lba + fsinfo;
+        }
+        if (!fat_valid_cluster(fat_vol.root_cluster)) {
+            return FS_ERR_NOT_FOUND;
+        }
         fat_copy_label(bs + 71, fat_vol.label);
     } else {
         fat_copy_label(bs + 43, fat_vol.label);

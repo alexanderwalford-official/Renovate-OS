@@ -127,11 +127,21 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
         // any number of them, in any order, e.g. "%-+5d" or "%+-5d"
         bool left = false, zero = false, plus = false, space = false, alt = false;
         for (;; fmt++) {
-            if (*fmt == '-') left = true;
-            else if (*fmt == '0') zero = true;
-            else if (*fmt == '+') plus = true;
-            else if (*fmt == ' ') space = true;
-            else if (*fmt == '#') alt = true;
+            if (*fmt == '-') {
+                left = true;
+            }
+            else if (*fmt == '0') {
+                zero = true;
+            }
+            else if (*fmt == '+') {
+                plus = true;
+            }
+            else if (*fmt == ' ') {
+                space = true;
+            }
+            else if (*fmt == '#') {
+                alt = true;
+            }
             else break;
         }
 
@@ -212,18 +222,32 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
             case 'i': {
                 // signed integers: always read into a long long so one code path handles every size
                 long long value;
-                if (length == 2) value = va_arg(ap, long long);
-                else if (length == 1) value = va_arg(ap, long);
+                if (length == 2) {
+                    value = va_arg(ap, long long);
+                }
+                else if (length == 1) {
+                    value = va_arg(ap, long);
+                }
                 else value = va_arg(ap, int);
                 // anything smaller than an int is "promoted" to int when passed through "...",
                 // so for h / hh we read an int and then cut it back down to the size it really was
-                if (length == -1) value = (short)value;
-                if (length == -2) value = (signed char)value;
+                if (length == -1) {
+                    value = (short)value;
+                }
+                if (length == -2) {
+                    value = (signed char)value;
+                }
 
                 // work out the sign prefix; '+' beats ' ' if both flags are given
-                if (value < 0) prefix = "-";
-                else if (plus) prefix = "+";
-                else if (space) prefix = " ";
+                if (value < 0) {
+                    prefix = "-";
+                }
+                else if (plus) {
+                    prefix = "+";
+                }
+                else if (space) {
+                    prefix = " ";
+                }
                 // negate as unsigned so the most negative value works too
                 // (-LLONG_MIN doesn't fit in a long long, but wraps round to the right magnitude as unsigned)
                 unsigned long long magnitude = (value < 0) ? -(unsigned long long)value : (unsigned long long)value;
@@ -245,21 +269,39 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
                     value = (uintptr_t)va_arg(ap, void*);
                     alt = true;
                 } else if (length == 2) value = va_arg(ap, unsigned long long);
-                else if (length == 1) value = va_arg(ap, unsigned long);
+                else if (length == 1) {
+                    value = va_arg(ap, unsigned long);
+                }
                 else value = va_arg(ap, unsigned int);
-                if (length == -1) value = (unsigned short)value;
-                if (length == -2) value = (unsigned char)value;
+                if (length == -1) {
+                    value = (unsigned short)value;
+                }
+                if (length == -2) {
+                    value = (unsigned char)value;
+                }
 
                 uint32_t base = 10;
-                if (spec == 'x' || spec == 'X' || spec == 'p') base = 16;
-                else if (spec == 'o') base = 8;
-                else if (spec == 'b') base = 2;
+                if (spec == 'x' || spec == 'X' || spec == 'p') {
+                    base = 16;
+                }
+                else if (spec == 'o') {
+                    base = 8;
+                }
+                else if (spec == 'b') {
+                    base = 2;
+                }
 
                 // the # flag's prefix; like the C library, zero gets no prefix (so a NULL %p prints "0")
                 if (alt && value != 0) {
-                    if (base == 16) prefix = (spec == 'X') ? "0X" : "0x";
-                    else if (base == 8) prefix = "0";
-                    else if (base == 2) prefix = "0b";
+                    if (base == 16) {
+                        prefix = (spec == 'X') ? "0X" : "0x";
+                    }
+                    else if (base == 8) {
+                        prefix = "0";
+                    }
+                    else if (base == 2) {
+                        prefix = "0b";
+                    }
                 }
                 body = format_digits(value, base, spec == 'X', buf_end);
                 is_number = true;
@@ -325,11 +367,15 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
         }
 
         // finally print the pieces in order; the spaces go on the left normally, or on the right with '-'
-        if (!left) emit_repeat(out, ctx, ' ', pad);
+        if (!left) {
+            emit_repeat(out, ctx, ' ', pad);
+        }
         emit_chars(out, ctx, prefix, prefix_len);
         emit_repeat(out, ctx, '0', zeros);
         emit_chars(out, ctx, body, len);
-        if (left) emit_repeat(out, ctx, ' ', pad);
+        if (left) {
+            emit_repeat(out, ctx, ' ', pad);
+        }
         count += pad + prefix_len + zeros + len;
     }
     return count;

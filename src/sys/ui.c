@@ -38,7 +38,9 @@ static const struct {
 };
 
 int ui_spinner (uint8_t x, uint8_t y, int style, enum color colour) {
-    if (style < 0 || style >= UI_SPINNER_STYLES) style = 0;
+    if (style < 0 || style >= UI_SPINNER_STYLES) {
+        style = 0;
+    }
     // the frame follows the clock, so the speed doesn't depend on how often this is called
     int frame = (int)(clck_uptime_ms() / styles[style].ms % (uint32_t)styles[style].count);
     const char* s = styles[style].frames[frame];
@@ -52,14 +54,30 @@ int ui_spinner (uint8_t x, uint8_t y, int style, enum color colour) {
 // ---- progress bars ------------------------------------------------------------------------------
 
 void ui_bar (uint8_t x, uint8_t y, uint8_t width, uint32_t done, uint32_t total, enum color colour) {
-    if (done > total) done = total;
-    // the share done, worked out so it can't overflow: by 100ths when total is small, otherwise
-    // by dividing total down first
-    uint32_t percent = total == 0 ? 100 : total < 40000000 ? done * 100 / total : done / (total / 100);
-    uint32_t filled = percent * width / 100;
+    if (done > total) {
+        done = total;
+    }
+    // How much is done, as a percentage. done * 100 would overflow 32 bits once done passes
+    // about 42 million, so for big totals divide the total down first instead (a little less
+    // exact, but only by a fraction of a percent)
+    uint32_t percent;
+    if (total == 0) {
+        percent = 100;                       // nothing to do counts as all done
+    } else if (total < 40000000) {
+        percent = done * 100 / total;
+    } else {
+        percent = done / (total / 100);
+    }
+    uint32_t filled = percent * width / 100; // how many cells of the bar are full
+
     putc(x, y, BRIGHT, console_bg, '[');
     for (uint32_t i = 0; i < width && x + 1 + i < COLS; i++) {
-        putc((uint8_t)(x + 1 + i), y, i < filled ? colour : DARK_GRAY, console_bg, i < filled ? BAR_FULL : BAR_EMPTY);
+        uint8_t cell_x = (uint8_t)(x + 1 + i);
+        if (i < filled) {
+            putc(cell_x, y, colour, console_bg, BAR_FULL);
+        } else {
+            putc(cell_x, y, DARK_GRAY, console_bg, BAR_EMPTY);
+        }
     }
     char text[8];
     snprintf(text, sizeof(text), "] %3u%%", percent);
@@ -93,7 +111,9 @@ void ui_progress_begin (ui_progress_t* p, uint32_t total) {
 
 void ui_progress_update (ui_progress_t* p, uint32_t done, const char* label) {
     uint32_t now = clck_uptime_ms();
-    if (p->last_ms != 0 && now - p->last_ms < FRAME_MS && done < p->total) return;
+    if (p->last_ms != 0 && now - p->last_ms < FRAME_MS && done < p->total) {
+        return;
+    }
     p->last_ms = now ? now : 1;
     ui_bar(2, p->y, BAR_WIDTH, done, p->total, LIGHT_GREEN);
     clear_row(LABEL_X, p->y);
@@ -118,7 +138,9 @@ static uint32_t busy_last_ms;
 // what busy() calls while a spinner is up
 static void busy_turn (void) {
     uint32_t now = clck_uptime_ms();
-    if (now - busy_last_ms < FRAME_MS) return;
+    if (now - busy_last_ms < FRAME_MS) {
+        return;
+    }
     busy_last_ms = now;
     ui_spinner(2, busy_y, 0, YELLOW);
 }
@@ -126,7 +148,9 @@ static void busy_turn (void) {
 void ui_busy_begin (const char* label) {
     uint8_t x, y;
     console_get_cursor(&x, &y);
-    if (x != 0) printf("\n");
+    if (x != 0) {
+        printf("\n");
+    }
     // "  |  Checking the password" (the spinner goes in column 2)
     printf("     %s", label);
     console_get_cursor(&x, &y);

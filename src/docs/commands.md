@@ -1,7 +1,7 @@
 # Terminal commands
 
 Commands can be typed in upper or lower case. Words in `<angle brackets>` are what you
-fill in, and `[square brackets]` mean it can be left out. `HELP` shows this list too.
+fill in, and `[square brackets]` mean it can be left out. `HLP` shows this list too.
 
 Press **Tab** to finish a word: the first word becomes a command or app, any later word a
 file or folder (after `sd`, only folders). When several things fit, Tab lists them.
@@ -40,10 +40,10 @@ See [Accounts and encryption](security.md).
 | --- | --- |
 | `whoami` | who is logged in |
 | `users` | list the accounts |
-| `adduser <name>` | make a new account and its home folder |
+| `newuser <name>` | make a new account and its home folder |
 | `deluser <name>` | delete an account (asks for your password) |
-| `passwd` | change your password |
-| `logout` | back to the login screen |
+| `pass` | change your password |
+| `out` | log out, back to the login screen |
 
 ## Programs
 

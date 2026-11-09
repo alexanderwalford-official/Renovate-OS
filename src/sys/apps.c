@@ -130,7 +130,9 @@ enum { DISK_UNREADABLE, DISK_SAME, DISK_DIFFERENT };
 static int disk_copy (unsigned int i, uint32_t length, char out[HASH_HEX + 1]) {
     uint32_t size = 0;
     char* data = fs_read_bytes(files[i].dir, files[i].name, &size);
-    if (!data) return DISK_UNREADABLE;
+    if (!data) {
+        return DISK_UNREADABLE;
+    }
     int what = DISK_SAME;
     if (size != length || memcmp(data, files[i].start, length) != 0) {
         hash_hex(data, size, out);
@@ -147,13 +149,17 @@ static bool recorded_hash (const char* record, const char* path, char out[HASH_H
     while (line && *line) {
         if (strncmp(line, path, path_length) == 0 && line[path_length] == ' ') {
             const char* hash = line + path_length + 1;
-            if (strnlen(hash, HASH_HEX) < HASH_HEX) return false;
+            if (strnlen(hash, HASH_HEX) < HASH_HEX) {
+                return false;
+            }
             memcpy(out, hash, HASH_HEX);
             out[HASH_HEX] = '\0';
             return true;
         }
         line = strchr(line, '\n');
-        if (line) line++;
+        if (line) {
+            line++;
+        }
     }
     return false;
 }
@@ -184,7 +190,9 @@ static void install_app (unsigned int i, const char* record, char keep[HASH_HEX 
     int disk = disk_copy(i, length, ondisk);
     if (disk == DISK_UNREADABLE) {
         // can't read it: leave the file and what we knew about it as they are
-        if (has_record) strcpy(keep, recorded);
+        if (has_record) {
+            strcpy(keep, recorded);
+        }
     } else if (disk == DISK_SAME) {
         strcpy(keep, builtin); // up to date
     } else if (has_record && strcmp(ondisk, recorded) == 0) {
@@ -220,14 +228,18 @@ int apps_install (void) {
             } else {
                 continue;
             }
-            if (result == FS_OK) installed++;
+            if (result == FS_OK) {
+                installed++;
+            }
             continue;
         }
 
         char keep[HASH_HEX + 1];
         bool changed;
         install_app(i, old_record, keep, &changed);
-        if (changed) installed++;
+        if (changed) {
+            installed++;
+        }
         if (keep[0]) {
             char line[RECORD_LINE];
             sprintf(line, "%s%s %s\n", files[i].dir, files[i].name, keep);

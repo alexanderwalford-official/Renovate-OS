@@ -34,10 +34,18 @@ static bool p_valid (int p_id) {
 //   "d" = p_destroy, "f" = p_freeze for 1ms, "e" = p_exec, "p" = stack_print (p_id is ignored)
 // returns 0 if the action was recognised, -1 if not
 int p_id_handler (const char* action, int p_id) {
-    if (StrCompare(action, "d")) p_destroy(p_id);
-    else if (StrCompare(action, "f")) p_freeze(p_id, 1);
-    else if (StrCompare(action, "e")) p_exec(p_id);
-    else if (StrCompare(action, "p")) stack_print();
+    if (StrCompare(action, "d")) {
+        p_destroy(p_id);
+    }
+    else if (StrCompare(action, "f")) {
+        p_freeze(p_id, 1);
+    }
+    else if (StrCompare(action, "e")) {
+        p_exec(p_id);
+    }
+    else if (StrCompare(action, "p")) {
+        stack_print();
+    }
     else return -1;
     return 0;
 }
@@ -243,7 +251,9 @@ void stack_print (void) {
 
 int p_queue_add (const char* code) {
     int id = p_create(code);
-    if (id < 0) return -1;
+    if (id < 0) {
+        return -1;
+    }
     p_stack[id].p_rs = P_WAITING;
     p_stack[id].p_seq = p_next_seq++;
     return p_queue_count();
@@ -252,7 +262,9 @@ int p_queue_add (const char* code) {
 int p_queue_count (void) {
     int count = 0;
     for (int i = 0; i < P_STACK_SIZE; ++i) {
-        if (p_stack[i].p_used && p_stack[i].p_rs == P_WAITING) count++;
+        if (p_stack[i].p_used && p_stack[i].p_rs == P_WAITING) {
+            count++;
+        }
     }
     return count;
 }
@@ -280,7 +292,9 @@ void p_queue_each (void (*fn)(int position, const char* code, void* ctx), void* 
                 next = i;
             }
         }
-        if (next < 0) return;
+        if (next < 0) {
+            return;
+        }
         after = p_stack[next].p_seq;
         fn(position, p_stack[next].p_inst, ctx);
     }
@@ -301,13 +315,19 @@ int p_queue_run (void (*before)(int number, int total, const char* code), bool (
     int ran = 0;
     for (;;) {
         int next = p_queue_first();
-        if (next < 0) break;
+        if (next < 0) {
+            break;
+        }
         ran++;
         // a program that queues more while it runs makes the total grow, so it is counted each time
-        if (before) before(ran, ran + p_queue_count() - 1, p_stack[next].p_inst);
+        if (before) {
+            before(ran, ran + p_queue_count() - 1, p_stack[next].p_inst);
+        }
         p_exec(next); // WAITING -> LIVE -> RUNNING -> DEAD
         p_destroy(next);
-        if (stop && stop()) break;
+        if (stop && stop()) {
+            break;
+        }
     }
     return ran;
 }

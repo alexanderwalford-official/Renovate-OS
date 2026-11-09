@@ -33,7 +33,7 @@ compared.
 | few hints | "Wrong user name or password" (but see the warning below) |
 | hidden typing | passwords show as `*` and stay out of the history |
 
-Commands: `whoami`, `users`, `adduser`, `deluser`, `passwd`, `logout`.
+Commands: `whoami`, `users`, `newuser`, `deluser`, `pass`, `out`.
 
 ### Home folders
 

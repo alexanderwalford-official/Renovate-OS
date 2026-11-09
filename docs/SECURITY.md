@@ -9,7 +9,7 @@ here is in four files:
 | [`src/lib/crypto.c`](../src/lib/crypto.c) | the algorithms: SHA-256, HMAC, PBKDF2, AES-256, CTR mode, random numbers |
 | [`src/sys/accounts/auth.c`](../src/sys/accounts/auth.c) | user accounts and the login screen |
 | [`src/sys/fcrypt.c`](../src/sys/fcrypt.c) | password protected files |
-| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENCRYPT`, `DECRYPT`, `RD`, `PASSWD`, `ADDUSER`... commands |
+| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENCRYPT`, `DECRYPT`, `RD`, `PASS`, `NEWUSER`... commands |
 
 The crypto library is about 600 lines of C, most of it comments, written from the published
 standards. Nothing is
@@ -153,7 +153,7 @@ flowchart TD
     F --> T["terminal, in /home/alex/"]
     L --> T
     G --> T
-    T -- LOGOUT --> A
+    T -- OUT --> A
 ```
 
 ### The accounts file
@@ -203,7 +203,7 @@ flowchart TD
 | Protection | How |
 | --- | --- |
 | No password on disk | only the salted PBKDF2 hash is saved |
-| Same password, different hash | a fresh random salt per user, and again on every `PASSWD` |
+| Same password, different hash | a fresh random salt per user, and again on every `PASS` |
 | Unknown names cost as much as real ones | `auth_check` runs a full PBKDF2 even when the name doesn't exist, so timing doesn't reveal valid names |
 | Few hints | "Wrong user name or password" either way, though real accounts also get the wrong-password warning (see section 4) |
 | Slow guessing at the keyboard | a 1 second pause after every wrong login |
@@ -212,7 +212,7 @@ flowchart TD
 | Comparing hashes | `crypto_equal` looks at every byte, so timing doesn't reveal how much matched |
 | Passwords in memory | password buffers are wiped with `crypto_wipe` as soon as they've been used |
 | Passwords on screen | typed as `*`, never added to the up-arrow history |
-| History between users | `LOGOUT` clears the command history and leaves the home folder |
+| History between users | `OUT` (log out) clears the command history and the scrollback, and leaves the home folder |
 | Damaged file | a line that doesn't parse is skipped, so one bad line can't lock everyone out |
 
 ### Commands
@@ -221,10 +221,10 @@ flowchart TD
 | --- | --- |
 | `WHOAMI` | prints who is logged in |
 | `USERS` | lists the accounts |
-| `ADDUSER <name>` | new account and its home folder, password asked twice |
+| `NEWUSER <name>` | new account and its home folder, password asked twice |
 | `DELUSER <name>` | deletes an account after asking for *your own* password (you can't delete yourself) |
-| `PASSWD` | your current password, then the new one twice |
-| `LOGOUT` | back to the login screen |
+| `PASS` | your current password, then the new one twice |
+| `OUT` | log out, back to the login screen |
 
 ---
 
@@ -362,7 +362,7 @@ Being clear about the limits is part of good security:
   which means anyone who can log in, or who can write to the disk, can take the computer over.
   Encrypted files stay safe, because their keys come from their own passwords, not from the
   accounts.
-* **There are no administrator accounts.** Every user can `ADDUSER` and `DELUSER`. `DELUSER`
+* **There are no administrator accounts.** Every user can `NEWUSER` and `DELUSER`. `DELUSER`
   asks for your own password, so it protects against someone walking up to an unlocked
   terminal, not against another user. Deleting an account leaves its home folder behind.
 * **Anyone at the keyboard can wipe a home folder.** Three wrong passwords for a name is all

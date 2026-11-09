@@ -65,23 +65,25 @@ typedef struct {
     int nesting;
 } parser_t;
 
-static parser_t P;
+static parser_t parser;
 
 // the token helpers: peek looks at the next token, next takes it, check asks what type it is,
 // accept takes it only if it is that type, expect takes it or reports what was missing.
 // Every token list ends in T_EOF, which next() never moves past, so reading can't run off the end
 
 static token_t* peek (void) {
-    return &P.tokens[P.pos];
+    return &parser.tokens[parser.pos];
 }
 
 static bool check (token_type_t type) {
-    return P.tokens[P.pos].type == type;
+    return parser.tokens[parser.pos].type == type;
 }
 
 static token_t* next (void) {
-    token_t* t = &P.tokens[P.pos];
-    if (t->type != T_EOF) P.pos++;
+    token_t* t = &parser.tokens[parser.pos];
+    if (t->type != T_EOF) {
+        parser.pos++;
+    }
     return t;
 }
 
@@ -118,13 +120,13 @@ static aer_node_t* new_node (node_type_t type, int line) {
 // few C function calls deep, and the kernel stack is shared by everything, so something like
 // ((((((((... 1000 deep is refused instead of overflowing the stack
 static void enter (void) {
-    if (++P.nesting > MAX_NESTING) {
+    if (++parser.nesting > MAX_NESTING) {
         aer_error(peek()->line, "code is nested too deeply");
     }
 }
 
 static void leave (void) {
-    P.nesting--;
+    parser.nesting--;
 }
 
 // a growing array of nodes, for blocks, lists and arguments
@@ -205,16 +207,18 @@ static aer_node_t* postfix (void) {
                 } while (accept(T_COMMA));
             }
             expect(T_RPAREN, "')' after the arguments");
-            if (args.count > AER_MAX_ARGS) aer_error(line, "too many arguments (at most %d)", AER_MAX_ARGS);
+            if (args.count > AER_MAX_ARGS) {
+                aer_error(line, "too many arguments (at most %d)", AER_MAX_ARGS);
+            }
             aer_node_t* call = new_node(N_CALL, line);
-            call->a = n;
+            call->callee = n;
             call->items = args.items;
             call->count = args.count;
             n = call;
         } else if (accept(T_LBRACKET)) {
             aer_node_t* index = new_node(N_INDEX, line);
-            index->a = n;
-            index->b = expression();
+            index->container = n;
+            index->index = expression();
             expect(T_RBRACKET, "']'");
             n = index;
         } else {
@@ -230,7 +234,7 @@ static aer_node_t* unary (void) {
         enter();
         aer_node_t* n = new_node(N_UNARY, line);
         n->op = T_MINUS;
-        n->a = unary();
+        n->operand = unary();
         leave();
         return n;
     }
@@ -247,14 +251,18 @@ static aer_node_t* binary (aer_node_t* (*operand)(void), const token_type_t* ops
         token_type_t type = peek()->type;
         bool match = false;
         for (int i = 0; i < op_count; i++) {
-            if (ops[i] == type) match = true;
+            if (ops[i] == type) {
+                match = true;
+            }
         }
-        if (!match) return left;
+        if (!match) {
+            return left;
+        }
         int line = next()->line;
         aer_node_t* n = new_node(N_BINARY, line);
         n->op = type;
-        n->a = left;
-        n->b = operand();
+        n->left = left;
+        n->right = operand();
         left = n;
     }
 }
@@ -280,7 +288,7 @@ static aer_node_t* negation (void) {
         enter();
         aer_node_t* n = new_node(N_UNARY, line);
         n->op = T_NOT;
-        n->a = negation();
+        n->operand = negation();
         leave();
         return n;
     }
@@ -293,8 +301,8 @@ static aer_node_t* conjunction (void) {
     aer_node_t* left = negation();
     while (check(T_AND)) {
         aer_node_t* n = new_node(N_AND, next()->line);
-        n->a = left;
-        n->b = negation();
+        n->left = left;
+        n->right = negation();
         left = n;
     }
     return left;
@@ -305,8 +313,8 @@ static aer_node_t* expression (void) {
     aer_node_t* left = conjunction();
     while (check(T_OR)) {
         aer_node_t* n = new_node(N_OR, next()->line);
-        n->a = left;
-        n->b = conjunction();
+        n->left = left;
+        n->right = conjunction();
         left = n;
     }
     leave();
@@ -335,8 +343,12 @@ static aer_node_t* block (void) {
 
 // a statement must be followed by a line break, or by a word that ends the block it is in
 static void end_of_statement (void) {
-    if (accept(T_NEWLINE)) return;
-    if (check(T_END) || check(T_ELSE) || check(T_ELIF) || check(T_EOF)) return;
+    if (accept(T_NEWLINE)) {
+        return;
+    }
+    if (check(T_END) || check(T_ELSE) || check(T_ELIF) || check(T_EOF)) {
+        return;
+    }
     aer_error(peek()->line, "expected the end of the line");
 }
 
@@ -345,15 +357,15 @@ static void end_of_statement (void) {
 //     if a then X elif b then Y else Z end   ->   N_IF(a, X, N_IF(b, Y, Z))
 static aer_node_t* if_rest (int line) {
     aer_node_t* n = new_node(N_IF, line);
-    n->a = expression();
+    n->condition = expression();
     expect(T_THEN, "'then' after the condition");
-    n->b = block();
+    n->then_block = block();
     if (check(T_ELIF)) {
-        n->c = if_rest(next()->line); // the rest of the chain, which shares our "end"
+        n->else_block = if_rest(next()->line); // the rest of the chain, which shares our "end"
         return n;
     }
     if (accept(T_ELSE)) {
-        n->c = block();
+        n->else_block = block();
     }
     expect(T_END, "'end' to close the if");
     return n;
@@ -362,9 +374,9 @@ static aer_node_t* if_rest (int line) {
 // "do" block "end", counting how deep in loops we are so break / continue can be checked
 static aer_node_t* loop_body (void) {
     expect(T_DO, "'do'");
-    P.loops++;
+    parser.loops++;
     aer_node_t* body = block();
-    P.loops--;
+    parser.loops--;
     expect(T_END, "'end' to close the loop");
     return body;
 }
@@ -380,13 +392,13 @@ static aer_node_t* statement (void) {
             n = new_node(N_LET, line);
             n->name = expect(T_NAME, "a variable name after let")->text;
             expect(T_ASSIGN, "'=' after the variable name");
-            n->b = expression();
+            n->new_value = expression();
             break;
 
         case T_FUNC: {
             next();
             // functions are global, so defining one inside an if or a loop would be misleading
-            if (P.functions > 0 || P.loops > 0 || P.nesting > 1) {
+            if (parser.functions > 0 || parser.loops > 0 || parser.nesting > 1) {
                 aer_error(line, "functions can only be made at the top level");
             }
             n = new_node(N_FUNC, line);
@@ -395,16 +407,18 @@ static aer_node_t* statement (void) {
             const char* params[AER_MAX_ARGS];
             if (!check(T_RPAREN)) {
                 do {
-                    if (n->count == AER_MAX_ARGS) aer_error(line, "too many parameters (at most %d)", AER_MAX_ARGS);
+                    if (n->count == AER_MAX_ARGS) {
+                        aer_error(line, "too many parameters (at most %d)", AER_MAX_ARGS);
+                    }
                     params[n->count++] = expect(T_NAME, "a parameter name")->text;
                 } while (accept(T_COMMA));
             }
             expect(T_RPAREN, "')' after the parameters");
             n->params = aer_alloc((size_t)(n->count ? n->count : 1) * sizeof(char*));
             memcpy(n->params, params, (size_t)n->count * sizeof(char*));
-            P.functions++;
-            n->b = block();
-            P.functions--;
+            parser.functions++;
+            n->body = block();
+            parser.functions--;
             expect(T_END, "'end' to close the function");
             break;
         }
@@ -417,8 +431,8 @@ static aer_node_t* statement (void) {
         case T_WHILE:
             next();
             n = new_node(N_WHILE, line);
-            n->a = expression();
-            n->b = loop_body();
+            n->condition = expression();
+            n->body = loop_body();
             break;
 
         case T_FOR:
@@ -427,30 +441,36 @@ static aer_node_t* statement (void) {
             n->name = expect(T_NAME, "a variable name after for")->text;
             if (accept(T_IN)) {
                 n->type = N_FOR_IN;
-                n->a = expression();
+                n->collection = expression();
             } else {
                 expect(T_ASSIGN, "'=' or 'in' after the loop variable");
-                n->a = expression();
+                n->from = expression();
                 expect(T_TO, "'to'");
-                n->c = expression();
-                if (accept(T_STEP)) n->d = expression();
+                n->to = expression();
+                if (accept(T_STEP)) {
+                    n->step = expression();
+                }
             }
-            n->b = loop_body();
+            n->body = loop_body();
             break;
 
         case T_RETURN:
             next();
-            if (P.functions == 0) aer_error(line, "return can only be used inside a function");
+            if (parser.functions == 0) {
+                aer_error(line, "return can only be used inside a function");
+            }
             n = new_node(N_RETURN, line);
             if (!check(T_NEWLINE) && !check(T_END) && !check(T_ELSE) && !check(T_ELIF) && !check(T_EOF)) {
-                n->a = expression();
+                n->expression = expression();
             }
             break;
 
         case T_BREAK:
         case T_CONTINUE:
             next();
-            if (P.loops == 0) aer_error(line, "%s can only be used inside a loop", t->type == T_BREAK ? "break" : "continue");
+            if (parser.loops == 0) {
+                aer_error(line, "%s can only be used inside a loop", t->type == T_BREAK ? "break" : "continue");
+            }
             n = new_node(t->type == T_BREAK ? N_BREAK : N_CONTINUE, line);
             break;
 
@@ -464,11 +484,11 @@ static aer_node_t* statement (void) {
                     aer_error(line, "can only assign to a variable or a list item");
                 }
                 n = new_node(N_ASSIGN, line);
-                n->a = e;
-                n->b = expression();
+                n->target = e;
+                n->new_value = expression();
             } else {
                 n = new_node(N_EXPR, line);
-                n->a = e;
+                n->expression = e;
             }
             break;
         }
@@ -480,13 +500,19 @@ static aer_node_t* statement (void) {
 // tokens -> the syntax tree of the whole program (an N_BLOCK of its statements)
 aer_node_t* aer_parse (token_t* tokens, int count) {
     (void)count;
-    memset(&P, 0, sizeof(P));
-    P.tokens = tokens;
+    memset(&parser, 0, sizeof(parser));
+    parser.tokens = tokens;
     aer_node_t* program = block();
     // block() stops at end / else / elif, at the top level that means one too many of them
     if (!check(T_EOF)) {
         token_t* t = peek();
-        aer_error(t->line, "'%s' without a matching start", t->type == T_END ? "end" : t->type == T_ELSE ? "else" : "elif");
+        const char* word = "elif";
+        if (t->type == T_END) {
+            word = "end";
+        } else if (t->type == T_ELSE) {
+            word = "else";
+        }
+        aer_error(t->line, "'%s' without a matching start", word);
     }
     return program;
 }

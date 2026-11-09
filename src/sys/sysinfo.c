@@ -103,7 +103,9 @@ static const char* hypervisor_name (const char* id) {
         { "Microsoft Hv", "Hyper-V" }, { "XenVMMXenVMM", "Xen" }, { " lrpepyh  vr", "Parallels" },
     };
     for (unsigned int i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
-        if (strncmp(id, known[i].id, strlen(known[i].id)) == 0) return known[i].name;
+        if (strncmp(id, known[i].id, strlen(known[i].id)) == 0) {
+            return known[i].name;
+        }
     }
     return id;
 }
@@ -129,18 +131,38 @@ static void processor_rows (out_t* out) {
 
     cpuid_t info = cpuid(1);
     uint32_t family = (info.a >> 8) & 0xF, model = (info.a >> 4) & 0xF;
-    if (family == 0xF) family += (info.a >> 20) & 0xFF;               // the extended family
-    if (family == 6 || family >= 0xF) model += ((info.a >> 16) & 0xF) << 4; // and model
+    if (family == 0xF) {
+        family += (info.a >> 20) & 0xFF; // the extended family
+    }
+    if (family == 6 || family >= 0xF) {
+        model += ((info.a >> 16) & 0xF) << 4; // and model
+    }
     row(out, "Family", "%u, model %u, stepping %u", family, model, info.a & 0xF);
 
-    // features that matter to an OS, from the leaf 1 bits
+    // Features that matter to an OS. CPUID leaf 1 sets one bit for each feature the processor
+    // has, some in register d and some in register c
     bool has_tsc = info.d & (1u << 4);
     bool is_64 = max_extended >= 0x80000001 && (cpuid(0x80000001).d & (1u << 29));
-    row(out, "Features", "%s%s%s%s%s%s%s%s",
-        (info.d & 1) ? "FPU " : "", has_tsc ? "TSC " : "", (info.d & (1u << 25)) ? "SSE " : "",
-        (info.d & (1u << 26)) ? "SSE2 " : "", (info.c & (1u << 20)) ? "SSE4.2 " : "",
-        (info.c & (1u << 28)) ? "AVX " : "", (info.c & (1u << 30)) ? "RDRAND " : "",
-        is_64 ? "x86-64" : "");
+    const struct {
+        bool present;
+        const char* name;
+    } features[] = {
+        { (info.d & (1u << 0)) != 0,  "FPU " },     // the maths co-processor (floating point)
+        { has_tsc,                    "TSC " },     // the cycle counter, used for the speed below
+        { (info.d & (1u << 25)) != 0, "SSE " },
+        { (info.d & (1u << 26)) != 0, "SSE2 " },
+        { (info.c & (1u << 20)) != 0, "SSE4.2 " },
+        { (info.c & (1u << 28)) != 0, "AVX " },
+        { (info.c & (1u << 30)) != 0, "RDRAND " },  // a hardware random number generator
+        { is_64,                      "x86-64" },   // can run 64 bit code
+    };
+    char feature_list[64] = "";
+    for (unsigned int i = 0; i < sizeof(features) / sizeof(features[0]); i++) {
+        if (features[i].present) {
+            strlcat(feature_list, features[i].name, sizeof(feature_list));
+        }
+    }
+    row(out, "Features", "%s", feature_list);
 
     // the speed: count the processor's cycles over 20ms of the timer. Only the low 32 bits of
     // the counter are needed, 20ms is far fewer than 4 billion cycles even at 10 GHz
@@ -211,10 +233,14 @@ static void storage_rows (out_t* out) {
         char model[41] = "";
         uint32_t sectors = 0;
         int type = drive_probe_info(bus, slave, model, sizeof(model), &sectors);
-        if (type == DRIVE_NONE) continue;
+        if (type == DRIVE_NONE) {
+            continue;
+        }
         bool mounted = fs_mode == FS_MODE_DISK && fat_vol.bus == bus && fat_vol.slave == slave;
         char size[24] = "";
-        if (sectors) snprintf(size, sizeof(size), ", %u MB", sectors / 2048);
+        if (sectors) {
+            snprintf(size, sizeof(size), ", %u MB", sectors / 2048);
+        }
         const char* name = StrTrim(model);
         row(out, positions[i], "%s%s%s", name[0] ? name : drive_type_name(type), size,
             mounted ? ", the AEROS disk" : "");

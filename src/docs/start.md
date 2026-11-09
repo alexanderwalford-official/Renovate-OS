@@ -56,7 +56,7 @@ in as much as they share, and when there is nothing more to fill in it lists the
 
 | Type | To |
 | --- | --- |
-| `help` | list every command |
+| `hlp` | list every command |
 | `docs` | open this manual |
 | `la` | list the files here |
 | `hello` | run the hello program |

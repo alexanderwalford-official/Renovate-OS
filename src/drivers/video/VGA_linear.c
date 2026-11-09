@@ -593,7 +593,9 @@ static void view_draw(void) {
         n /= 10;
     } while (n > 0);
     tag[t++] = ' ';
-    while (d > 0) tag[t++] = digits[--d];
+    while (d > 0) {
+        tag[t++] = digits[--d];
+    }
     for (const char* s = view_back == 1 ? " line back  PgUp / PgDn " : " lines back  PgUp / PgDn "; *s; s++) {
         tag[t++] = *s;
     }
@@ -604,9 +606,15 @@ static void view_draw(void) {
 
 void console_view_scroll(int lines) {
     int back = (int)view_back + lines;
-    if (back < 0) back = 0;
-    if (back > (int)scrollback_count) back = (int)scrollback_count;
-    if ((unsigned int)back == view_back) return;
+    if (back < 0) {
+        back = 0;
+    }
+    if (back > (int)scrollback_count) {
+        back = (int)scrollback_count;
+    }
+    if ((unsigned int)back == view_back) {
+        return;
+    }
     if (back == 0) {
         console_view_live();
         return;
@@ -624,7 +632,9 @@ void console_view_scroll(int lines) {
 }
 
 void console_view_live(void) {
-    if (view_back == 0) return;
+    if (view_back == 0) {
+        return;
+    }
     view_back = 0; // first, so the drawing below doesn't come back here
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
         cell_set(i, live[i]);

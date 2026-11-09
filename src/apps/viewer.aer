@@ -22,7 +22,9 @@ end
 
 func find_pictures(folder, found)
     let names = list_files(folder)
-    if names == nil then return found end
+    if names == nil then
+        return found
+    end
 
     for name in names do
         if ends_with(name, ".bmp") then
@@ -68,7 +70,9 @@ end
 # Convert a masked colour component to 0-255.
 # Used for RGB555 and RGB565.
 func mask_component(value, mask)
-    if mask == 0 then return 0 end
+    if mask == 0 then
+        return 0
+    end
 
     let factor = 1
 
@@ -138,7 +142,9 @@ end
 
 func convert_bmp(d)
 
-    if d == nil or len(d) < 54 then return nil end
+    if d == nil or len(d) < 54 then
+        return nil
+    end
 
     if d[0] != ord("B") or d[1] != ord("M") then
         return nil
@@ -147,8 +153,12 @@ func convert_bmp(d)
     let offset = read_u32(d, 10)
     let dib = read_u32(d, 14)
 
-    if dib < 40 then return nil end
-    if 14 + dib > len(d) then return nil end
+    if dib < 40 then
+        return nil
+    end
+    if 14 + dib > len(d) then
+        return nil
+    end
 
     let width = read_s32(d, 18)
     let signed_height = read_s32(d, 22)
@@ -157,8 +167,12 @@ func convert_bmp(d)
     let bpp = read_u16(d, 28)
     let compression = read_u32(d, 30)
 
-    if width <= 0 or signed_height == 0 then return nil end
-    if planes != 1 then return nil end
+    if width <= 0 or signed_height == 0 then
+        return nil
+    end
+    if planes != 1 then
+        return nil
+    end
 
     let height = signed_height
     let top_down = false
@@ -195,7 +209,9 @@ func convert_bmp(d)
             mask_pos = 54
         end
 
-        if mask_pos + 12 > len(d) then return nil end
+        if mask_pos + 12 > len(d) then
+            return nil
+        end
 
         red_mask = read_u32(d, mask_pos)
         green_mask = read_u32(d, mask_pos + 4)
@@ -223,9 +239,15 @@ func convert_bmp(d)
 
     if bpp <= 8 then
 
-        if bpp == 1 then palette_count = 2 end
-        if bpp == 4 then palette_count = 16 end
-        if bpp == 8 then palette_count = 256 end
+        if bpp == 1 then
+            palette_count = 2
+        end
+        if bpp == 4 then
+            palette_count = 16
+        end
+        if bpp == 8 then
+            palette_count = 256
+        end
 
         let used = read_u32(d, 46)
 
@@ -233,7 +255,9 @@ func convert_bmp(d)
             palette_count = used
         end
 
-        if palette_count > 256 then return nil end
+        if palette_count > 256 then
+            return nil
+        end
 
         if palette_offset + palette_count * 4 > offset then
             return nil
@@ -320,7 +344,9 @@ func convert_bmp(d)
 
                 let index = (p / bit) % 2
 
-                if index >= len(palette) then return nil end
+                if index >= len(palette) then
+                    return nil
+                end
 
                 red = palette[index][0]
                 green = palette[index][1]
@@ -339,7 +365,9 @@ func convert_bmp(d)
                     index = p % 16
                 end
 
-                if index >= len(palette) then return nil end
+                if index >= len(palette) then
+                    return nil
+                end
 
                 red = palette[index][0]
                 green = palette[index][1]
@@ -351,7 +379,9 @@ func convert_bmp(d)
 
                 let index = d[source_row + x]
 
-                if index >= len(palette) then return nil end
+                if index >= len(palette) then
+                    return nil
+                end
 
                 red = palette[index][0]
                 green = palette[index][1]
@@ -416,9 +446,15 @@ func ask_conversion(path, data)
 
         let k = key()
 
-        if k == ord("Y") or k == ord("y") then return 1 end
-        if k == ord("N") or k == ord("n") then return 0 end
-        if k == KEY_ESCAPE then return -1 end
+        if k == ord("Y") or k == ord("y") then
+            return 1
+        end
+        if k == ord("N") or k == ord("n") then
+            return 0
+        end
+        if k == KEY_ESCAPE then
+            return -1
+        end
     end
 end
 
@@ -523,8 +559,12 @@ func choose(pictures, selected)
             selected = selected + 1
         end
 
-        if k == KEY_ENTER then return selected end
-        if k == KEY_ESCAPE then return -1 end
+        if k == KEY_ENTER then
+            return selected
+        end
+        if k == KEY_ESCAPE then
+            return -1
+        end
     end
 end
 
@@ -562,8 +602,12 @@ func fit_size(size, box_w, box_h)
         end
 
         # a very long, thin picture still gets at least one pixel
-        if pw < 1 then pw = 1 end
-        if ph < 1 then ph = 1 end
+        if pw < 1 then
+            pw = 1
+        end
+        if ph < 1 then
+            ph = 1
+        end
 
         return [pw, ph]
     end
@@ -581,9 +625,15 @@ end
 # long: centred if it fits, otherwise moved no further than the edges.
 func place(pos, length, room)
 
-    if length <= room then return (room - length) / 2 end
-    if pos > 0 then return 0 end
-    if pos < room - length then return room - length end
+    if length <= room then
+        return (room - length) / 2
+    end
+    if pos > 0 then
+        return 0
+    end
+    if pos < room - length then
+        return room - length
+    end
 
     return pos
 end
@@ -616,7 +666,9 @@ func wait_to_leave()
 
     while true do
         let k = key()
-        if k == KEY_ESCAPE or k == KEY_LEFT or k == KEY_RIGHT then return k end
+        if k == KEY_ESCAPE or k == KEY_LEFT or k == KEY_RIGHT then
+            return k
+        end
     end
 end
 
@@ -633,7 +685,9 @@ func view(path)
     let data = load_picture(path)
     let size = nil
 
-    if data != nil then size = image_size(data) end
+    if data != nil then
+        size = image_size(data)
+    end
 
     if size == nil then
         gfx_clear(BACKGROUND)
@@ -656,7 +710,9 @@ func view(path)
 
             # gaps around the picture need clearing, a picture covering
             # the whole view doesn't (and doesn't flicker)
-            if pw < w or ph < room then gfx_clear(BACKGROUND) end
+            if pw < w or ph < room then
+                gfx_clear(BACKGROUND)
+            end
 
             image(data, x, y, pw, ph)
             caption(path, size, pw, zoom, w, h)
@@ -665,11 +721,19 @@ func view(path)
         let k = key()
         let new_zoom = zoom
 
-        if k == ord("+") or k == ord("=") then new_zoom = zoom * 2 end
-        if k == ord("-") or k == ord("_") then new_zoom = zoom / 2 end
-        if k == ord("0") then new_zoom = 1 end
+        if k == ord("+") or k == ord("=") then
+            new_zoom = zoom * 2
+        end
+        if k == ord("-") or k == ord("_") then
+            new_zoom = zoom / 2
+        end
+        if k == ord("0") then
+            new_zoom = 1
+        end
 
-        if new_zoom < 1 then new_zoom = 1 end
+        if new_zoom < 1 then
+            new_zoom = 1
+        end
 
         if new_zoom > MAX_ZOOM or fit[0] * new_zoom > MAX_SIDE or fit[1] * new_zoom > MAX_SIDE then
             new_zoom = zoom
@@ -695,10 +759,18 @@ func view(path)
         elif zoom > 1 and (k == KEY_LEFT or k == KEY_RIGHT or k == KEY_UP or k == KEY_DOWN) then
 
             # move a quarter of the screen, looking further that way
-            if k == KEY_LEFT then x = place(x + w / 4, pw, w) end
-            if k == KEY_RIGHT then x = place(x - w / 4, pw, w) end
-            if k == KEY_UP then y = place(y + room / 4, ph, room) end
-            if k == KEY_DOWN then y = place(y - room / 4, ph, room) end
+            if k == KEY_LEFT then
+                x = place(x + w / 4, pw, w)
+            end
+            if k == KEY_RIGHT then
+                x = place(x - w / 4, pw, w)
+            end
+            if k == KEY_UP then
+                y = place(y + room / 4, ph, room)
+            end
+            if k == KEY_DOWN then
+                y = place(y - room / 4, ph, room)
+            end
 
             # already at the edge: nothing to redraw
             changed = x != old_x or y != old_y
@@ -765,7 +837,9 @@ while current >= 0 do
 
         gfx_close()
 
-        if len(args) > 0 then exit() end
+        if len(args) > 0 then
+            exit()
+        end
 
         current = choose(pictures, current)
     end
