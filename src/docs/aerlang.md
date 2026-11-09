@@ -150,6 +150,30 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
+**For games:** `gbuf(true)` draws into a back buffer out of sight and `gshow()` puts
+each finished frame on the screen, so moving things don't flicker. `keydown(k)` says if a
+key is held right now (`"a"`, `KEY_LEFT`, `KEY_SPACE`, `KEY_SHIFT`...), without waiting.
+`sload(path)` loads a WAV or MP3, and `splay(sound, loop, volume)` starts it and carries on
+at once: up to 8 sounds play together. `sstop(n)` stops one, `isply(n)` asks if it still
+plays. Use `keydown` for things that last (moving) and `haskey()` / `key()` for single
+presses (jumping): every press waits there until it is read, so a quick tap is never missed.
+`/bin/move.aer` uses them all.
+
+```
+gopen()
+gbuf(true)
+let x = 100
+while not keydown(KEY_ESCAPE) do
+    if keydown(KEY_RIGHT) then
+        x = x + 4
+    end
+    gclear(0)
+    rect(x, 100, 40, 40, 0xFF7F00)
+    gshow()
+    frame(60)
+end
+```
+
 ## Programs to learn from
 
 | File | Shows |
@@ -157,6 +181,7 @@ key()
 | `/bin/hello.aer` | input, functions, lists, loops |
 | `/bin/guess.aer` | random numbers and a game loop |
 | `/bin/viewer.aer` | graphics, pictures and a menu |
+| `/bin/move.aer` | smooth movement, held keys and mixed sounds |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
 | `/bin/anim.aer` | spinners, progress bars and moving text |

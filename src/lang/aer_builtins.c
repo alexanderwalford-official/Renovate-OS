@@ -28,6 +28,7 @@
 #include "../sys/f_sys.h"
 #include "../sys/fcrypt.h"
 #include "../sys/sound.h"
+#include "../sys/mixer.h"
 #include "../sys/sysinfo.h"
 #include "../sys/ui.h"
 #include "../sys/p_man.h"
@@ -807,6 +808,96 @@ static value_t bi_image_size (int argc, value_t* argv, int line) {
     return size;
 }
 
+// ---- for games: smooth drawing, held keys, and sounds that mix --------------------------------
+
+// gbuf(on): true draws everything into a back buffer, out of sight, until gshow() puts the
+// finished frame on the screen (no flicker); false draws straight onto the screen again.
+// Returns false if there isn't enough memory for the back buffer
+static value_t bi_gbuf (int argc, value_t* argv, int line) {
+    (void)argc;
+    need_graphics(line, "gbuf");
+    return aer_bool(gfx_buffered(aer_truthy(argv[0])));
+}
+
+// gshow(): put the frame drawn in the back buffer on the screen
+static value_t bi_gshow (int argc, value_t* argv, int line) {
+    (void)argc;
+    (void)argv;
+    need_graphics(line, "gshow");
+    gfx_show();
+    return aer_nil();
+}
+
+// keydown(key): is this key held down right now? key is a character ("a", " ", or ord("a"))
+// or one of the KEY_ constants (KEY_LEFT, KEY_SHIFT...). Unlike key(), it doesn't wait, and
+// several keys can be down at once
+static value_t bi_keydown (int argc, value_t* argv, int line) {
+    (void)argc;
+    int key;
+    if (argv[0].type == V_STR) {
+        if (argv[0].as.obj->length == 0) {
+            aer_error(line, "keydown() needs a key, not an empty string");
+        }
+        key = (uint8_t)argv[0].as.obj->data.chars[0];
+    } else {
+        key = int_arg(argv, 0, line, "keydown");
+    }
+    return aer_bool(kb_is_down(key));
+}
+
+// sload(path): load a WAV or MP3 file, ready for splay(). Gives back the sound (as bytes), or
+// nil if it can't be loaded
+static value_t bi_sload (int argc, value_t* argv, int line) {
+    (void)argc;
+    int16_t* frames;
+    uint32_t count;
+    if (sound_load(str_arg(argv, 0, line, "sload")->data.chars, &frames, &count) != SOUND_OK) {
+        return aer_nil();
+    }
+    uint32_t size = count * 4; // stereo, 2 bytes a sample
+    value_t sound = aer_bytes(size);
+    memcpy(sound.as.obj->data.bytes, frames, size);
+    free(frames);
+    return sound;
+}
+
+// splay(sound, loop, volume): start playing a sound from sload(), and carry on straight away.
+// loop (false if left out) plays it round and round; volume runs from 0 to 100 (100 if left
+// out). Gives back a number for sstop() and isply(), or -1 if no sound could be started (no
+// sound card, or 8 sounds already playing)
+static value_t bi_splay (int argc, value_t* argv, int line) {
+    aer_object_t* sound = bytes_arg(argv, 0, line, "splay");
+    bool loop = argc > 1 && aer_truthy(argv[1]);
+    int32_t percent = 100;
+    if (argc > 2) {
+        percent = int_arg(argv, 2, line, "splay");
+    }
+    int volume = (int)(percent * MIXER_FULL_VOLUME / 100);
+
+    // The mixer reads the sound's bytes while it plays, so they must not be freed meanwhile,
+    // even if the program lets go of the sound. Holding an extra reference keeps them; they
+    // are freed with everything else when the program ends
+    aer_retain(argv[0]);
+    int voice = mixer_play((const int16_t*)sound->data.bytes, sound->length / 4, loop, volume);
+    return aer_int(voice);
+}
+
+// sstop(voice): stop a sound splay() started. sstop() on its own stops them all
+static value_t bi_sstop (int argc, value_t* argv, int line) {
+    if (argc == 0) {
+        mixer_stop_all();
+        return aer_nil();
+    }
+    mixer_stop(int_arg(argv, 0, line, "sstop"));
+    return aer_nil();
+}
+
+// isply(voice): is that sound still playing?
+static value_t bi_isply (int argc, value_t* argv, int line) {
+    (void)argc;
+    return aer_bool(mixer_playing(int_arg(argv, 0, line, "isply")));
+}
+
 static value_t bi_exit (int argc, value_t* argv, int line) {
     (void)argc; (void)argv;
     // leaving by the error route, but quietly: there is nothing wrong
@@ -877,6 +968,13 @@ const aer_builtin_t aer_builtins[] = {
     { "text", bi_text, 4, 5 },
     { "image", bi_image, 3, 5 },
     { "imgsz", bi_image_size, 1, 1 },
+    { "gbuf", bi_gbuf, 1, 1 },
+    { "gshow", bi_gshow, 0, 0 },
+    { "keydown", bi_keydown, 1, 1 },
+    { "sload", bi_sload, 1, 1 },
+    { "splay", bi_splay, 1, 3 },
+    { "sstop", bi_sstop, 0, 1 },
+    { "isply", bi_isply, 1, 1 },
 };
 
 const int aer_builtin_count = sizeof(aer_builtins) / sizeof(aer_builtins[0]);
@@ -887,6 +985,7 @@ void aer_define_constants (void) {
         { "KEY_RIGHT", KEY_RIGHT }, { "KEY_HOME", KEY_HOME }, { "KEY_END", KEY_END },
         { "KEY_DELETE", KEY_DELETE }, { "KEY_ESCAPE", KEY_ESCAPE }, { "KEY_ENTER", '\n' },
         { "KEY_BACKSPACE", '\b' }, { "KEY_TAB", '\t' }, { "KEY_PGUP", KEY_PGUP }, { "KEY_PGDN", KEY_PGDN },
+        { "KEY_SHIFT", KEY_SHIFT }, { "KEY_CTRL", KEY_CTRL }, { "KEY_ALT", KEY_ALT }, { "KEY_SPACE", ' ' },
         { "BLACK", BLACK }, { "DARK_BLUE", DARK_BLUE }, { "GREEN", GREEN }, { "CYAN", CYAN },
         { "RED", RED }, { "PURPLE", PURPLE }, { "ORANGE", ORANGE }, { "BROWN", BROWN }, { "BRIGHT", BRIGHT },
         { "DARK_GRAY", DARK_GRAY }, { "LIGHT_BLUE", LIGHT_BLUE }, { "LIGHT_GREEN", LIGHT_GREEN },
@@ -901,6 +1000,7 @@ void aer_define_constants (void) {
 
 // a program that ends (or crashes) in graphics mode gets the terminal back automatically
 void aer_builtins_finish (void) {
+    mixer_stop_all(); // sounds from splay() stop with the program (their memory is about to go)
     if (aer->graphics) {
         gfx_end();
         aer->graphics = false;

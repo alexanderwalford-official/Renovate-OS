@@ -1,8 +1,23 @@
 /*
     gfx.c - graphics for apps
 
-    Draws straight into the framebuffer GRUB set up (see VGA_linear.c), one pixel at a time.
-    A pixel is 2, 3 or 4 bytes, with red, green and blue at the bit positions GRUB reported.
+    Draws into the framebuffer GRUB set up (see VGA_linear.c). A pixel is 2, 3 or 4 bytes, with
+    red, green and blue at the bit positions GRUB reported.
+
+    DRAWING STRAIGHT TO THE SCREEN, OR TO A BACK BUFFER
+
+    By default everything is drawn straight onto the screen, so you see each step as it
+    happens. That is fine for a still picture, but anything that moves flickers: the screen
+    shows the frame half cleared and half redrawn.
+
+    gfx_buffered(true) gives a "back buffer" instead: a copy of the screen in memory, in exactly
+    the screen's own pixel format. Everything is drawn there, out of sight, and gfx_show()
+    copies the finished frame onto the screen in one go, a row at a time with memcpy. The
+    screen only ever shows whole frames. Every drawing function writes through `target`, which
+    is either the screen or the back buffer:
+
+        drawing --> target --(straight)----------------------------> screen
+                          \--(buffered)--> back buffer --gfx_show()--> screen
 
     BMP pictures: a 14 byte file header ("BM", where the pixels start), a 40+ byte info header
     (width, height, bits per pixel, compression), an optional palette, then the rows of pixels.
@@ -14,10 +29,17 @@
 #include "gfx.h"
 #include "VGA_linear.h"
 #include "font8x16.h"
+#include "../../lib/aer_stdlib.h"
+#include "../../lib/aer_string.h"
 
 static vga_framebuffer_t fb; // where the framebuffer is and how its pixels are laid out
 static uint32_t fb_bytes;    // bytes per pixel
 static bool active = false;  // between gfx_begin and gfx_end, every drawing call checks it
+
+// where drawing goes: the screen itself, or the back buffer (see the top of this file)
+static uint8_t* target;        // the first pixel
+static uint32_t target_pitch;  // bytes from one row of pixels to the next
+static uint8_t* back = NULL;   // the back buffer, NULL when drawing straight to the screen
 
 // take the screen over from the text console (false in VGA text mode, there are no pixels)
 bool gfx_begin(void) {
@@ -25,6 +47,8 @@ bool gfx_begin(void) {
         return false;
     }
     fb_bytes = (fb.bpp + 7) / 8;
+    target = (uint8_t*)(uintptr_t)fb.address;
+    target_pitch = fb.pitch;
     clear(BLACK); // hides the cursor, and tells the terminal to redraw itself afterwards
     vga_invalidate();
     active = true;
@@ -37,9 +61,51 @@ void gfx_end(void) {
     if (!active) {
         return;
     }
+    gfx_buffered(false);
     active = false;
     vga_invalidate();
     clear(BLACK);
+}
+
+bool gfx_buffered(bool on) {
+    if (!active) {
+        return false;
+    }
+    uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
+    uint32_t row_bytes = fb.width * fb_bytes;
+
+    if (on && back == NULL) {
+        back = malloc((size_t)row_bytes * fb.height);
+        if (back == NULL) {
+            return false; // not enough memory: carry on drawing straight to the screen
+        }
+        // start from what is on the screen now, so nothing drawn so far is lost
+        for (uint32_t y = 0; y < fb.height; y++) {
+            memcpy(back + y * row_bytes, screen + y * fb.pitch, row_bytes);
+        }
+        target = back;
+        target_pitch = row_bytes;
+    } else if (!on && back != NULL) {
+        gfx_show(); // the screen gets the last frame drawn
+        free(back);
+        back = NULL;
+        target = screen;
+        target_pitch = fb.pitch;
+    }
+    return true;
+}
+
+void gfx_show(void) {
+    if (!active || back == NULL) {
+        return; // drawing straight to the screen: it is already there
+    }
+    uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
+    uint32_t row_bytes = fb.width * fb_bytes;
+    // a row at a time, because the screen's rows may be longer than the picture (fb.pitch is
+    // sometimes rounded up), while the back buffer's rows are exactly row_bytes long
+    for (uint32_t y = 0; y < fb.height; y++) {
+        memcpy(screen + y * fb.pitch, back + y * row_bytes, row_bytes);
+    }
 }
 
 uint32_t gfx_width(void) {
@@ -63,11 +129,33 @@ static uint32_t pack(uint32_t rgb) {
 
 // write one packed pixel (the caller has checked x and y are on screen)
 static void put(uint32_t x, uint32_t y, uint32_t pixel) {
-    uint8_t* p = (uint8_t*)(uintptr_t)fb.address + y * fb.pitch + x * fb_bytes;
+    uint8_t* p = target + y * target_pitch + x * fb_bytes;
     switch (fb_bytes) {
-        case 4: *(uint32_t*)p = pixel; break;
-        case 3: p[0] = pixel & 0xFF; p[1] = (pixel >> 8) & 0xFF; p[2] = (pixel >> 16) & 0xFF; break;
-        default: *(uint16_t*)p = (uint16_t)pixel; break;
+        case 4:
+            *(uint32_t*)p = pixel;
+            break;
+        case 3:
+            p[0] = pixel & 0xFF;
+            p[1] = (pixel >> 8) & 0xFF;
+            p[2] = (pixel >> 16) & 0xFF;
+            break;
+        default:
+            *(uint16_t*)p = (uint16_t)pixel;
+            break;
+    }
+}
+
+// fill `count` pixels of one row, starting at x, y, with a packed pixel. 32 bit screens (the
+// usual kind) are filled 4 bytes a step with "rep stosl" (see memset in lib/aer_string.c),
+// which makes clearing the whole screen every frame cheap
+static void fill_row(uint32_t x, uint32_t y, uint32_t count, uint32_t pixel) {
+    if (fb_bytes == 4) {
+        void* p = target + y * target_pitch + x * 4;
+        __asm__ volatile ("rep stosl" : "+D"(p), "+c"(count) : "a"(pixel) : "memory");
+        return;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        put(x + i, y, pixel);
     }
 }
 
@@ -104,9 +192,7 @@ void gfx_rect(int x, int y, int w, int h, uint32_t rgb) {
 
     uint32_t pixel = pack(rgb);
     for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            put((uint32_t)(x + col), (uint32_t)(y + row), pixel);
-        }
+        fill_row((uint32_t)x, (uint32_t)(y + row), (uint32_t)w, pixel);
     }
 }
 

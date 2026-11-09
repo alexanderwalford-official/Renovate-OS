@@ -38,6 +38,10 @@
 #define KEY_DELETE 0x86
 #define KEY_PGUP   0x87
 #define KEY_PGDN   0x88
+// these three only ever show up in kb_is_down(): on their own they don't type anything
+#define KEY_SHIFT  0x89
+#define KEY_CTRL   0x8A
+#define KEY_ALT    0x8B
 
 // true once init_keyboard() has run, getk() refuses to wait for keys before that
 extern bool keyboard_ready;
@@ -46,6 +50,12 @@ extern bool keyboard_ready;
 // sets up the 8042 controller, installs the IRQ1 handler and unmasks IRQ1 at the PIC.
 // keys only start arriving once the kernel enables interrupts with sti
 void init_keyboard(void);
+
+// is this key held down right now? For games, where several keys can be down at once and
+// what matters is whether they still are. key is a lower or upper case letter, a digit or
+// symbol on the key without shift ('1', ' ', '\n', 27 for Escape...), or one of the KEY_ values
+// above (arrows, KEY_SHIFT, KEY_CTRL, KEY_ALT)
+bool kb_is_down(int key);
 
 // returns true if a key is waiting in the input buffer
 // never blocks, so a program can poll the keyboard while doing something else (e.g. an animation)

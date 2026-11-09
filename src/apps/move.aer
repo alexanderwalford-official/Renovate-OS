@@ -1,0 +1,89 @@
+# move.aer - move a square around with the arrow keys
+#
+#     arrows    move it (hold Shift to go faster)
+#     Space     play a sound (press it quickly a few times: the sounds overlap)
+#     Esc       quit
+#
+# A small example of the three things a game needs:
+#     gbuf / gshow   draw each frame out of sight, then show it all at once (no flicker)
+#     keydown        is a key held down right now? (several can be, and it doesn't wait)
+#     sload / splay  sounds that play while the program carries on, mixed together
+#
+# Two ways to read keys, for two different jobs:
+#     keydown(k)     for things that last while a key is held: moving
+#     haskey / key   for single presses: every press is kept until it is read, so a quick tap
+#                    is never missed, even if it goes down and up between two frames
+
+if not gopen() then
+    print("move needs a graphics screen, and this one is text only.")
+    exit()
+end
+gbuf(true)
+
+let WIDTH = gw()
+let HEIGHT = gh()
+let SIZE = 40
+let SQUARE = 0xFF7F00     # the AerOS orange
+let BACKGROUND = rgb(24, 24, 24)
+
+let x = (WIDTH - SIZE) / 2
+let y = (HEIGHT - SIZE) / 2
+let sound = sload("/sys/startup.wav")
+let sounds_started = 0
+let quit = false
+
+while not quit do
+
+    # move: a little each frame for as long as an arrow is held
+    let speed = 4
+    if keydown(KEY_SHIFT) then
+        speed = 12
+    end
+    if keydown(KEY_LEFT) then
+        x = x - speed
+    end
+    if keydown(KEY_RIGHT) then
+        x = x + speed
+    end
+    if keydown(KEY_UP) then
+        y = y - speed
+    end
+    if keydown(KEY_DOWN) then
+        y = y + speed
+    end
+
+    # stay on the screen
+    if x < 0 then
+        x = 0
+    end
+    if y < 0 then
+        y = 0
+    end
+    if x > WIDTH - SIZE then
+        x = WIDTH - SIZE
+    end
+    if y > HEIGHT - SIZE then
+        y = HEIGHT - SIZE
+    end
+
+    # single presses: each Space starts a sound, Esc quits
+    while haskey() do
+        let k = key()
+        if k == KEY_SPACE and sound != nil then
+            splay(sound)
+            sounds_started = sounds_started + 1
+        end
+        if k == KEY_ESCAPE then
+            quit = true
+        end
+    end
+
+    # draw the frame out of sight, then show it
+    gclear(BACKGROUND)
+    rect(x, y, SIZE, SIZE, SQUARE)
+    text(20, 20, "Arrows move (Shift: faster)   Space: a sound   Esc: quit", 0xFFFFFF, 1)
+    text(20, 44, "Sounds started: " + str(sounds_started), 0xAAAAAA, 1)
+    gshow()
+    frame(60)
+end
+gclose()

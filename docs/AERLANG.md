@@ -190,6 +190,50 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
+**For games** (smooth movement, keys held down, sounds that overlap)
+`gbuf(on)` with `true`, draw into a back buffer (a copy of the screen in memory) instead of
+the screen, so nothing shows until `gshow()` · `gshow()` put the finished frame on the screen
+in one go, so it never flickers · `keydown(key)` is the key held down right now? A character
+(`"a"`, `" "`) or `KEY_LEFT`, `KEY_SPACE`, `KEY_SHIFT`, `KEY_CTRL`, `KEY_ALT`... It doesn't wait
+(unlike `key()`) and any number of keys can be down at once ·
+`sload(path)` load a WAV or MP3 into memory, ready to play (nil if it can't) ·
+`splay(sound, loop, volume)` start it and carry on straight away; `loop` plays it round and round,
+`volume` is 0 to 100. Up to 8 sounds play at once, mixed together. Returns a number for:
+`sstop(n)` stop it (`sstop()` stops every sound) · `isply(n)` is it still playing?
+Sounds stop when the program ends.
+
+Two ways to read keys, for two jobs: `keydown()` for things that last while a key is held
+(moving), and `haskey()` / `key()` for single presses (jumping, firing). `keydown()` only
+sees the moment it is asked, so a quick tap between two frames can slip past it, while every
+press waits for `key()` until it is read.
+
+```
+gopen()
+gbuf(true)
+let jump = sload("/sys/startup.wav")
+let x = 100
+while not keydown(KEY_ESCAPE) do
+    if keydown(KEY_LEFT) then
+        x = x - 4
+    end
+    if keydown(KEY_RIGHT) then
+        x = x + 4
+    end
+    if haskey() and key() == ord(" ") then
+        splay(jump)
+    end
+    gclear(0)
+    rect(x, 200, 40, 40, 0xFF7F00)
+    gshow()
+    frame(60)                # 60 frames a second
+end
+```
+
+`/bin/move.aer` is a small example of all of these. How they work: the back buffer is in
+`src/drivers/video/gfx.c`, held keys in `src/drivers/input/IO.c`, and the mixer in
+`src/sys/mixer.c`, which feeds the sound card from the timer interrupt so sound keeps playing
+smoothly whatever the program is doing.
+
 `/bin/viewer.aer` is a complete app built from these: a picture picker and viewer that zooms
 (`+` / `-`, `0` to fit) by drawing the picture bigger than the screen and moving it around.
 `/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOC` command, with its

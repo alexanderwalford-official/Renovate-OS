@@ -166,6 +166,7 @@ uint32_t ac97_start (const int16_t* frames, uint32_t count) {
     if (!ac97_ready || count == 0) {
         return 0;
     }
+    ac97_stream_stop(); // the card plays one thing at a time
     reset_channel();
     uint32_t queued = 0, slots = 0;
     while (queued < count && slots < DESCRIPTORS) {
@@ -185,8 +186,111 @@ uint32_t ac97_start (const int16_t* frames, uint32_t count) {
 
 void ac97_stop (void) {
     if (ac97_ready) {
+        ac97_stream_stop();
         reset_channel();
     }
+}
+
+// ---- streaming ------------------------------------------------------------------------------
+//
+// ac97_play and ac97_start play a sound that is already decoded, all of it, in memory. A game
+// or a video can't do that: the sound is made as it goes (several sounds mixed together, or
+// decoded a little at a time). So in streaming mode the driver owns 32 small blocks, one per
+// descriptor, and asks a "fill" function for the next block of sound whenever the card is
+// getting close to the end of what it has been given:
+//
+//     descriptor:  0    1    2    3    4    5    6   ...   31
+//                       ^    ^------- queued -------^
+//                    playing (CIV)              last valid (LVI)
+//
+// ac97_stream_service() runs from the timer interrupt every couple of milliseconds. It keeps
+// STREAM_AHEAD blocks queued after the one playing, filling each with the fill function and
+// moving LVI along. Because it runs from the timer, the sound carries on smoothly however long
+// the program takes over each frame, without the program having to do anything.
+//
+// STREAM_AHEAD is the balance between delay and safety: a sound started now is heard after the
+// blocks already queued (about 85ms), and the card only runs dry if the timer interrupt is held
+// off for that long. If it does run dry, the card halts and the next service starts it again.
+
+#define STREAM_BLOCK_FRAMES 512 // stereo frames per block: about 10.7ms at 48000 Hz
+#define STREAM_AHEAD        8   // blocks kept queued after the one playing: about 85ms
+
+static int16_t stream_blocks[DESCRIPTORS][STREAM_BLOCK_FRAMES * 2] __attribute__((aligned(16)));
+static ac97_fill_fn stream_fill = NULL;
+static volatile bool streaming = false;
+static uint8_t stream_next = 0; // the next descriptor to fill
+
+// fill one descriptor's block with the next piece of sound and make it the last valid one
+static void stream_queue (uint8_t slot) {
+    stream_fill(stream_blocks[slot], STREAM_BLOCK_FRAMES);
+    list[slot].address = (uint32_t)(uintptr_t)stream_blocks[slot];
+    list[slot].samples = STREAM_BLOCK_FRAMES * 2;
+    list[slot].flags = FLAG_SILENCE_IF_EMPTY;
+    outb(nabm + NABM_PO_LVI, slot);
+}
+
+// how many descriptors there are from `from` up to (not including) `to`, going round the ring
+static uint8_t slots_between (uint8_t from, uint8_t to) {
+    return (uint8_t)((to + DESCRIPTORS - from) % DESCRIPTORS);
+}
+
+bool ac97_stream_start (ac97_fill_fn fill) {
+    if (!ac97_ready || fill == NULL) {
+        return false;
+    }
+    streaming = false; // keep the timer's service out until everything is set up
+    reset_channel();
+    ac97_set_rate(AC97_STREAM_RATE);
+    stream_fill = fill;
+
+    // queue the first blocks, then start the card on them
+    outl(nabm + NABM_PO_BDBAR, (uint32_t)(uintptr_t)list);
+    for (uint8_t slot = 0; slot < STREAM_AHEAD; slot++) {
+        stream_queue(slot);
+    }
+    stream_next = STREAM_AHEAD;
+    outw(nabm + NABM_PO_STATUS, STATUS_CLEAR_ALL);
+    outb(nabm + NABM_PO_CONTROL, CONTROL_RUN);
+    streaming = true;
+    return true;
+}
+
+void ac97_stream_service (void) {
+    if (!streaming) {
+        return;
+    }
+    uint8_t playing = inb(nabm + NABM_PO_CIV) % DESCRIPTORS;
+
+    // ran dry: the card played everything it had and halted. Queue some more after the block
+    // it stopped on and start it again
+    if (inw(nabm + NABM_PO_STATUS) & STATUS_HALTED) {
+        outw(nabm + NABM_PO_STATUS, STATUS_CLEAR_ALL);
+        stream_next = (uint8_t)((playing + 1) % DESCRIPTORS);
+        for (int i = 0; i < STREAM_AHEAD; i++) {
+            stream_queue(stream_next);
+            stream_next = (uint8_t)((stream_next + 1) % DESCRIPTORS);
+        }
+        outb(nabm + NABM_PO_CONTROL, CONTROL_RUN);
+        return;
+    }
+
+    // keep STREAM_AHEAD blocks queued after the one playing
+    while (slots_between(playing, stream_next) <= STREAM_AHEAD) {
+        stream_queue(stream_next);
+        stream_next = (uint8_t)((stream_next + 1) % DESCRIPTORS);
+    }
+}
+
+void ac97_stream_stop (void) {
+    if (!streaming) {
+        return;
+    }
+    streaming = false;
+    reset_channel();
+}
+
+bool ac97_streaming (void) {
+    return streaming;
 }
 
 // play the whole sound, refilling the ring as the card moves along it (see the top of the file)
@@ -195,6 +299,7 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
         return ac97_ready;
     }
     uint32_t chunks = (count + CHUNK_FRAMES - 1) / CHUNK_FRAMES;
+    ac97_stream_stop(); // the card plays one thing at a time
 
     // queue up the first pieces (all of them if the sound is short)
     uint32_t queued = 0;

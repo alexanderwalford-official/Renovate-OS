@@ -25,30 +25,43 @@
 */
 #include "aer_string.h"
 #include "aer_ctype.h"
+#include <stdint.h>
+
+// memset and memcpy use the CPU's own "string" instructions, which repeat one step ECX times:
+//
+//     rep stosl   store EAX at EDI, 4 bytes at a time       (filling)
+//     rep movsl   copy from ESI to EDI, 4 bytes at a time   (copying)
+//     rep stosb / rep movsb                                 the same, one byte at a time
+//
+// Most of the work goes 4 bytes a step, then the 0 to 3 bytes left over one at a time. That is
+// several times faster than a C loop over single bytes, which matters for big jobs like copying
+// a whole screen (3MB at 1024 x 768) every frame.
+// The "+D", "+S", "+c" parts tell GCC which registers the instructions read and change (EDI,
+// ESI, ECX), and "memory" that memory changes behind its back. The instructions step forwards
+// because the CPU's direction flag is clear: nothing in AerOS ever sets it.
 
 // fill count bytes starting at dest with value, returns dest
 // value is an int for historical reasons, only its low 8 bits are written (memset(p, 0x1FF, n) writes 0xFF)
-// note: the Makefile's -fno-tree-loop-distribute-patterns flag is what stops GCC turning this
-// very loop into a call to memset, which would recurse forever
 void* memset(void* dest, int value, size_t count) {
-    // void* can't be dereferenced, so look at the memory as plain bytes
-    unsigned char* d = dest;
-    // count-- tests the old value, so the loop body runs exactly count times
-    while (count--) {
-        *d++ = (unsigned char)value;
-    }
+    uint32_t byte = (uint8_t)value;
+    uint32_t pattern = byte * 0x01010101u; // the byte in all four places: 0xAB -> 0xABABABAB
+    void* to = dest;
+    size_t words = count / 4;
+    size_t bytes = count % 4;
+    __asm__ volatile ("rep stosl" : "+D"(to), "+c"(words) : "a"(pattern) : "memory");
+    __asm__ volatile ("rep stosb" : "+D"(to), "+c"(bytes) : "a"(pattern) : "memory");
     return dest;
 }
 
 // copy count bytes from src to dest, returns dest
 // the regions must not overlap (that is what "restrict" promises), use memmove if they might
 void* memcpy(void* restrict dest, const void* restrict src, size_t count) {
-    unsigned char* d = dest;
-    const unsigned char* s = src;
-    // plain front to back copy, one byte at a time
-    while (count--) {
-        *d++ = *s++;
-    }
+    void* to = dest;
+    const void* from = src;
+    size_t words = count / 4;
+    size_t bytes = count % 4;
+    __asm__ volatile ("rep movsl" : "+D"(to), "+S"(from), "+c"(words) : : "memory");
+    __asm__ volatile ("rep movsb" : "+D"(to), "+S"(from), "+c"(bytes) : : "memory");
     return dest;
 }
 

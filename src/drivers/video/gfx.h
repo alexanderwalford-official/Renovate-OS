@@ -20,6 +20,18 @@ bool gfx_begin(void);
 // hand the screen back to the terminal, which redraws itself
 void gfx_end(void);
 
+// Smooth animation: gfx_buffered(true) sends all drawing to a back buffer, a copy of the
+// screen in memory, and gfx_show() puts the finished frame on the screen in one go, so it
+// never flickers. A game or video draws each frame like this:
+//
+//     gfx_buffered(true);
+//     for each frame:   gfx_clear(...); draw everything; gfx_show();
+//
+// gfx_buffered(false) goes back to drawing straight to the screen (showing the last frame
+// first). False if there isn't enough memory for the back buffer (then nothing changes)
+bool gfx_buffered(bool on);
+void gfx_show(void);
+
 uint32_t gfx_width(void);
 uint32_t gfx_height(void);
 
