@@ -534,7 +534,7 @@ void* realloc(void* ptr, size_t size) {
 // make a heap copy of s (including its '\0'), or NULL if there's no room; free() it when done
 char* strdup(const char* s) {
     // + 1 for the terminator
-    size_t len = strlen(s) + 1;
+    size_t len = slen(s) + 1;
     char* copy = malloc(len);
     if (copy) {
         memcpy(copy, s, len);

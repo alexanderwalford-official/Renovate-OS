@@ -129,8 +129,8 @@ static void command_usage (const command_t* command, char* out, size_t size) {
     out[i] = '\0';
 
     if (command->arguments[0] != '\0') {
-        strlcat(out, " ", size);
-        strlcat(out, command->arguments, size);
+        scat(out, " ", size);
+        scat(out, command->arguments, size);
     }
 }
 
@@ -168,7 +168,7 @@ static void ask_secret (const char* question, char* answer, int size) {
 
 // ask "(y/n)" and wait for one key. Prints the answer so it stays on the screen
 static bool ask_yes_no (void) {
-    int key = GetChar();
+    int key = getk();
     bool yes = key == 'y' || key == 'Y';
     prtf("%c\n", yes ? 'y' : 'n');
     return yes;
@@ -230,25 +230,25 @@ int cli_init (int ask_login) {
 // Also used to bring the terminal back after a full screen program (see HandleInput). Returns 0
 int cli_rend_main (void) {
     // console_clear() fills the screen with the current colours, so set those first
-    console_set_color(WHITE, BLACK);
+    colour(WHITE, BLACK);
     console_clear();
     prtf("AerOS - Version " AEROS_VERSION "\n");
     prtf("Alexander Walford 2026\n\n");
 
     if (fs_mode == FS_MODE_DISK) {
-        console_set_color(LIGHT_GREEN, BLACK);
+        colour(LIGHT_GREEN, BLACK);
         prtf("[ * ] You are in DISK mode, your files are saved to the %s disk.\n", fat_vol.label);
     } else if (boot_option == BOOT_OPT_DEMO) {
-        console_set_color(YELLOW, BLACK);
+        colour(YELLOW, BLACK);
         prtf("[ ! ] You are in DEMO mode, no disks are loaded and files will not be written.\n");
     } else {
-        console_set_color(RED, BLACK);
+        colour(RED, BLACK);
         prtf("[ ! ] You are in VFS mode, your files will not be written.\n");
     }
 
     // if someone typed wrong passwords for this account since its last login, say so (once)
     if (auth_failures_seen > 0) {
-        console_set_color(YELLOW, BLACK);
+        colour(YELLOW, BLACK);
         prtf("[ ! ] %u wrong password(s) were typed for %s since your last login.\n",
                auth_failures_seen, auth_user);
 
@@ -260,7 +260,7 @@ int cli_rend_main (void) {
     }
 
     // the normal terminal colours, light grey on black, for everything after the banner
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     prtf("Type %s for a list of commands, or DOCS to read the manual.\n\n", help_command_name());
 
     // forget keys pressed while something else had the screen (the splash screen, a menu), so
@@ -273,9 +273,9 @@ int cli_rend_main (void) {
 // the prompt: who is logged in, "@0/", then the current folder, which always starts and ends
 // with '/'. e.g. "alex@0//: " at the top folder, "alex@0//home/alex/: " in a home folder
 void cli_prompt (void) {
-    console_set_color(LIGHT_GREEN, BLACK);
+    colour(LIGHT_GREEN, BLACK);
     prtf("%s", auth_user);
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     prtf("@0/%s: ", cd);
 }
 
@@ -305,7 +305,7 @@ static void read_encrypted_file (const char* path) {
     ui_busy_begin("Checking the password"); // turning a password into a key takes a moment
     int result = fcrypt_read_file(path, password, &contents, &length);
     ui_busy_end();
-    crypto_wipe(password, sizeof(password)); // never leave a password lying around in memory
+    wipe(password, sizeof(password)); // never leave a password lying around in memory
 
     if (result != FCRYPT_OK) {
         prtf("Can't read %s: %s\n", path, fcrypt_strerror(result));
@@ -313,7 +313,7 @@ static void read_encrypted_file (const char* path) {
     }
     print_text_block((char*)contents, length);
 
-    crypto_wipe(contents, length);
+    wipe(contents, length);
     free(contents);
 }
 
@@ -342,7 +342,7 @@ static void cli_encrypt (char* arguments) {
     ask_secret("Password: ", password, sizeof(password));
     ask_secret("Again:    ", again, sizeof(again));
 
-    if (strcmp(password, again) != 0) {
+    if (scmp(password, again) != 0) {
         prtf("The passwords don't match, nothing was changed.\n");
     } else {
         ui_busy_begin("Encrypting");
@@ -356,8 +356,8 @@ static void cli_encrypt (char* arguments) {
         }
     }
 
-    crypto_wipe(password, sizeof(password));
-    crypto_wipe(again, sizeof(again));
+    wipe(password, sizeof(password));
+    wipe(again, sizeof(again));
 }
 
 // DECRYPT <FILE>: turn an encrypted file back into a normal one
@@ -377,7 +377,7 @@ static void cli_decrypt (char* arguments) {
     ui_busy_begin("Decrypting");
     int result = fcrypt_decrypt_file(arguments, password);
     ui_busy_end();
-    crypto_wipe(password, sizeof(password));
+    wipe(password, sizeof(password));
 
     if (result == FCRYPT_OK) {
         prtf("Decrypted %s.\n", arguments);
@@ -400,7 +400,7 @@ static char* split_first_word (char* line, char** rest) {
     int word_count = split(line, ' ', words, 2);
 
     if (word_count > 1) {
-        *rest = StrTrim(words[1]);
+        *rest = trim(words[1]);
     } else {
         *rest = nothing;
     }
@@ -447,7 +447,7 @@ static void cli_read_file (char* arguments) {
         prtf("File not found: %s\n", arguments);
         return;
     }
-    print_text_block(contents, strlen(contents));
+    print_text_block(contents, slen(contents));
     free(contents);
 }
 
@@ -497,17 +497,17 @@ static void cli_write_file (char* arguments) {
 
     // the text goes on a new line, "\n<text>". An empty file gets just "<text>", so a file
     // never starts with a blank line
-    size_t line_size = strlen(text) + 2; // room for the '\n' and the '\0'
+    size_t line_size = slen(text) + 2; // room for the '\n' and the '\0'
     char* line = malloc(line_size);
     if (line == NULL) {
         prtf("Out of memory.\n");
         return;
     }
     if (file_is_empty) {
-        strlcpy(line, text, line_size);
+        scpy(line, text, line_size);
     } else {
-        strlcpy(line, "\n", line_size);
-        strlcat(line, text, line_size);
+        scpy(line, "\n", line_size);
+        scat(line, text, line_size);
     }
 
     bool append = true; // add to the end rather than replace what is there
@@ -526,7 +526,7 @@ static void cli_make_directory (char* arguments) {
     char path[FS_PATH_MAX];
     bool valid = arguments[0] != '\0'
                  && fs_resolve_dir(arguments, path, sizeof(path))
-                 && !StrCompare(path, "/");
+                 && !seq(path, "/");
     if (!valid) {
         show_usage(NULL);
         return;
@@ -537,8 +537,8 @@ static void cli_make_directory (char* arguments) {
     char parent[FS_PATH_MAX];
     char name[FS_NAME_MAX];
     fs_parent_path(path, parent, sizeof(parent));
-    strlcpy(name, path + strlen(parent), sizeof(name));
-    name[strlen(name) - 1] = '\0'; // drop the '/' on the end
+    scpy(name, path + slen(parent), sizeof(name));
+    name[slen(name) - 1] = '\0'; // drop the '/' on the end
 
     int result = fs_create_d(path, name);
     if (result != FS_OK) {
@@ -574,7 +574,7 @@ static void ignore_entry (const char* name, bool is_dir, uint32_t size, void* co
 // then "Deleted notes.txt." takes its place
 static void delete_file (const char* typed, const char* folder, const char* name) {
     char label[FS_NAME_MAX + 16];
-    snprintf(label, sizeof(label), "Deleting %s", name);
+    sfmt(label, sizeof(label), "Deleting %s", name);
 
     ui_busy_begin(label);
     int result = fs_delete_f(folder, name);
@@ -592,11 +592,11 @@ static void delete_file (const char* typed, const char* folder, const char* name
 static void delete_folder (const char* path) {
     // the same rules fs_delete_d() has, but checked BEFORE anything is emptied:
     // never the top folder, and never the folder you are in (or one it is inside)
-    if (StrCompare(path, "/")) {
+    if (seq(path, "/")) {
         prtf("The top folder, /, can't be deleted.\n");
         return;
     }
-    bool standing_in_it = strncmp(cd, path, strlen(path)) == 0;
+    bool standing_in_it = strncmp(cd, path, slen(path)) == 0;
     if (standing_in_it) {
         prtf("Can't delete %s: you are in it (SD somewhere else first).\n", path);
         return;
@@ -701,7 +701,7 @@ static void cli_clock (char* arguments) {
 // TIME: how long AerOS has been running, counted by the system timer (1000 ticks a second)
 static void cli_uptime (char* arguments) {
     (void)arguments;
-    uint32_t milliseconds = clck_uptime_ms();
+    uint32_t milliseconds = clkuptms();
     uint32_t seconds = milliseconds / 1000;
 
     uint32_t hours = seconds / 3600;
@@ -802,7 +802,7 @@ static bool save_resolution (uint32_t width, uint32_t height) {
     }
 
     char block[1025];
-    int used = snprintf(block, sizeof(block), "# GRUB Environment Block\naeros_mode=%ux%ux32\n", width, height);
+    int used = sfmt(block, sizeof(block), "# GRUB Environment Block\naeros_mode=%ux%ux32\n", width, height);
     memset(block + used, '#', (size_t)(1024 - used));
     block[1024] = '\0';
 
@@ -893,7 +893,7 @@ static struct {
 // the sound card calls this while it plays: redraw the status line (10 times a second at
 // most), and say whether to stop (Esc or Ctrl+C was pressed)
 static bool play_should_stop (void) {
-    uint32_t now = clck_uptime_ms();
+    uint32_t now = clkuptms();
 
     // the first call: the "Reading" spinner's line becomes the "Playing" line
     if (!play_status.playing) {
@@ -912,7 +912,7 @@ static bool play_should_stop (void) {
         uint32_t seconds = (now - play_status.started_ms) / 1000;
 
         char line[COLS + 1];
-        snprintf(line, sizeof(line), "Playing %s  %u:%02u  (Esc stops it)",
+        sfmt(line, sizeof(line), "Playing %s  %u:%02u  (Esc stops it)",
                  play_status.file, seconds / 60, seconds % 60);
 
         int spinner_style = 4; // the "bounce" spinner, see sys/ui.h
@@ -923,7 +923,7 @@ static bool play_should_stop (void) {
     if (kb_take_break()) {
         return true; // Ctrl+C
     }
-    return kb_haschar() && GetChar() == KEY_ESCAPE;
+    return kb_haschar() && getk() == KEY_ESCAPE;
 }
 
 // PLAY <FILE>: play a WAV or MP3 file on the sound card
@@ -937,7 +937,7 @@ static void cli_play (char* arguments) {
     play_status.playing = false;
 
     char label[COLS];
-    snprintf(label, sizeof(label), "Reading %s", arguments);
+    sfmt(label, sizeof(label), "Reading %s", arguments);
     ui_busy_begin(label);
 
     int result = sound_play_file(arguments, play_should_stop);
@@ -979,11 +979,11 @@ static void cli_docs (char* arguments) {
     char path[FS_PATH_MAX];
 
     if (arguments[0] == '\0') {
-        strlcpy(path, "/docs/index.md", sizeof(path));
+        scpy(path, "/docs/index.md", sizeof(path));
     } else if (strchr(arguments, '.') != NULL) {
-        snprintf(path, sizeof(path), "/docs/%s", arguments);     // "docs sample.htm"
+        sfmt(path, sizeof(path), "/docs/%s", arguments);     // "docs sample.htm"
     } else {
-        snprintf(path, sizeof(path), "/docs/%s.md", arguments);  // "docs sound"
+        sfmt(path, sizeof(path), "/docs/%s.md", arguments);  // "docs sound"
     }
     aer_run_file("/bin/read.aer", path);
 }
@@ -1031,16 +1031,16 @@ static bool program_exists (const char* file) {
 //     "hello" + "a b"   ->   "hello.aer a b"
 // (".aer" is only added if the name doesn't already end in it). False if there is no such program
 static bool make_program_line (const char* program, const char* arguments, char* line, size_t size) {
-    strlcpy(line, program, size);
-    if (!aer_is_program_name(line, strlen(line))) {
-        strlcat(line, ".aer", size);
+    scpy(line, program, size);
+    if (!aer_is_program_name(line, slen(line))) {
+        scat(line, ".aer", size);
     }
     if (!program_exists(line)) {
         return false;
     }
     if (arguments[0] != '\0') {
-        strlcat(line, " ", size);
-        strlcat(line, arguments, size);
+        scat(line, " ", size);
+        scat(line, arguments, size);
     }
     return true;
 }
@@ -1095,7 +1095,7 @@ static void cli_queue (char* arguments) {
     char line[P_INST_MAX];
     bool is_message = strncmp(arguments, "s:", 2) == 0;
     if (is_message) {
-        strlcpy(line, arguments, sizeof(line));
+        scpy(line, arguments, sizeof(line));
     } else {
         char* program_arguments;
         char* program = split_first_word(arguments, &program_arguments);
@@ -1115,9 +1115,9 @@ static void cli_queue (char* arguments) {
 
 // GO calls this before each queued program: a grey "[2/3] hello.aer" line
 static void announce_queued_program (int number, int total, const char* code) {
-    console_set_color(DARK_GRAY, BLACK);
+    colour(DARK_GRAY, BLACK);
     prtf("[%d/%d] %s\n", number, total, code);
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
 }
 
 // GO calls this after each queued program: Ctrl+C in one of them stops the rest too
@@ -1165,8 +1165,8 @@ static bool ask_new_password (char* password, int size) {
     ask_secret("Again:        ", again, sizeof(again));
 
     bool empty = password[0] == '\0';
-    bool match = strcmp(password, again) == 0;
-    crypto_wipe(again, sizeof(again));
+    bool match = scmp(password, again) == 0;
+    wipe(again, sizeof(again));
 
     if (empty) {
         prtf("The passwords can't be empty, nothing was changed.\n");
@@ -1188,7 +1188,7 @@ static bool confirm_own_password (void) {
     ui_busy_begin("Checking the password");
     bool right = auth_check(auth_user, password);
     ui_busy_end();
-    crypto_wipe(password, sizeof(password));
+    wipe(password, sizeof(password));
 
     if (!right) {
         prtf("Wrong password.\n");
@@ -1205,7 +1205,7 @@ static void cli_whoami (char* arguments) {
 // auth_list() calls this for every account
 static void print_user (const char* name, void* context) {
     (void)context;
-    if (StrCompare(name, auth_user)) {
+    if (seq(name, auth_user)) {
         prtf("%s  (you)\n", name);
     } else {
         prtf("%s\n", name);
@@ -1257,7 +1257,7 @@ static void cli_add_user (char* arguments) {
             prtf("Couldn't make the account: %s\n", auth_strerror(result));
         }
     }
-    crypto_wipe(password, sizeof(password));
+    wipe(password, sizeof(password));
 }
 
 // delete someone else's account (your own password is asked for first). Their home folder
@@ -1271,7 +1271,7 @@ static void cli_delete_user (char* arguments) {
         show_usage(NULL);
         return;
     }
-    if (StrCompare(name, auth_user)) {
+    if (seq(name, auth_user)) {
         prtf("You can't delete the account you are logged in as.\n");
         return;
     }
@@ -1309,7 +1309,7 @@ static void cli_password (char* arguments) {
             prtf("Couldn't save the new password.\n");
         }
     }
-    crypto_wipe(password, sizeof(password));
+    wipe(password, sizeof(password));
 }
 
 // log out, back to the login screen
@@ -1322,7 +1322,7 @@ static void cli_logout (char* arguments) {
     // the up arrow and the output for Page Up, and start them in the top folder
     ClearInputHistory();
     console_forget_scrollback();
-    strlcpy(cd, "/", sizeof(cd));
+    scpy(cd, "/", sizeof(cd));
     cli_logged_in = false; // ends the inner loop in cli_init()
 }
 
@@ -1392,7 +1392,7 @@ static const char* help_command_name (void) {
     if (help == NULL) {
         return "HELP";
     }
-    strlcpy(name, help->name, sizeof(name));
+    scpy(name, help->name, sizeof(name));
     strupr(name);
     return name;
 }
@@ -1464,7 +1464,7 @@ static void add_completion (const char* name, size_t length) {
         return; // doesn't start with what was typed
     }
     for (int i = 0; i < completion.count; i++) {
-        bool same = strlen(completion.names[i]) == length
+        bool same = slen(completion.names[i]) == length
                     && strncasecmp(completion.names[i], name, length) == 0;
         if (same) {
             return;
@@ -1484,8 +1484,8 @@ static void add_completion_entry (const char* name, bool is_dir, uint32_t size, 
         return;
     }
     char full_name[FS_NAME_MAX + 2];
-    snprintf(full_name, sizeof(full_name), "%s%s", name, is_dir ? "/" : "");
-    add_completion(full_name, strlen(full_name));
+    sfmt(full_name, sizeof(full_name), "%s%s", name, is_dir ? "/" : "");
+    add_completion(full_name, slen(full_name));
 }
 
 // fs_list() calls this for each entry while completing a command: only programs count, and
@@ -1493,7 +1493,7 @@ static void add_completion_entry (const char* name, bool is_dir, uint32_t size, 
 static void add_completion_program (const char* name, bool is_dir, uint32_t size, void* context) {
     (void)size;
     (void)context;
-    size_t length = strlen(name);
+    size_t length = slen(name);
     if (!is_dir && aer_is_program_name(name, length)) {
         add_completion(name, length - 4);
     }
@@ -1502,10 +1502,10 @@ static void add_completion_program (const char* name, bool is_dir, uint32_t size
 // the first word: every command, and every program in /bin/ and in the current folder
 static void gather_commands (const char* word) {
     completion.typed = word;
-    completion.typed_length = strlen(word);
+    completion.typed_length = slen(word);
 
     for (size_t i = 0; i < command_count; i++) {
-        add_completion(commands[i].name, strlen(commands[i].name));
+        add_completion(commands[i].name, slen(commands[i].name));
     }
     fs_list("/bin/", add_completion_program, NULL);
     fs_list(cd, add_completion_program, NULL);
@@ -1533,10 +1533,10 @@ static void gather_files (const char* word, const char* command) {
         }
         completion.typed = last_slash + 1;
     } else {
-        strlcpy(folder, cd, sizeof(folder));
+        scpy(folder, cd, sizeof(folder));
         completion.typed = word;
     }
-    completion.typed_length = strlen(completion.typed);
+    completion.typed_length = slen(completion.typed);
 
     // SD only takes folders, so after it only folders are offered
     const command_t* change_folder = command_running(cli_set_directory);
@@ -1547,7 +1547,7 @@ static void gather_files (const char* word, const char* command) {
 // how many characters all the gathered names have in common (they all start with what was
 // typed, so at least that many)
 static size_t shared_length (void) {
-    size_t shared = strlen(completion.names[0]);
+    size_t shared = slen(completion.names[0]);
     for (int i = 1; i < completion.count; i++) {
         const char* name = completion.names[i];
         size_t same = completion.typed_length;
@@ -1564,7 +1564,7 @@ static size_t shared_length (void) {
 static void list_completions (const char* line) {
     size_t widest = 0;
     for (int i = 0; i < completion.count; i++) {
-        size_t width = strlen(completion.names[i]);
+        size_t width = slen(completion.names[i]);
         if (width > widest) {
             widest = width;
         }
@@ -1651,7 +1651,7 @@ static int cli_complete (char* line, int length, int size) {
 
         // a single name is finished, so a space goes after it, ready for the next word. Not
         // after a folder though: the next Tab carries on inside it
-        bool is_folder = first[strlen(first) - 1] == '/';
+        bool is_folder = first[slen(first) - 1] == '/';
         if (completion.count == 1 && !is_folder) {
             length = type_into_line(line, length, size, " ", 1);
         }
@@ -1672,7 +1672,7 @@ static int cli_complete (char* line, int length, int size) {
 //     "  mkf notes.txt hello there "   ->   command "mkf", arguments "notes.txt hello there"
 void HandleInput (char* in) {
     // drop the spaces at both ends, so "  la  " works too
-    char* line = StrTrim(in);
+    char* line = trim(in);
     if (line[0] == '\0') {
         return; // an empty line: nothing to do
     }

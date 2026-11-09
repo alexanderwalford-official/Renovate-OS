@@ -57,9 +57,9 @@ int splash_screen (void) {
     // wait up to 4 seconds, pressing X opens the boot options
     // throw away anything typed before the logo appeared, so only a key pressed now counts
     ClearInputbuffer();
-    uint32_t start = clck_uptime_ms();
+    uint32_t start = clkuptms();
     // unsigned subtraction still gives the right answer if the millisecond counter wraps around
-    while (clck_uptime_ms() - start < 4000) {
+    while (clkuptms() - start < 4000) {
         if (!kb_haschar()) {
             // nothing pressed yet: wait a little before checking again. sleep_ms also works when
             // the timer is dead (a bare "hlt" would then sleep until a key is pressed)
@@ -67,7 +67,7 @@ int splash_screen (void) {
             continue;
         }
         // any other key is read and ignored, the wait carries on
-        int key = GetChar();
+        int key = getk();
         if (key == 'x' || key == 'X') {
             boot_options_requested = true;
             break; // no need to sit out the rest of the 4 seconds
@@ -89,7 +89,7 @@ int error_screen (const char* code) {
     puts(5, 9, BLACK, RED, ">> SYSTEM EXCEPTION <<");
     puts(5, 10, BLACK, RED, "The system encountered an error and was forced to stop.");
     puts(5, 11, BLACK, RED, "Message is as followed:");
-    if (StrCompare(code, "invalid_code")) {
+    if (seq(code, "invalid_code")) {
         puts(5, 12, BLACK, RED, "[ ! ] OS COMPILER LEVEL EXCEPTION >> INVALID CODE PARSED");
     } else {
         puts(5, 12, BLACK, RED, "[ ! ] OS UNHANDLED EXCEPTION >> UNKNOWN ERROR");
@@ -120,7 +120,7 @@ int error_screen (const char* code) {
 // true if the first word of the code names an AerLang program file ("hello.aer", "/bin/x.aer ...")
 static bool is_program (const char* code) {
     const char* end = strchr(code, ' ');
-    size_t length = end ? (size_t)(end - code) : strlen(code);
+    size_t length = end ? (size_t)(end - code) : slen(code);
     return aer_is_program_name(code, length);
 }
 
@@ -138,23 +138,23 @@ int compile (const char* code) {
     if (strncmp(code, "s:", 2) == 0) {
         prtf("%s\n", code + 2);
     }
-    else if (StrCompare(code, "update_stack")) {
+    else if (seq(code, "update_stack")) {
         p_stack_update();
     }
-    else if (StrCompare(code, "init_boot")) {
+    else if (seq(code, "init_boot")) {
         init_boot();
     }
-    else if (StrCompare(code, "splash_screen")) {
+    else if (seq(code, "splash_screen")) {
         splash_screen();
     }
-    else if (StrCompare(code, "print_stack")) {
+    else if (seq(code, "print_stack")) {
         stack_print();
     }
-    else if (StrCompare(code, "flash")) {
+    else if (seq(code, "flash")) {
         // 2 flashes, none done yet
         flash_pointer(2, 0);
     }
-    else if (StrCompare(code, "terminal")) {
+    else if (seq(code, "terminal")) {
         // the terminal only returns on shut down, a second one would be nested inside the first
         // (the process manager already refuses to re-run the RUNNING terminal process, this catches
         // a brand new "terminal" process, e.g. typing "run terminal" in the terminal)
@@ -165,7 +165,7 @@ int compile (const char* code) {
             cli_init(1);
         }
     }
-    else if (StrCompare(code, "iso_launch_options")) {
+    else if (seq(code, "iso_launch_options")) {
         // gotcha: picking an option after boot only changes boot_option, the file system
         // that init_boot already set up stays as it is
         boot_options_menu();
@@ -174,7 +174,7 @@ int compile (const char* code) {
         // "<program>.aer [args]": run an AerLang program file, the rest of the line is its args
         char program[FS_PATH_MAX];
         const char* space = strchr(code, ' ');
-        size_t length = space ? (size_t)(space - code) : strlen(code);
+        size_t length = space ? (size_t)(space - code) : slen(code);
         if (length >= sizeof(program)) {
             length = sizeof(program) - 1;
         }

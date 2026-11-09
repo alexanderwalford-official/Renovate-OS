@@ -14,7 +14,7 @@
     would fail to link (or worse, misbehave) for reasons that are hard to spot.
 
     Two compiler flags in the Makefile work together with this file:
-    - -fno-builtin stops GCC from swapping OUR calls to strlen() and friends for its own
+    - -fno-builtin stops GCC from swapping OUR calls to slen() and friends for its own
       built in versions, so the code here is always the code that runs.
     - -fno-tree-loop-distribute-patterns stops GCC noticing that the loop inside our
       memset "looks like a memset" and replacing it with... a call to memset. That
@@ -53,15 +53,15 @@ void* memchr(const void* s, int c, size_t count);
 // length
 
 // number of characters before the '\0' terminator
-size_t strlen(const char* s);
-// like strlen but never looks at more than max characters (safe on unterminated buffers)
+size_t slen(const char* s);
+// like slen but never looks at more than max characters (safe on unterminated buffers)
 size_t strnlen(const char* s, size_t max);
 
 // comparison
 // all of these return 0 when the strings match, <0 when a sorts first, >0 when b sorts first
 
 // compare two strings
-int strcmp(const char* a, const char* b);
+int scmp(const char* a, const char* b);
 // compare at most the first n characters
 int strncmp(const char* a, const char* b, size_t n);
 // compare ignoring upper / lower case, so "Hello" matches "hELLO"
@@ -76,14 +76,14 @@ int strncasecmp(const char* a, const char* b, size_t n);
 char* strcpy(char* restrict dest, const char* restrict src);
 // copy exactly n characters, padding with '\0', but leaves dest UNterminated if src is too long
 char* strncpy(char* restrict dest, const char* restrict src, size_t n);
-// copy into a buffer of size bytes, always terminated, returns strlen(src) (>= size means it was cut short)
-size_t strlcpy(char* restrict dest, const char* restrict src, size_t size);
+// copy into a buffer of size bytes, always terminated, returns slen(src) (>= size means it was cut short)
+size_t scpy(char* restrict dest, const char* restrict src, size_t size);
 // append src to the end of dest, returns dest (no size check at all!)
 char* strcat(char* restrict dest, const char* restrict src);
 // append at most n characters of src and then a '\0', returns dest
 char* strncat(char* restrict dest, const char* restrict src, size_t n);
 // append into a buffer of size bytes, always terminated, returns the length it tried to make
-size_t strlcat(char* restrict dest, const char* restrict src, size_t size);
+size_t scat(char* restrict dest, const char* restrict src, size_t size);
 
 // searching
 

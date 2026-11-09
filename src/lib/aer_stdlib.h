@@ -92,7 +92,7 @@ int rand(void);
 // restart the sequence from seed (the same seed always gives the same sequence)
 void srand(unsigned int seed);
 
-// sort count elements of size bytes each, compare returns <0, 0 or >0 like strcmp
+// sort count elements of size bytes each, compare returns <0, 0 or >0 like scmp
 // (it's really an insertion sort, which keeps equal elements in their original order)
 void qsort(void* base, size_t count, size_t size, int (*compare)(const void*, const void*));
 

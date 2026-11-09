@@ -49,10 +49,10 @@ typedef struct {
 // password + salt -> master key (PBKDF2, the slow part) -> the AES key and the MAC key
 static void derive_keys (const char* password, const uint8_t* salt, uint32_t rounds, keys_t* keys) {
     uint8_t master[SHA256_SIZE];
-    pbkdf2_sha256(password, strlen(password), salt, SALT_SIZE, rounds, master, sizeof(master));
+    pbkdf2_sha256(password, slen(password), salt, SALT_SIZE, rounds, master, sizeof(master));
     hmac_sha256(master, sizeof(master), "AerOS file key", 14, keys->aes);
     hmac_sha256(master, sizeof(master), "AerOS file mac", 14, keys->mac);
-    crypto_wipe(master, sizeof(master));
+    wipe(master, sizeof(master));
 }
 
 // the rounds count is stored little endian, like the rest of the PC
@@ -97,8 +97,8 @@ int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8
     aes256_ctr(&aes, sealed + OFFSET_NONCE, contents, length);
     hmac_sha256(keys.mac, sizeof(keys.mac), sealed, HEADER_SIZE + length, contents + length);
 
-    crypto_wipe(&keys, sizeof(keys));
-    crypto_wipe(&aes, sizeof(aes));
+    wipe(&keys, sizeof(keys));
+    wipe(&aes, sizeof(aes));
     *out = sealed;
     *out_length = total;
     return FCRYPT_OK;
@@ -124,15 +124,15 @@ int fcrypt_open (const void* sealed_data, uint32_t length, const char* password,
     uint8_t tag[TAG_SIZE];
     hmac_sha256(keys.mac, sizeof(keys.mac), sealed, HEADER_SIZE + plain_length, tag);
     bool ok = crypto_equal(tag, stored_tag, TAG_SIZE);
-    crypto_wipe(tag, sizeof(tag));
+    wipe(tag, sizeof(tag));
     if (!ok) {
-        crypto_wipe(&keys, sizeof(keys));
+        wipe(&keys, sizeof(keys));
         return FCRYPT_ERR_PASSWORD;
     }
 
     uint8_t* plain = malloc(plain_length + 1); // + 1 for a '\0', so text can be printed as it is
     if (plain == 0) {
-        crypto_wipe(&keys, sizeof(keys));
+        wipe(&keys, sizeof(keys));
         return FCRYPT_ERR_NO_MEMORY;
     }
     aes256_t aes;
@@ -140,8 +140,8 @@ int fcrypt_open (const void* sealed_data, uint32_t length, const char* password,
     memcpy(plain, sealed + HEADER_SIZE, plain_length);
     aes256_ctr(&aes, sealed + OFFSET_NONCE, plain, plain_length); // CTR decrypts the same way it encrypts
     plain[plain_length] = '\0';
-    crypto_wipe(&keys, sizeof(keys));
-    crypto_wipe(&aes, sizeof(aes));
+    wipe(&keys, sizeof(keys));
+    wipe(&aes, sizeof(aes));
     *out = plain;
     *out_length = plain_length;
     return FCRYPT_OK;
@@ -181,7 +181,7 @@ int fcrypt_encrypt_file (const char* path, const char* password) {
     uint8_t* sealed;
     uint32_t sealed_length;
     int result = fcrypt_seal(data, size, password, &sealed, &sealed_length);
-    crypto_wipe(data, size); // our copy of the unencrypted contents
+    wipe(data, size); // our copy of the unencrypted contents
     free(data);
     if (result != FCRYPT_OK) {
         return result;
@@ -221,7 +221,7 @@ int fcrypt_decrypt_file (const char* path, const char* password) {
     }
     // the old contents were encrypted, so they don't need wiping
     result = fs_write_bytes(dir, name, plain, length, false) == FS_OK ? FCRYPT_OK : FCRYPT_ERR_SAVE;
-    crypto_wipe(plain, length);
+    wipe(plain, length);
     free(plain);
     return result;
 }

@@ -368,18 +368,18 @@ static __attribute__((noreturn)) void exception_panic(struct regs* r) {
     puts(5, 9, BLACK, RED, ">> SYSTEM EXCEPTION <<");
     puts(5, 10, BLACK, RED, "The system encountered an error and was forced to stop.");
     puts(5, 11, BLACK, RED, "Message is as followed:");
-    snprintf(line, sizeof(line), "[ ! ] CPU EXCEPTION %u >> %s", r->int_no, name);
+    sfmt(line, sizeof(line), "[ ! ] CPU EXCEPTION %u >> %s", r->int_no, name);
     puts(5, 12, BLACK, RED, line);
-    snprintf(line, sizeof(line), "EIP=%08x  CS=%04x  EFLAGS=%08x  ERR=%08x", r->eip, r->cs, r->eflags, r->err_code);
+    sfmt(line, sizeof(line), "EIP=%08x  CS=%04x  EFLAGS=%08x  ERR=%08x", r->eip, r->cs, r->eflags, r->err_code);
     puts(5, 14, BLACK, RED, line);
-    snprintf(line, sizeof(line), "EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x", r->eax, r->ebx, r->ecx, r->edx);
+    sfmt(line, sizeof(line), "EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x", r->eax, r->ebx, r->ecx, r->edx);
     puts(5, 15, BLACK, RED, line);
     // for a page fault the CPU puts the address it was trying to access in control register CR2.
     // Paging is not switched on yet so this cannot happen today, but it is ready for when it is
     if (r->int_no == 14) {
         uint32_t cr2;
         __asm__ volatile ("mov %%cr2, %0" : "=r"(cr2));
-        snprintf(line, sizeof(line), "FAULTING ADDRESS (CR2)=%08x", cr2);
+        sfmt(line, sizeof(line), "FAULTING ADDRESS (CR2)=%08x", cr2);
         puts(5, 16, BLACK, RED, line);
     }
     puts(5, 18, BLACK, RED, "The system has been halted, please restart your computer.");

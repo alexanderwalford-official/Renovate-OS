@@ -42,7 +42,7 @@ int ui_spinner (uint8_t x, uint8_t y, int style, enum color colour) {
         style = 0;
     }
     // the frame follows the clock, so the speed doesn't depend on how often this is called
-    int frame = (int)(clck_uptime_ms() / styles[style].ms % (uint32_t)styles[style].count);
+    int frame = (int)(clkuptms() / styles[style].ms % (uint32_t)styles[style].count);
     const char* s = styles[style].frames[frame];
     int width = 0;
     for (; *s && x + width < COLS; s++, width++) {
@@ -80,7 +80,7 @@ void ui_bar (uint8_t x, uint8_t y, uint8_t width, uint32_t done, uint32_t total,
         }
     }
     char text[8];
-    snprintf(text, sizeof(text), "] %3u%%", percent);
+    sfmt(text, sizeof(text), "] %3u%%", percent);
     for (int i = 0; text[i] && x + 1 + width + i < COLS; i++) {
         putc((uint8_t)(x + 1 + width + i), y, BRIGHT, console_bg, text[i]);
     }
@@ -110,7 +110,7 @@ void ui_progress_begin (ui_progress_t* p, uint32_t total) {
 }
 
 void ui_progress_update (ui_progress_t* p, uint32_t done, const char* label) {
-    uint32_t now = clck_uptime_ms();
+    uint32_t now = clkuptms();
     if (p->last_ms != 0 && now - p->last_ms < FRAME_MS && done < p->total) {
         return;
     }
@@ -137,7 +137,7 @@ static uint32_t busy_last_ms;
 
 // what busy() calls while a spinner is up
 static void busy_turn (void) {
-    uint32_t now = clck_uptime_ms();
+    uint32_t now = clkuptms();
     if (now - busy_last_ms < FRAME_MS) {
         return;
     }

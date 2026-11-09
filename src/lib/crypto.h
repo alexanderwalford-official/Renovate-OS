@@ -85,7 +85,7 @@ void crypto_add_entropy(uint32_t value);
 // compare without stopping at the first difference, so timing doesn't reveal how much matched
 bool crypto_equal(const void* a, const void* b, size_t length);
 // overwrite secrets so they don't linger in memory (the compiler can't optimise it away)
-void crypto_wipe(void* buffer, size_t length);
+void wipe(void* buffer, size_t length);
 
 // bytes <-> lower case hex text (out needs 2 * length + 1 bytes), from_hex is false on a bad digit
 void crypto_to_hex(const uint8_t* bytes, size_t length, char* out);

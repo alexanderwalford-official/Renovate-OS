@@ -126,7 +126,7 @@ bool ac97_init (void) {
 
 const char* ac97_name (void) {
     static char name[32];
-    snprintf(name, sizeof(name), "AC'97 (PCI %02x:%02x.%u)", card.bus, card.slot, card.function);
+    sfmt(name, sizeof(name), "AC'97 (PCI %02x:%02x.%u)", card.bus, card.slot, card.function);
     return name;
 }
 
@@ -211,7 +211,7 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
     // each time the card moves on from a descriptor, reuse that slot for the next piece and make
     // it the new last valid one. The card stops by itself (halted) after the last piece
     uint8_t done = 0; // the slot the card was playing last time we looked
-    uint32_t last_progress = clck_uptime_ms();
+    uint32_t last_progress = clkuptms();
     bool ok = true;
     while (!(inw(nabm + NABM_PO_STATUS) & STATUS_HALTED)) {
         uint8_t current = inb(nabm + NABM_PO_CIV) % DESCRIPTORS;
@@ -221,12 +221,12 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
                 outb(nabm + NABM_PO_LVI, done);
             }
             done = (uint8_t)((done + 1) % DESCRIPTORS);
-            last_progress = clck_uptime_ms();
+            last_progress = clkuptms();
         }
         if (should_stop && should_stop()) {
             break;
         }
-        if (clck_uptime_ms() - last_progress > STALL_MS) {
+        if (clkuptms() - last_progress > STALL_MS) {
             ok = false;
             break;
         }

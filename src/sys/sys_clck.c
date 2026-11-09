@@ -81,7 +81,7 @@ void clck_init(void) {
 // milliseconds counted by the busy wait in sleep_ms, used instead of ticks when the timer is dead
 static uint32_t busy_ms = 0;
 
-uint32_t clck_uptime_ms(void) {
+uint32_t clkuptms(void) {
     return clck_ready ? ticks : busy_ms;
 }
 
@@ -251,7 +251,7 @@ char* rtc_datetime(char* out, size_t size) {
     rtc_time_t t;
     rtc_read(&t);
     // %02u pads with a leading zero, year % 100 keeps only the last two digits of the year
-    snprintf(out, size, "%02u-%02u-%02u--%02u:%02u:%02u",
+    sfmt(out, size, "%02u-%02u-%02u--%02u:%02u:%02u",
              t.day, t.month, t.year % 100, t.hour, t.minute, t.second);
     return out;
 }

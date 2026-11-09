@@ -472,7 +472,7 @@ void clear(enum color bg) {
 }
 
 // set the colours the console uses for new characters (and for blank cells when it clears or scrolls)
-void console_set_color(enum color fg, enum color bg) {
+void colour(enum color fg, enum color bg) {
     console_fg = fg;
     console_bg = bg;
 }
@@ -758,7 +758,7 @@ void vga_init(const vga_framebuffer_t* framebuffer) {
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
         cells[i] = 0xFFFF;
     }
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     console_clear();
 }
 

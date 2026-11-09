@@ -77,9 +77,9 @@ char* StrCombine(const char* str1, const char* str2);
 char* toArray(int number);
 
 // 1 when the strings match, 0 when they don't (or either is NULL)
-// the opposite way round to strcmp (which gives 0 for a match), so it reads naturally:
-// if (StrCompare(command, "help")) { ... }
-int StrCompare(const char* string_a, const char* string_b);
+// the opposite way round to scmp (which gives 0 for a match), so it reads naturally:
+// if (seq(command, "help")) { ... }
+int seq(const char* string_a, const char* string_b);
 
 // split string in place on split_char into at most max_parts pieces, storing a pointer to each in parts
 // (parts needs room for max_parts pointers), returns how many parts were made
@@ -88,7 +88,7 @@ int split(char* string, char split_char, char** parts, int max_parts);
 // remove target from string in place, at most c times (c <= 0 means every time), returns string
 char* StrRemove(char* string, const char* target, int c);
 // strip whitespace off both ends in place, returns the new start of the string (use that pointer!)
-char* StrTrim(char* string);
+char* trim(char* string);
 // does nothing and returns straight away (an old placeholder, nothing calls it at the moment)
 void ret(void);
 

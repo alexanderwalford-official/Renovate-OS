@@ -17,9 +17,9 @@
       track of shift / ctrl / caps lock itself and uses lookup tables for a US QWERTY layout.
 
     The input buffer
-      The IRQ handler (producer) and GetChar (consumer) share a ring buffer. The handler only ever
-      moves kb_head and GetChar only ever moves kb_tail, so on a single CPU they can't tread on
-      each other's toes and no lock is needed. The indices are volatile so GetChar's wait loop
+      The IRQ handler (producer) and getk (consumer) share a ring buffer. The handler only ever
+      moves kb_head and getk only ever moves kb_tail, so on a single CPU they can't tread on
+      each other's toes and no lock is needed. The indices are volatile so getk's wait loop
       really re-reads kb_head after every interrupt instead of using a stale copy in a register.
 
     The 8042 controller
@@ -63,9 +63,9 @@
 bool keyboard_ready = false;
 
 static bool kb_input_enabled = false; // false = key presses are ignored
-static bool kb_clear_pending = false; // set by ClearInputbuffer, handled by the next GetString
+static bool kb_clear_pending = false; // set by ClearInputbuffer, handled by the next getln
 
-// ring buffer filled by the interrupt handler and emptied by GetChar()
+// ring buffer filled by the interrupt handler and emptied by getk()
 // kb_head = the slot the next key is written to, kb_tail = the slot the next key is read from.
 // head == tail means empty, and head one behind tail means full (that's why one slot stays unused:
 // a completely full buffer would otherwise look exactly like an empty one)
@@ -126,7 +126,7 @@ static void kb_push(uint8_t key) {
     if (next == kb_tail) {
         return; // buffer full, drop the key
     }
-    // store the key first and only then publish it by moving head, so GetChar can never see a
+    // store the key first and only then publish it by moving head, so getk can never see a
     // slot that hasn't been filled in yet
     kb_buffer[kb_head] = key;
     kb_head = next;
@@ -241,11 +241,11 @@ static void keyboard_handler(struct regs* r) {
     kb_process_scancode(scancode);
 }
 
-// like GetString, but shows '*' for every character and keeps no history (for passwords)
+// like getln, but shows '*' for every character and keeps no history (for passwords)
 char* GetSecret (char* in, int size) {
     int len = 0;
     for (;;) {
-        int key = GetChar();
+        int key = getk();
         if (key == 0 || key == '\n' || key == '\r') {
             break;
         }
@@ -271,7 +271,7 @@ bool kb_haschar(void) {
 
 // take the oldest key out of the ring buffer, sleeping until one arrives if necessary
 // returns the key (1-255), or 0 if no key can ever arrive
-int GetChar(void) {
+int getk(void) {
     if (!keyboard_ready || !interrupts_enabled()) {
         return 0; // no keyboard interrupts, waiting would hang forever
     }
@@ -292,7 +292,7 @@ int GetChar(void) {
 int getchar(void) {
     int key;
     do {
-        key = GetChar();
+        key = getk();
         if (key == 0) {
             return EOF;
         }
@@ -315,10 +315,10 @@ static void input_history_add(const char* line) {
     if (line[0] == '\0') {
         return;
     }
-    if (input_history_count > 0 && strcmp(input_history_get(input_history_count - 1), line) == 0) {
+    if (input_history_count > 0 && scmp(input_history_get(input_history_count - 1), line) == 0) {
         return; // same as the last line
     }
-    strlcpy(input_history[input_history_next], line, INPUT_HISTORY_LEN);
+    scpy(input_history[input_history_next], line, INPUT_HISTORY_LEN);
     input_history_next = (input_history_next + 1) % INPUT_HISTORY_SIZE;
     // once the history is full count stays at 8 and each new line replaces the oldest one
     if (input_history_count < INPUT_HISTORY_SIZE) {
@@ -351,7 +351,7 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
     in[0] = '\0';
 
     for (;;) {
-        int key = GetChar();
+        int key = getk();
         if (key == 0) {
             break; // no keyboard
         }
@@ -394,8 +394,8 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
             }
             // ...then copy the entry in (cut to fit the caller's buffer) and print it
             const char* entry = (history_pos < input_history_count) ? input_history_get(history_pos) : "";
-            strlcpy(in, entry, (size_t)size);
-            len = (int)strlen(in);
+            scpy(in, entry, (size_t)size);
+            len = (int)slen(in);
             console_write(in);
             continue;
         }
@@ -416,7 +416,7 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
     return in;
 }
 
-char* GetString(char* in, int size) {
+char* getln(char* in, int size) {
     return GetLine(in, size, NULL);
 }
 
@@ -425,7 +425,7 @@ void InputBufferChangeState(int state) {
     kb_input_enabled = state != 0;
 }
 
-// empty the ring buffer right now by moving tail up to head, and ask the next GetString to do the
+// empty the ring buffer right now by moving tail up to head, and ask the next getln to do the
 // same again, so keys typed while a program was busy (e.g. mashed during an animation) don't spill
 // into the terminal prompt
 void ClearInputbuffer(void) {

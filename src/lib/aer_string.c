@@ -3,8 +3,8 @@
     String and memory functions (freestanding replacement for <string.h>).
 
     This is the code behind aer_string.h. Nearly everything in the kernel leans on it:
-    the terminal parses commands with strcmp / split, the file systems copy names
-    around with strlcpy, prtf measures strings with strlen, and GCC itself quietly
+    the terminal parses commands with scmp / split, the file systems copy names
+    around with scpy, prtf measures strings with slen, and GCC itself quietly
     calls memcpy / memset whenever it copies or clears a struct (see aer_string.h).
 
     Design choices:
@@ -115,8 +115,8 @@ void* memchr(const void* s, int c, size_t count) {
 }
 
 // the length of a string: how many characters come before the '\0'
-// strlen("abc") is 3, strlen("") is 0
-size_t strlen(const char* s) {
+// slen("abc") is 3, slen("") is 0
+size_t slen(const char* s) {
     size_t len = 0;
     while (s[len] != '\0') {
         len++;
@@ -124,7 +124,7 @@ size_t strlen(const char* s) {
     return len;
 }
 
-// like strlen, but gives up after max characters
+// like slen, but gives up after max characters
 // useful for fixed size buffers that might not have a terminator (e.g. names read off a disk),
 // or for prtf's "%.5s" which must not read further than 5 characters
 size_t strnlen(const char* s, size_t max) {
@@ -138,8 +138,8 @@ size_t strnlen(const char* s, size_t max) {
 
 // compare two strings character by character
 // returns 0 if they are identical, <0 if a sorts before b, >0 if a sorts after b
-// e.g. strcmp("cat", "car") > 0 because 't' > 'r', strcmp("car", "cart") < 0 because '\0' < 't'
-int strcmp(const char* a, const char* b) {
+// e.g. scmp("cat", "car") > 0 because 't' > 'r', scmp("car", "cart") < 0 because '\0' < 't'
+int scmp(const char* a, const char* b) {
     // skip over the matching part; stop at the end of a or at the first difference
     // (we don't need to test *b for '\0': if b ended first then *a != *b and the loop stops anyway)
     while (*a && *a == *b) {
@@ -150,7 +150,7 @@ int strcmp(const char* a, const char* b) {
     return (unsigned char)*a - (unsigned char)*b;
 }
 
-// compare at most the first n characters of two strings, same return values as strcmp
+// compare at most the first n characters of two strings, same return values as scmp
 // strncmp("help me", "help", 4) == 0, handy for checking a prefix
 int strncmp(const char* a, const char* b, size_t n) {
     for (; n; --n, ++a, ++b) {
@@ -164,7 +164,7 @@ int strncmp(const char* a, const char* b, size_t n) {
 }
 
 // case-insensitive compare (POSIX)
-// works like strcmp but folds both sides to lower case first, so "LS" matches "ls"
+// works like scmp but folds both sides to lower case first, so "LS" matches "ls"
 // the terminal uses this to look up commands, and the FAT driver uses it because FAT file
 // names are case-insensitive ("README.TXT" and "readme.txt" are the same file)
 int strcasecmp(const char* a, const char* b) {
@@ -190,7 +190,7 @@ int strncasecmp(const char* a, const char* b, size_t n) {
 }
 
 // copy src into dest, including the terminator, and return dest
-// gotcha: there is no size check, dest must be at least strlen(src) + 1 bytes (prefer strlcpy)
+// gotcha: there is no size check, dest must be at least slen(src) + 1 bytes (prefer scpy)
 char* strcpy(char* restrict dest, const char* restrict src) {
     char* d = dest;
     // the classic one-liner: copy a byte, then stop once the byte we just copied was the '\0'
@@ -202,7 +202,7 @@ char* strcpy(char* restrict dest, const char* restrict src) {
 
 // copies at most n characters, pads with '\0' (and does NOT terminate if src is too long, like the standard)
 // strncpy was designed for fixed width records (old directory entries), not for safe string copying,
-// so in new code strlcpy is almost always what you want
+// so in new code scpy is almost always what you want
 char* strncpy(char* restrict dest, const char* restrict src, size_t n) {
     size_t i = 0;
     // copy the characters of src, stopping at its end or after n of them
@@ -217,12 +217,12 @@ char* strncpy(char* restrict dest, const char* restrict src, size_t n) {
     return dest;
 }
 
-// safe copy (BSD): always terminates, returns strlen(src) so truncation can be detected
+// safe copy (BSD): always terminates, returns slen(src) so truncation can be detected
 // size is the full size of dest in bytes (including room for the '\0'), e.g.
 //     char name[8];
-//     if (strlcpy(name, input, sizeof(name)) >= sizeof(name)) { ...input was cut short... }
-size_t strlcpy(char* restrict dest, const char* restrict src, size_t size) {
-    size_t src_len = strlen(src);
+//     if (scpy(name, input, sizeof(name)) >= sizeof(name)) { ...input was cut short... }
+size_t scpy(char* restrict dest, const char* restrict src, size_t size) {
+    size_t src_len = slen(src);
     // with size 0 there isn't even room for a '\0', so we don't touch dest at all
     if (size > 0) {
         // copy everything if it fits, otherwise as much as fits while leaving 1 byte for the terminator
@@ -235,18 +235,18 @@ size_t strlcpy(char* restrict dest, const char* restrict src, size_t size) {
 }
 
 // append src to the end of dest, returns dest
-// gotcha: no size check, dest needs room for both strings plus the '\0' (prefer strlcat)
+// gotcha: no size check, dest needs room for both strings plus the '\0' (prefer scat)
 char* strcat(char* restrict dest, const char* restrict src) {
     // find dest's terminator and copy src over it
-    strcpy(dest + strlen(dest), src);
+    strcpy(dest + slen(dest), src);
     return dest;
 }
 
 // append at most n characters of src to dest, then ALWAYS add a '\0'
-// (unlike strncpy) so dest needs strlen(dest) + n + 1 bytes of room
+// (unlike strncpy) so dest needs slen(dest) + n + 1 bytes of room
 char* strncat(char* restrict dest, const char* restrict src, size_t n) {
     // start writing where dest's terminator is now
-    char* d = dest + strlen(dest);
+    char* d = dest + slen(dest);
     // stop after n characters or at the end of src, whichever comes first
     while (n-- && *src) {
         *d++ = *src++;
@@ -258,15 +258,15 @@ char* strncat(char* restrict dest, const char* restrict src, size_t n) {
 // safe append (BSD): always terminates, returns the length it tried to create
 // size is the full size of the dest buffer, not the space that's left
 // if the return value is >= size the result was cut short
-size_t strlcat(char* restrict dest, const char* restrict src, size_t size) {
+size_t scat(char* restrict dest, const char* restrict src, size_t size) {
     // strnlen so we never read past the end of the buffer if dest isn't terminated
     size_t dest_len = strnlen(dest, size);
     if (dest_len == size) {
-        return size + strlen(src); // dest was not terminated, there is no room at all
+        return size + slen(src); // dest was not terminated, there is no room at all
     }
-    // copy src into whatever space is left after the existing text; strlcpy handles the
-    // truncation and the terminator, and returns strlen(src) which gives us the full "wanted" length
-    return dest_len + strlcpy(dest + dest_len, src, size - dest_len);
+    // copy src into whatever space is left after the existing text; scpy handles the
+    // truncation and the terminator, and returns slen(src) which gives us the full "wanted" length
+    return dest_len + scpy(dest + dest_len, src, size - dest_len);
 }
 
 // find the first occurrence of the character c in s, or NULL
@@ -303,7 +303,7 @@ char* strrchr(const char* s, int c) {
 // this is the simple "try every starting position" search: fine for short strings like commands
 // and paths (worst case it's O(haystack length * needle length))
 char* strstr(const char* haystack, const char* needle) {
-    size_t needle_len = strlen(needle);
+    size_t needle_len = slen(needle);
     // the standard says an empty needle is found at the very start
     if (needle_len == 0) {
         return (char*)haystack;
@@ -397,7 +397,7 @@ char* strtok(char* str, const char* delim) {
 // reverse a string in place
 // utoa uses this: it works out digits from the least significant end, then flips them round
 char* strrev(char* s) {
-    size_t len = strlen(s);
+    size_t len = slen(s);
     // swap the first and last characters, then the second and second to last, and so on,
     // meeting in the middle (with an odd length the middle character stays where it is)
     for (size_t i = 0; i < len / 2; i++) {

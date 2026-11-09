@@ -210,7 +210,7 @@ flowchart TD
 | Guessing costs the account's files | the home folder is wiped on every 3rd wrong password in a row |
 | Knowing someone tried | after a good login the banner reports the wrong passwords since the last one |
 | Comparing hashes | `crypto_equal` looks at every byte, so timing doesn't reveal how much matched |
-| Passwords in memory | password buffers are wiped with `crypto_wipe` as soon as they've been used |
+| Passwords in memory | password buffers are wiped with `wipe` as soon as they've been used |
 | Passwords on screen | typed as `*`, never added to the up-arrow history |
 | History between users | `OUT` (log out) clears the command history and the scrollback, and leaves the home folder |
 | Damaged file | a line that doesn't parse is skipped, so one bad line can't lock everyone out |
@@ -318,11 +318,11 @@ hours.
 
 | Terminal | AerLang | Does |
 | --- | --- | --- |
-| `ENCRYPT <file>` | `encrypt_file(path, password)` | lock a file |
-| `DECRYPT <file>` | `decrypt_file(path, password)` | unlock it again |
-| `RD <file>` | `read_encrypted(path, password)` | read it without unlocking (nil if the password is wrong) |
-|  | `is_encrypted(path)` | true for an encrypted file |
-|  | `input_secret(prompt)` | read a password, showing `*` |
+| `ENCRYPT <file>` | `enc(path, password)` | lock a file |
+| `DECRYPT <file>` | `dec(path, password)` | unlock it again |
+| `RD <file>` | `rdenc(path, password)` | read it without unlocking (nil if the password is wrong) |
+|  | `isenc(path)` | true for an encrypted file |
+|  | `inpw(prompt)` | read a password, showing `*` |
 
 ### Checking the format yourself
 

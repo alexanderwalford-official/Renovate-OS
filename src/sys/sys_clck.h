@@ -68,7 +68,7 @@ bool clck_verify(void);
 
 // milliseconds since the timer started
 // (0 before clck_init(), wraps back to 0 after about 49.7 days)
-uint32_t clck_uptime_ms(void);
+uint32_t clkuptms(void);
 
 // wait for the given number of milliseconds
 // uses the timer and "hlt" when it can, otherwise a rough busy wait (before clck_init() or with

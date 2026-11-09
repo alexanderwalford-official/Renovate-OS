@@ -144,7 +144,7 @@ static int disk_copy (unsigned int i, uint32_t length, char out[HASH_HEX + 1]) {
 
 // look up a path's line in the record, false if it has none (or there is no record)
 static bool recorded_hash (const char* record, const char* path, char out[HASH_HEX + 1]) {
-    size_t path_length = strlen(path);
+    size_t path_length = slen(path);
     const char* line = record;
     while (line && *line) {
         if (strncmp(line, path, path_length) == 0 && line[path_length] == ' ') {
@@ -195,7 +195,7 @@ static void install_app (unsigned int i, const char* record, char keep[HASH_HEX 
         }
     } else if (disk == DISK_SAME) {
         strcpy(keep, builtin); // up to date
-    } else if (has_record && strcmp(ondisk, recorded) == 0) {
+    } else if (has_record && scmp(ondisk, recorded) == 0) {
         // an older version AerOS installed, never changed since: bring it up to date
         if (fs_write_bytes(files[i].dir, files[i].name, files[i].start, length, false) == FS_OK) {
             strcpy(keep, builtin);
@@ -248,7 +248,7 @@ int apps_install (void) {
     }
 
     // only write the record when it says something new
-    if (!old_record || strcmp(old_record, new_record) != 0) {
+    if (!old_record || scmp(old_record, new_record) != 0) {
         if (fs_file_exists(RECORD_DIR, RECORD_NAME)) {
             fs_write_f(RECORD_DIR, RECORD_NAME, new_record, false);
         } else {
@@ -261,7 +261,7 @@ int apps_install (void) {
 
 const void* apps_builtin (const char* name, uint32_t* size) {
     for (unsigned int i = 0; i < FILE_COUNT; i++) {
-        if (StrCompare(files[i].name, name)) {
+        if (seq(files[i].name, name)) {
             *size = (uint32_t)(files[i].end - files[i].start);
             return files[i].start;
         }

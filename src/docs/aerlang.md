@@ -68,7 +68,7 @@ print(area(3, 4))               # 12
 | number | `42`, `-7`, `0xFF` | whole numbers, `/` drops the remainder |
 | string | `"hi\n"` | `s[0]` is the first character |
 | list | `[1, "two", [3]]` | `l[0] = 5` changes an item |
-| bytes | `bytes(100)` | raw bytes, e.g. from `read_bytes` |
+| bytes | `bytes(100)` | raw bytes, e.g. from `rdb` |
 | bool | `true`, `false` | |
 | nil | `nil` | nothing |
 
@@ -78,7 +78,7 @@ print(area(3, 4))               # 12
 ## Built-in functions
 
 **Screen and keys:** `print(...)`, `write(...)` (no new line), `input(prompt)`,
-`input_secret(prompt)` (shows `*`), `cls()`, `color(fg, bg)`, `at(x, y)`, `key()` (waits,
+`inpw(prompt)` (shows `*`), `cls()`, `color(fg, bg)`, `at(x, y)`, `key()` (waits,
 gives the key's code), `haskey()`.
 
 Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `ORANGE` (the logo
@@ -94,16 +94,20 @@ orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`
 **Lists:** `list(n, fill)`, `push(l, x)`, `pop(l)`, `insert(l, i, x)`, `remove(l, i)`,
 `bytes(n)`.
 
-**Files:** `read_file(path)` (nil if missing), `read_bytes(path)`, `write_file(path, text)`,
-`append_file(path, text)`, `file_exists(path)`, `delete_file(path)`, `list_files(dir)`,
+**Files:** `rdf(path)` (nil if missing), `rdb(path)`, `wrf(path, text)`,
+`apf(path, text)`, `isf(path)`, `delf(path)`, `la(dir)`,
 `cwd()`.
 
-**Encrypted files:** `encrypt_file(path, password)`, `decrypt_file(path, password)`,
-`is_encrypted(path)`, `read_encrypted(path, password)` (nil if the password is wrong).
+The names are built like the terminal's commands: `rd` read, `wr` write, `ap` append,
+`del` delete, `is` "is there one?", then `f` file or `b` bytes. So `rdf` reads a file and
+`isf` asks if a file is there. `enc` / `dec` encrypt and decrypt, and `g` means graphics.
+
+**Encrypted files:** `enc(path, password)`, `dec(path, password)`,
+`isenc(path)`, `rdenc(path, password)` (nil if the password is wrong).
 
 **System:** `sleep(ms)`, `time()` (ms since start), `random(n)` (0 to n - 1), `beep(hz)`,
 `play(path)`, `exit()`. `args` is the list of words typed after the program's name.
-`system_info()` gives everything AerOS knows about the computer as a list of
+`sysinfo()` gives everything AerOS knows about the computer as a list of
 `[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
 `queue("hello.aer")` adds a program (with its arguments) to the queue that `go` runs, and
 gives back how many are queued.
@@ -113,13 +117,13 @@ gives back how many are queued.
 now (styles 0 to 4: line, arrows, pulse, dots, bounce), and `frame(fps)` waits for the next
 frame, so a loop runs at a steady speed. The colour can be left out.
 
-**Big text:** `big_text(x, y, text, colour, background)` writes text in big letters like the
+**Big text:** `big(x, y, text, colour, background)` writes text in big letters like the
 splash screen's "aerOS": each letter is 8 columns wide and 7 rows tall, so 10 fit across the
 screen. It gives back how many columns wide it is, handy for centring:
 
 ```
 let title = "Hello"
-big_text((80 - len(title) * 8) / 2, 2, title, ORANGE)
+big((80 - len(title) * 8) / 2, 2, title, ORANGE)
 ```
 
 ```
@@ -132,16 +136,16 @@ while done <= 100 do
 end
 ```
 
-**Graphics:** `gfx_open()` takes over the screen and `gfx_close()` gives it back.
+**Graphics:** `gopen()` takes over the screen and `gclose()` gives it back.
 Colours are numbers like `0xFF7F00` or `rgb(255, 127, 0)`.
-`gfx_width()`, `gfx_height()`, `gfx_clear(c)`, `pixel(x, y, c)`, `rect(x, y, w, h, c)`,
+`gw()`, `gh()`, `gclear(c)`, `pixel(x, y, c)`, `rect(x, y, w, h, c)`,
 `line(x1, y1, x2, y2, c)`, `text(x, y, s, c, size)`, `image(bytes, x, y, w, h)` (a BMP
-picture), `image_size(bytes)`. `w` x `h` can be bigger than the screen and `x`, `y`
+picture), `imgsz(bytes)`. `w` x `h` can be bigger than the screen and `x`, `y`
 negative: only the part on the screen is drawn, which is how the viewer zooms in.
 
 ```
-gfx_open()
-image(read_bytes("/bin/aeros.bmp"), 0, 0)
+gopen()
+image(rdb("/bin/aeros.bmp"), 0, 0)
 text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```

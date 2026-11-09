@@ -83,7 +83,7 @@ print(area(3, 4))           # 12
 | number | `42`, `-7`, `0xFF` | whole numbers, 32 bit. `/` drops the remainder, `%` is the remainder |
 | string | `"hi\n"` | escapes: `\n` `\t` `\"` `\\` `\0`. `s[0]` is the first character |
 | list | `[1, "two", [3]]` | `l[0]`, `l[0] = 5`, `l + [6]` makes a new list |
-| bytes | `bytes(100)` | a block of raw bytes (0 to 255), e.g. a file read with `read_bytes` |
+| bytes | `bytes(100)` | a block of raw bytes (0 to 255), e.g. a file read with `rdb` |
 | bool | `true`, `false` | |
 | nil | `nil` | "nothing", e.g. what a function returns without `return` |
 
@@ -93,10 +93,23 @@ one side is a string: `"Score: " + 10`.
 
 ### Built-in functions
 
+The short names follow the same pattern as the terminal's commands, so they can be guessed:
+
+| Part | Means | | Part | Means |
+| --- | --- | --- | --- | --- |
+| `rd` | read | | `f` | file |
+| `wr` | write (replace) | | `b` | bytes |
+| `ap` | append (add to the end) | | `enc` / `dec` | encrypt / decrypt |
+| `del` | delete | | `g` | graphics |
+| `is` | is there one? / is it? | | `la` | list all (like the `LA` command) |
+
+So `rdf` reads a file, `apf` appends to one, `isf` asks if a file is there, `rdenc` reads an
+encrypted file and `gopen` opens the graphics screen.
+
 **Screen and keyboard**
 `print(a, b, ...)` print, separated by spaces, then a new line ·
 `write(...)` the same without the new line ·
-`input(prompt)` read a line · `input_secret(prompt)` the same, showing `*` (for passwords) ·
+`input(prompt)` read a line · `inpw(prompt)` the same, showing `*` (for passwords) ·
 `cls()` clear the screen ·
 `color(fg, bg)` text colours (`BLACK` ... `WHITE`, and `ORANGE`, the logo orange) ·
 `at(x, y)` move the cursor ·
@@ -114,13 +127,13 @@ one side is a string: `"Score: " + 10`.
 `list(n, fill)` · `push(l, x)` · `pop(l)` · `insert(l, i, x)` · `remove(l, i)` · `bytes(n)`
 
 **Files** (paths can be relative or absolute)
-`read_file(path)` (nil if missing) · `read_bytes(path)` · `write_file(path, text)` ·
-`append_file(path, text)` · `file_exists(path)` · `delete_file(path)` ·
-`list_files(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
+`rdf(path)` (nil if missing) · `rdb(path)` · `wrf(path, text)` ·
+`apf(path, text)` · `isf(path)` · `delf(path)` ·
+`la(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
 
 **Encrypted files** (AES-256 with a password, the file keeps its name)
-`encrypt_file(path, password)` · `decrypt_file(path, password)` (both true if it worked) ·
-`is_encrypted(path)` · `read_encrypted(path, password)` the contents, without changing the file
+`enc(path, password)` · `dec(path, password)` (both true if it worked) ·
+`isenc(path)` · `rdenc(path, password)` the contents, without changing the file
 (nil if the password is wrong)
 
 **System**
@@ -128,7 +141,7 @@ one side is a string: `"Score: " + 10`.
 `play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()` ·
 `queue(line)` add a program to the queue the `GO` command runs, e.g. `queue("hello.aer a b")`
 or `queue("s:some text")`; returns how many are queued (-1 if the process stack is full) ·
-`system_info()` everything AerOS knows about the computer, as a list of `[group, name, value]`
+`sysinfo()` everything AerOS knows about the computer, as a list of `[group, name, value]`
 rows, e.g. `["Processor", "Speed", "about 2400 MHz"]` (`/bin/sysinfo.aer` shows them)
 
 `args` is the list of words typed after the program's name.
@@ -141,11 +154,11 @@ pulse, dots, bounce); returns how many cells it took ·
 `frame(fps)` wait until it's time for the next frame, so a loop runs at a steady speed however
 long the drawing took. The colours can be left out.
 
-`big_text(x, y, text, colour, background)` text in big letters, like the splash screen's
+`big(x, y, text, colour, background)` text in big letters, like the splash screen's
 "aerOS": each letter is 8 columns wide and 7 rows tall (10 fit across the screen), drawn with
 half block characters, so it works on any screen. The colour (WHITE) and background (BLACK)
 can be left out; returns how many columns wide it is, e.g. to centre it:
-`big_text((80 - len(title) * 8) / 2, 2, title, ORANGE)`
+`big((80 - len(title) * 8) / 2, 2, title, ORANGE)`
 
 ```
 while not haskey() do
@@ -158,20 +171,20 @@ end
 `/bin/anim.aer` shows them all.
 
 **Graphics**
-Call `gfx_open()` to take over the screen (it returns false if there is no graphics screen) and
-`gfx_close()` to give it back to the terminal, which also happens on its own when the program ends.
+Call `gopen()` to take over the screen (it returns false if there is no graphics screen) and
+`gclose()` to give it back to the terminal, which also happens on its own when the program ends.
 Colours are numbers like `0xFF7F00`, or `rgb(255, 127, 0)`. Drawing off the edge of the screen is fine.
 
-`gfx_width()` · `gfx_height()` · `gfx_clear(colour)` · `pixel(x, y, colour)` ·
+`gw()` · `gh()` · `gclear(colour)` · `pixel(x, y, colour)` ·
 `rect(x, y, w, h, colour)` filled · `line(x1, y1, x2, y2, colour)` ·
 `text(x, y, text, colour, size)` (size 1 is 8 x 16 pixels per character) ·
 `image(bytes, x, y, w, h)` draw a BMP picture (8, 24 or 32 bit), scaled to fit `w` x `h` if given
 (up to 16384 x 16384, so it can be far bigger than the screen; only the part on screen is drawn) ·
-`image_size(bytes)` its `[width, height]`, or nil if it isn't a BMP
+`imgsz(bytes)` its `[width, height]`, or nil if it isn't a BMP
 
 ```
-gfx_open()
-let picture = read_bytes("/bin/aeros.bmp")
+gopen()
+let picture = rdb("/bin/aeros.bmp")
 image(picture, 0, 0)
 text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()

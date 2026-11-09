@@ -8,10 +8,10 @@
     crashing, which suits code that deals with whatever the user happened to type.
 
     Two kinds of helper to be aware of:
-    - in place helpers (split, StrRemove, StrTrim) change the string you give them, so it must
+    - in place helpers (split, StrRemove, trim) change the string you give them, so it must
       be writable memory: a char array or a malloc'd buffer, never a string literal like "abc".
     - shared buffer helpers (StrCombine, toArray) hand back a pointer to one static buffer that
-      the NEXT call overwrites. Use the result straight away, or copy it (strdup / strlcpy) if
+      the NEXT call overwrites. Use the result straight away, or copy it (strdup / scpy) if
       you need to keep it.
 */
 #include "primary_definitions.h"
@@ -48,12 +48,12 @@ char* StrCombine(const char* str1, const char* str2) {
     // straight into StrCombine_buffer, then StrCombine(a, StrCombine(b, c)) would overwrite "bc"
     // with a before we got round to appending it. Building the result elsewhere first means the
     // inputs are only read, never written, until the very end.
-    // strlcpy / strlcat do the cutting off for us and always leave the result terminated
-    strlcpy(combined, str1, sizeof(combined));
-    strlcat(combined, str2, sizeof(combined));
+    // scpy / scat do the cutting off for us and always leave the result terminated
+    scpy(combined, str1, sizeof(combined));
+    scat(combined, str2, sizeof(combined));
 
     // now it's safe to replace the shared buffer
-    strlcpy(StrCombine_buffer, combined, sizeof(StrCombine_buffer));
+    scpy(StrCombine_buffer, combined, sizeof(StrCombine_buffer));
     return StrCombine_buffer;
 }
 
@@ -68,14 +68,14 @@ char* toArray(int number) {
 
 // compare if two strings are the same, used in conditional statements
 // returns 1 for a match and 0 otherwise, i.e. it answers "are these equal?"
-// (strcmp answers "which comes first?", and gives 0 for a match, which is easy to get backwards)
-int StrCompare(const char* string_a, const char* string_b) {
+// (scmp answers "which comes first?", and gives 0 for a match, which is easy to get backwards)
+int seq(const char* string_a, const char* string_b) {
     // ensure that neither strings are NULL
     // (two NULLs count as "not the same", NULL isn't a string at all)
     if (string_a == NULL || string_b == NULL) {
         return 0;
     }
-    return strcmp(string_a, string_b) == 0;
+    return scmp(string_a, string_b) == 0;
 }
 
 // "split" method
@@ -120,14 +120,14 @@ char* StrRemove(char* string, const char* target, int c) {
     if (string == NULL || target == NULL || *target == '\0') {
         return string;
     }
-    size_t target_len = strlen(target);
+    size_t target_len = slen(target);
     int removed = 0;
     char* found = string;
     // keep going while we're under the limit (or there is no limit) and another match turns up
     while ((c <= 0 || removed < c) && (found = strstr(found, target)) != NULL) {
         // slide everything after the match left over the top of it, closing the gap
         // the + 1 brings the '\0' along too; memmove (not memcpy) because the two regions overlap
-        memmove(found, found + target_len, strlen(found + target_len) + 1);
+        memmove(found, found + target_len, slen(found + target_len) + 1);
         removed++;
     }
     return string;
@@ -138,7 +138,7 @@ char* StrRemove(char* string, const char* target, int c) {
 // than the one you passed in. Use the returned pointer, but if the string came from malloc,
 // free() the ORIGINAL pointer, not the trimmed one.
 // e.g. "  ls /sys  " -> returns a pointer to "ls /sys"
-char* StrTrim(char* string) {
+char* trim(char* string) {
     if (string == NULL) {
         return string;
     }
@@ -148,7 +148,7 @@ char* StrTrim(char* string) {
     }
     // then chop trailing whitespace off by writing a new '\0' over each one, working backwards
     // (len > 0 stops us running off the front when the string was all whitespace)
-    size_t len = strlen(string);
+    size_t len = slen(string);
     while (len > 0 && isspace((unsigned char)string[len - 1])) {
         string[--len] = '\0';
     }

@@ -9,7 +9,7 @@
         prtf -----> vprtf ------\                          /--> console_out --> VGA console
                                  >--> vformat(out, ctx) --<                     (+ serial port)
         sprintf --> vsprintf ---\                          \--> buffer_out ---> your char buffer
-        snprintf -> vsnprintf --/
+        sfmt -> vsnprintf --/
 
     vformat is the engine. It walks the format string, and for each "%..." it reads the
     next argument, turns it into characters and passes them one at a time to an "output
@@ -109,7 +109,7 @@ static void emit_chars(out_fn out, void* ctx, const char* s, int n) {
 // the formatting engine shared by every printf style function
 // out = where each character goes, ctx = passed through to out, fmt = the format string,
 // ap = the arguments. Returns the number of characters produced, which is what prtf returns.
-// (for snprintf that includes characters that didn't fit in the buffer)
+// (for sfmt that includes characters that didn't fit in the buffer)
 static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
     int count = 0;
 
@@ -321,7 +321,7 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
                 }
                 // with a precision, print at most that many characters and never read past them
                 // (so "%.*s" can print part of a buffer that has no terminator)
-                len = (precision >= 0) ? (int)strnlen(body, (size_t)precision) : (int)strlen(body);
+                len = (precision >= 0) ? (int)strnlen(body, (size_t)precision) : (int)slen(body);
                 break;
             case '%':
                 body = "%";
@@ -351,7 +351,7 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
                 zeros = precision - len;
             }
         }
-        int prefix_len = (int)strlen(prefix);
+        int prefix_len = (int)slen(prefix);
         // whatever the width asks for beyond what we already have becomes padding
         int pad = width - prefix_len - zeros - len;
         if (pad < 0) {
@@ -414,9 +414,9 @@ int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
     return n;
 }
 
-// snprintf is just vsnprintf with the "..." arguments gathered into a va_list
+// sfmt is just vsnprintf with the "..." arguments gathered into a va_list
 // va_start points ap at the arguments after fmt, va_end tidies up afterwards
-int snprintf(char* buf, size_t size, const char* fmt, ...) {
+int sfmt(char* buf, size_t size, const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
     int n = vsnprintf(buf, size, fmt, ap);
@@ -426,7 +426,7 @@ int snprintf(char* buf, size_t size, const char* fmt, ...) {
 
 // print into buf with no size limit (like the standard, it trusts that buf is big enough)
 // we reuse vsnprintf and pretend the buffer is INT32_MAX (about 2GB) long, which in practice means
-// "unlimited"; a too small buf will be overrun, so prefer snprintf where you can
+// "unlimited"; a too small buf will be overrun, so prefer sfmt where you can
 int vsprintf(char* buf, const char* fmt, va_list ap) {
     return vsnprintf(buf, (size_t)INT32_MAX, fmt, ap);
 }

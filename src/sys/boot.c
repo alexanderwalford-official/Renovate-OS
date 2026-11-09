@@ -173,7 +173,7 @@ void boot_parse_multiboot (uint32_t magic, uint32_t info_addr) {
 // BOOT_LOG_DELAY ms so it can be read (skipped on fast boot). Returns 0
 int init_boot (void) {
     // black text on a light grey screen, same as the splash screen
-    console_set_color(BLACK, BRIGHT);
+    colour(BLACK, BRIGHT);
     console_clear();
 
     prtf("[E:b1f1] AerOS boot sequence started\n\n");

@@ -4,7 +4,7 @@
 #
 # Keys: Up / Down and PgUp / PgDn (or Space) scroll, R reads everything again, Q or Esc quits.
 #
-# The kernel gathers the facts (sys/sysinfo.c) and system_info() hands them over as a list of
+# The kernel gathers the facts (sys/sysinfo.c) and sysinfo() hands them over as a list of
 # [group, name, value] rows, e.g. ["Processor", "Speed", "about 2400 MHz"]. This app only lays
 # them out: a heading for each group, the names in one column and the values in the next, and
 # a bar under any value that ends in a percentage, like "(37%)".
@@ -116,7 +116,7 @@ func gather()
     write(pad("Reading the hardware...", 79))
     LINES = []
     let group = ""
-    for row in system_info() do
+    for row in sysinfo() do
         if row[0] != group then
             group = row[0]
             if len(LINES) > 0 then

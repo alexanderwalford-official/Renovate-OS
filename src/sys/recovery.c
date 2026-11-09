@@ -40,8 +40,8 @@ int boot_options_menu (void) {
     ClearInputbuffer();
     // keep reading keys until one of them is a valid choice
     for (;;) {
-        // GetChar() waits for the next key press
-        switch (GetChar()) {
+        // getk() waits for the next key press
+        switch (getk()) {
             case '1': boot_option = BOOT_OPT_NORMAL; return 0;
             case '2': boot_option = BOOT_OPT_FAST; return 0;
             case '3': boot_option = BOOT_OPT_DEMO; return 0;

@@ -38,7 +38,7 @@ src/
   Makefile              builds main.elf and main.iso, runs QEMU (make run / run-vfs / run-uefi)
 
   drivers/              talking to hardware
-    input/    IO.c        PS/2 keyboard: scancodes -> ring buffer -> GetChar / GetString / GetSecret
+    input/    IO.c        PS/2 keyboard: scancodes -> ring buffer -> getk / getln / GetSecret
               GIO.h       inb / outb port I/O and other one-instruction helpers
     video/    VGA_linear.c  the text console: VGA text mode, or 80x25 cells drawn on a framebuffer
               gfx.c       pixels, rectangles, lines, text and BMP pictures for apps
@@ -70,9 +70,9 @@ src/
     terminal/editor.c     the text editor (EDIT)
 
   lib/                  the kernel's own small C library
-    aer_string.c          memcpy, strlen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
-    aer_stdio.c           prtf, snprintf                 aer_ctype.h   isdigit, toupper...
-    aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  StrCompare, split, StrTrim
+    aer_string.c          memcpy, slen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
+    aer_stdio.c           prtf, sfmt                 aer_ctype.h   isdigit, toupper...
+    aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  seq, split, trim
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
     busy.c                busy(): long loops call it so a spinner can turn (see sys/ui.h)
     mp3.c + minimp3/      MP3 decoding
@@ -82,7 +82,7 @@ src/
     aer_lexer.c           source text -> tokens
     aer_parser.c          tokens -> syntax tree
     aer_interp.c          walks the tree; memory, values, variables
-    aer_builtins.c        print, read_file, play, gfx_... (every function a program can call)
+    aer_builtins.c        print, rdf, play, gfx_... (every function a program can call)
 
   apps/                 built-in apps and files, linked into the kernel and copied to /bin/ or /sys/
   docs/                 the in-OS manual (Markdown and HTML), copied to /docs/ and shown by DOCS
@@ -224,7 +224,7 @@ folder, and later words from the file system.
 ```
 source text --aer_lexer.c--> tokens --aer_parser.c--> syntax tree --aer_interp.c--> runs it
                                                                         |
-                                                   aer_builtins.c: print, read_file, play...
+                                                   aer_builtins.c: print, rdf, play...
 ```
 
 The interpreter tracks every allocation, so when a program ends, normally or through an error,
@@ -314,5 +314,5 @@ On a disk, new names must fit 8.3 (`sample.htm`, not `sample.html`).
   the edge cases, the reasons for a choice.
 * Functions return a value or an `*_OK` / `*_ERR_*` code with a matching `*_strerror()` message.
   There are no hidden globals for errors.
-* Secrets are wiped with `crypto_wipe()` as soon as they're no longer needed.
+* Secrets are wiped with `wipe()` as soon as they're no longer needed.
 * Builds must stay free of warnings.
