@@ -337,8 +337,8 @@ void ClearInputHistory(void) {
 // in: buffer that receives the line, size: its size in bytes (the line is at most size - 1 characters)
 // returns in, which is left empty if there is no keyboard
 // supported keys: printable characters (appended at the end), backspace, enter, up / down for the
-// history, and Tab if a complete function was given. Anything else (left / right, escape, ctrl
-// codes...) is ignored.
+// history, Page Up / Page Down to look back at earlier output, and Tab if a complete function
+// was given. Anything else (left / right, escape, ctrl codes...) is ignored.
 char* GetLine(char* in, int size, tab_complete_fn complete) {
     if (kb_clear_pending) {
         // throw away keys that were pressed between the clear and this point
@@ -368,6 +368,14 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
             }
             continue;
         }
+        // Page Up / Page Down look back through what has scrolled off the top of the screen, a
+        // screen at a time (one line less, so the line at the edge stays in view). Any other key
+        // comes back to the live screen first, so typing carries on where it was
+        if (key == KEY_PGUP || key == KEY_PGDN) {
+            console_view_scroll(key == KEY_PGUP ? ROWS - 1 : -(ROWS - 1));
+            continue;
+        }
+        console_view_live();
         // up = an older line, down = a newer one, down from the newest gets back to an empty line
         // pressing past either end does nothing
         if (key == KEY_UP || key == KEY_DOWN) {

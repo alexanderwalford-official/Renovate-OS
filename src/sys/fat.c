@@ -94,6 +94,7 @@
 #include "../lib/aer_string.h"
 #include "../lib/aer_stdlib.h"
 #include "../lib/aer_stdio.h"
+#include "../lib/busy.h"
 
 #define FAT_SECTOR_SIZE        512   // the only sector size we handle (drive_is_fat_boot_sector() checks it)
 #define FAT_ENTRIES_PER_SECTOR (FAT_SECTOR_SIZE / 32)  // 16 directory entries of 32 bytes per sector
@@ -344,12 +345,58 @@ static void fat_free_chain (uint32_t cluster) {
         return;
     }
     fat_invalidate_fsinfo();
+    uint32_t per_sector = fat_entries_per_sector();
     // guard: a damaged disk can have a chain that loops back on itself, a chain can't be longer
     // than the disk has clusters, so stop after that many steps whatever happens
-    for (uint32_t guard = 0; fat_valid_cluster(cluster) && guard < fat_vol.cluster_count; guard++) {
-        uint32_t next = fat_get(cluster); // read the link before we wipe it
-        fat_set(cluster, 0);
-        cluster = next;
+    uint32_t guard = 0;
+
+    // Freeing one entry at a time with fat_set() would cost a read and a write of a FAT sector
+    // per copy of the FAT for every cluster: about 30000 disk transfers for a 20MB file. Instead,
+    // free every entry of the chain that sits in the same FAT sector (a file's clusters are
+    // usually next to each other, so that is up to 256 of them), then write that sector once.
+    while (fat_valid_cluster(cluster) && guard < fat_vol.cluster_count) {
+        uint32_t index = cluster / per_sector; // which sector of the FAT we are in
+        uint16_t freed[FAT_SECTOR_SIZE / 2];   // the entries freed in it (at most 256)
+        uint32_t count = 0;
+
+        if (fat_get(cluster) == 0xFFFFFFFF) return; // loads the sector into fat_cache
+        while (fat_valid_cluster(cluster) && cluster / per_sector == index && guard < fat_vol.cluster_count
+               && count < FAT_SECTOR_SIZE / 2) {
+            uint32_t i = cluster % per_sector;
+            uint32_t next = fat_get(cluster); // read the link before we wipe it
+            if (fat_vol.type == 32) {
+                fat_cache.u32[i] &= 0xF0000000; // free, keeping the 4 reserved bits
+            } else {
+                fat_cache.u16[i] = 0;
+            }
+            freed[count++] = (uint16_t)i;
+            cluster = next;
+            guard++;
+        }
+
+        // the first FAT is the cached sector, already changed. Every other copy gets the same
+        // entries freed, read-modify-write as in fat_set(), so it is changed in just those places
+        for (uint8_t copy = 0; copy < fat_vol.fat_copies; copy++) {
+            uint32_t lba = fat_vol.fat_lba + copy * fat_vol.fat_sectors + index;
+            if (copy == 0) {
+                if (!fat_write_sector(lba, &fat_cache)) {
+                    fat_cache_lba = FAT_NO_SECTOR; // the disk may not match the cache now
+                    return;
+                }
+                continue;
+            }
+            fat_sector_t sector;
+            if (!fat_read_sector(lba, &sector)) return;
+            for (uint32_t n = 0; n < count; n++) {
+                if (fat_vol.type == 32) {
+                    sector.u32[freed[n]] &= 0xF0000000;
+                } else {
+                    sector.u16[freed[n]] = 0;
+                }
+            }
+            if (!fat_write_sector(lba, &sector)) return;
+        }
+        busy(); // a big file spans many FAT sectors: let a spinner turn (DEL)
     }
 }
 
@@ -956,6 +1003,7 @@ static void fat_zero_chain (uint32_t cluster) {
             fat_write_sector(lba + s, zeros);
         }
         cluster = fat_get(cluster);
+        busy();
     }
 }
 

@@ -174,4 +174,20 @@ void console_write(const char* s);
 // erase the character before the cursor (used by the line editor)
 void console_backspace(void);
 
+// scrollback: every line that scrolls off the top of the console is kept (the last
+// CONSOLE_SCROLLBACK of them), and the view can be moved back through them, e.g.
+//
+//     console_view_scroll(24)    look 24 lines further back (Page Up in the line editor)
+//     console_view_scroll(-24)   24 lines forward again (Page Down)
+//     console_view_live()        straight back to the live screen
+//
+// While looking back the live screen is set aside, untouched. Anything drawn (a character, a
+// clear, putc...) first brings the live screen back, so output always lands where it should.
+#define CONSOLE_SCROLLBACK 400
+void console_view_scroll(int lines);
+void console_view_live(void);
+
+// forget every scrolled off line (on logout, so the next user can't read them)
+void console_forget_scrollback(void);
+
 #endif /* VGA_LINEAR_H */

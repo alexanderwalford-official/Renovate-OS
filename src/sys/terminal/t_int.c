@@ -461,8 +461,10 @@ static void cli_delete_dir (const char* path) {
         printf("Can't delete %s: you are in it (SD somewhere else first).\n", path);
         return;
     }
+    ui_busy_begin("Looking inside the folder");
     int files = fs_count_files(path);
     int inside = fs_list(path, cli_ignore_entry, NULL); // fs_list returns how many entries there are
+    ui_busy_end();
     if (inside > 0) {
         printf("%s has %d file(s) in it. Delete it and everything in it? (y/n) ", path, files < 0 ? 0 : files);
         int key = GetChar();
@@ -480,6 +482,8 @@ static void cli_delete_dir (const char* path) {
     int result = fs_delete_d(path);
     if (result != FS_OK) {
         printf("Can't delete %s: %s\n", path, fs_strerror(result));
+    } else {
+        printf("Deleted %s.\n", path);
     }
 }
 
@@ -492,11 +496,18 @@ static void cli_delete (char* args) {
         printf("Usage: DEL <file or directory>\n");
         return;
     }
-    // a file?
+    // a file? A spinner turns while its clusters are freed (a big file has thousands), then the
+    // "Deleted" line takes its place
     if (fs_split_path(args, dir, sizeof(dir), name, sizeof(name)) && fs_file_exists(dir, name)) {
+        char label[FS_NAME_MAX + 16];
+        snprintf(label, sizeof(label), "Deleting %s", name);
+        ui_busy_begin(label);
         int result = fs_delete_f(dir, name);
+        ui_busy_end();
         if (result != FS_OK) {
             printf("Can't delete %s: %s\n", args, fs_strerror(result));
+        } else {
+            printf("Deleted %s.\n", name);
         }
         return;
     }
@@ -975,6 +986,7 @@ static void cli_logout (char* args) {
     (void)args;
     if (!cli_accounts_available()) return;
     ClearInputHistory(); // the next person shouldn't be able to scroll back through these commands
+    console_forget_scrollback(); // ...or through what they printed
     strlcpy(cd, "/", sizeof(cd)); // the next user starts at the root
     cli_logged_in = false;
 }

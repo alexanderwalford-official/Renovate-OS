@@ -51,5 +51,6 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] System information. (SYSINFO shows the processor, memory, screen, disks, sound card and every PCI device)
 - [x] Animations. (progress bars and spinners for long jobs like DEL, ENCRYPT and PLAY, and progress / spinner / frame in AerLang)
 - [x] A program queue. (QUEUE lines programs up on the process stack and GO runs them one after another)
+- [x] Scrollback. (Page Up / Page Down in the terminal look back through the last 400 lines of output)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

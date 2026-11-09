@@ -26,6 +26,7 @@
 #include "f_sys.h"
 #include "sys_clck.h"
 #include "../lib/primary_definitions.h"
+#include "../lib/busy.h"
 
 // dynamic vars
 int fs_mode = FS_MODE_MEMORY;  // VFS until fs_init() finds a disk
@@ -511,6 +512,7 @@ typedef struct {
 static void count_entry (const char* name, bool is_dir, uint32_t size, void* ctx) {
     (void)size;
     count_t* c = ctx;
+    busy(); // counting a big folder for DEL takes a moment: let a spinner turn
     if (!is_dir) {
         c->count++;
         return;

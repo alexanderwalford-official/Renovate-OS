@@ -6,6 +6,10 @@ fill in, and `[square brackets]` mean it can be left out. `HELP` shows this list
 Press **Tab** to finish a word: the first word becomes a command or app, any later word a
 file or folder (after `sd`, only folders). When several things fit, Tab lists them.
 
+Press **Page Up** and **Page Down** to scroll back through what a command printed. The last
+400 lines are kept, a tag in the top right says how far back you are, and any other key
+takes you back to the prompt. Logging out forgets them.
+
 ## Files and folders
 
 | Command | Does |
