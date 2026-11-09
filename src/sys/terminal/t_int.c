@@ -60,6 +60,9 @@
 bool cli_active = false; // true from cli_init() onwards, compile() checks it before starting another terminal
 static char cli_input[CLI_INPUT_MAX]; // the line being typed, re-used for every command
 
+// Tab completion for the command line (defined after the command table, which it needs)
+static int cli_complete (char* line, int length, int size);
+
 // flash a block at the cursor position, times = number of flashes, lc = flashes already done
 // each flash takes a second, and the OS waits while it happens. Returns 0
 int flash_pointer (int times, int lc) {
@@ -95,8 +98,9 @@ int cli_init (int ent) {
         while (cli_active && cli_logged_in) {
             cli_prompt();
             // waits for Enter, the line comes back without the newline (and is added to the up / down history)
+            // Tab fills in commands and file names (cli_complete)
             // gotcha: with no keyboard it returns an empty line straight away, so the prompt just repeats
-            GetString(cli_input, sizeof(cli_input));
+            GetLine(cli_input, sizeof(cli_input), cli_complete);
             HandleInput(cli_input);
         }
     }
@@ -949,6 +953,162 @@ static void cli_help (char* args) {
     for (size_t i = 0; i < CLI_COMMAND_COUNT; i++) {
         printf("%s\n", cli_commands[i].help);
     }
+}
+
+// ---- Tab completion -----------------------------------------------------------------------------
+//
+// Like a Linux shell: press Tab part way through a word and the terminal finishes it.
+//
+//     the first word     commands (HELP, PLAY...), apps in /bin/ and .aer programs here
+//     any later word     files and folders, relative ("no" -> "notes.txt") or with a path
+//                        ("/bin/he" -> "/bin/hello.aer", "../" ...). After SD, only folders
+//
+//     one match          it is filled in, then a space (or "/" after a folder, to keep going)
+//     several matches    filled in as far as they all agree ("re" -> "re" + "ad" for read / reader)
+//     nothing to add     the matches are listed, then the prompt and the line come back
+//
+// Matching ignores upper / lower case, like the commands and the FAT file system do.
+
+#define COMPLETE_MAX 128 // most matches gathered for one Tab
+
+static struct {
+    const char* prefix;        // the part of the word typed so far
+    size_t prefix_length;
+    bool folders_only;         // completing the argument of SD
+    char names[COMPLETE_MAX][FS_NAME_MAX + 1]; // the matches, folders ending in '/'
+    int count;
+} completion;
+
+// add a match unless it is already there (an app in /bin/ and one here can share a name)
+static void complete_add (const char* name, size_t length) {
+    if (completion.count == COMPLETE_MAX || length > FS_NAME_MAX) return;
+    if (strncasecmp(name, completion.prefix, completion.prefix_length) != 0) return;
+    for (int i = 0; i < completion.count; i++) {
+        if (strlen(completion.names[i]) == length && strncasecmp(completion.names[i], name, length) == 0) return;
+    }
+    memcpy(completion.names[completion.count], name, length);
+    completion.names[completion.count][length] = '\0';
+    completion.count++;
+}
+
+// a directory entry while completing a path: folders get a '/' on the end
+static void complete_entry (const char* name, bool is_dir, uint32_t size, void* ctx) {
+    (void)size; (void)ctx;
+    if (completion.folders_only && !is_dir) return;
+    char full[FS_NAME_MAX + 2];
+    snprintf(full, sizeof(full), "%s%s", name, is_dir ? "/" : "");
+    complete_add(full, strlen(full));
+}
+
+// a directory entry while completing a command: only programs, without their ".aer"
+static void complete_program (const char* name, bool is_dir, uint32_t size, void* ctx) {
+    (void)size; (void)ctx;
+    size_t length = strlen(name);
+    if (!is_dir && aer_is_program_name(name, length)) complete_add(name, length - 4);
+}
+
+// print the matches in columns under the line, then the prompt and the line again
+static void complete_list (const char* line) {
+    size_t widest = 0;
+    for (int i = 0; i < completion.count; i++) {
+        size_t w = strlen(completion.names[i]);
+        if (w > widest) widest = w;
+    }
+    int column = (int)widest + 2;
+    int per_row = COLS / column > 0 ? COLS / column : 1;
+    printf("\n");
+    for (int i = 0; i < completion.count; i++) {
+        bool last_in_row = (i + 1) % per_row == 0 || i + 1 == completion.count;
+        if (last_in_row) {
+            printf("%s\n", completion.names[i]);
+        } else {
+            printf("%-*s", column, completion.names[i]); // padded to the column width
+        }
+    }
+    cli_prompt();
+    printf("%s", line);
+}
+
+static int cli_complete (char* line, int length, int size) {
+    // the word being completed starts after the last space
+    int start = length;
+    while (start > 0 && line[start - 1] != ' ') start--;
+    const char* word = line + start;
+    bool first_word = true;
+    for (int i = 0; i < start; i++) {
+        if (line[i] != ' ') first_word = false;
+    }
+
+    completion.count = 0;
+    completion.folders_only = false;
+    char dir[FS_PATH_MAX];
+    if (first_word) {
+        completion.prefix = word;
+        completion.prefix_length = strlen(word);
+        for (size_t i = 0; i < CLI_COMMAND_COUNT; i++) {
+            if (cli_commands[i].name[0]) complete_add(cli_commands[i].name, strlen(cli_commands[i].name));
+        }
+        fs_list("/bin/", complete_program, NULL);
+        fs_list(cd, complete_program, NULL);
+    } else {
+        // "docs/no" -> look in "docs/" for names starting "no"; "no" -> look here
+        const char* slash = strrchr(word, '/');
+        completion.prefix = slash ? slash + 1 : word;
+        completion.prefix_length = strlen(completion.prefix);
+        if (slash) {
+            char typed_dir[FS_PATH_MAX];
+            size_t dir_length = (size_t)(slash - word) + 1;
+            if (dir_length >= sizeof(typed_dir)) return length;
+            memcpy(typed_dir, word, dir_length);
+            typed_dir[dir_length] = '\0';
+            if (!fs_resolve_dir(typed_dir, dir, sizeof(dir))) return length;
+        } else {
+            strlcpy(dir, cd, sizeof(dir));
+        }
+        // the first word, to see if this is SD's argument
+        char command[8] = "";
+        int c = 0;
+        while (line[c] == ' ') c++;
+        int k = 0;
+        while (line[c] && line[c] != ' ' && k < 7) command[k++] = line[c++];
+        command[k] = '\0';
+        completion.folders_only = strcasecmp(command, "sd") == 0;
+        fs_list(dir, complete_entry, NULL);
+    }
+    if (completion.count == 0) return length; // nothing starts like that
+
+    // how far all the matches agree, past what has been typed
+    size_t common = strlen(completion.names[0]);
+    for (int i = 1; i < completion.count; i++) {
+        size_t j = completion.prefix_length;
+        while (j < common && completion.names[i][j] &&
+               tolower((unsigned char)completion.names[i][j]) == tolower((unsigned char)completion.names[0][j])) {
+            j++;
+        }
+        common = j;
+    }
+
+    if (common > completion.prefix_length || completion.count == 1) {
+        // add the agreed part. A single match is a finished name, so a space follows it, except
+        // after a folder, where the next Tab carries on inside it
+        const char* match = completion.names[0];
+        const char* add = match + completion.prefix_length;
+        size_t add_length = common - completion.prefix_length;
+        bool finished = completion.count == 1 && match[strlen(match) - 1] != '/';
+        for (size_t i = 0; i < add_length && length < size - 1; i++) {
+            line[length++] = add[i];
+            console_putchar(add[i]);
+        }
+        if (finished && length < size - 1) {
+            line[length++] = ' ';
+            console_putchar(' ');
+        }
+        line[length] = '\0';
+        return length;
+    }
+    // several matches and nothing more they agree on: show them
+    complete_list(line);
+    return length;
 }
 
 // read the command and run it

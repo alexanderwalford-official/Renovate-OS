@@ -203,6 +203,10 @@ loop forever:
 ```
 
 `HELP` lists every command from the same table, so a new command only needs one table line.
+Tab completion uses it too. The line is read with `GetLine()` (in `drivers/input/IO.c`),
+which hands Tab to `cli_complete()`. That completes the first word from the command table and
+the `.aer` programs in `/bin/` and the current folder, and later words from the file system.
+A new command is completed as soon as it is in the table.
 
 ## AerLang
 

@@ -3,6 +3,9 @@
 Commands can be typed in upper or lower case. Words in `<angle brackets>` are what you
 fill in, and `[square brackets]` mean it can be left out. `HELP` shows this list too.
 
+Press **Tab** to finish a word: the first word becomes a command or app, any later word a
+file or folder (after `sd`, only folders). When several things fit, Tab lists them.
+
 ## Files and folders
 
 | Command | Does |

@@ -47,6 +47,10 @@ alex@0//:
 shows who you are (`alex`) and the folder you are in (`/`). Type a command and press Enter.
 The up and down arrows bring back earlier commands.
 
+**Tab** finishes what you are typing, like on Linux: `ec` then Tab gives `echo`, and
+`rd /docs/sec` then Tab gives `rd /docs/security.md`. If more than one thing fits, Tab fills
+in as much as they share, and when there is nothing more to fill in it lists them all.
+
 ## First things to try
 
 | Type | To |
