@@ -60,7 +60,7 @@ in as much as they share, and when there is nothing more to fill in it lists the
 | `la` | list the files here |
 | `hello` | run the hello program |
 | `guess` | play a guessing game |
-| `viewer` | look at the pictures in `/bin/` |
+| `viewer` | look at the pictures in `/bin/` (`+` / `-` zoom, arrows move around) |
 | `sysinfo` | see what's inside this computer |
 | `play /sys/startup.wav` | hear the startup sound again |
 | `edit notes.txt` | write a file |

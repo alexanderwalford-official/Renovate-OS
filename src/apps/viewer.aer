@@ -8,6 +8,9 @@
 #
 # Converts supported BMP files to 24-bit BMP in memory.
 # Original files are never modified.
+#
+# Keys: LEFT / RIGHT change picture, + / - zoom in and out, 0 fits the
+# picture to the screen again, and while zoomed in the arrows move around.
 
 # ------------------------------------------------
 # General utilities
@@ -526,33 +529,24 @@ func choose(pictures, selected)
 end
 
 # ------------------------------------------------
-# Display image
+# Display image, with zoom
 # ------------------------------------------------
+#
+# A picture first shows at the size that fits the screen ("fit").
+# + doubles it and - halves it again, up to 16 times fit, and 0 goes
+# straight back to fit. Zoomed in, the picture is bigger than the screen
+# and only part of it shows, so the arrow keys move around it instead of
+# changing the picture. Whatever is in the middle of the screen stays in
+# the middle while zooming, so you zoom in on what you are looking at.
 
-func show(path)
+let BACKGROUND = rgb(24, 24, 24)
+let MAX_ZOOM = 16       # times the fit size
+let MAX_SIDE = 16384    # the biggest picture the graphics driver will draw
+let BAR = 60            # the caption bar along the bottom of the screen
 
-    let w = gfx_width()
-    let h = gfx_height()
-
-    gfx_clear(rgb(24, 24, 24))
-
-    let data = load_picture(path)
-
-    if data == nil then
-        gfx_clear(rgb(24, 24, 24))
-        text(20, 20, "Unable to load " + path, rgb(255, 90, 90), 1)
-        return
-    end
-
-    let size = image_size(data)
-
-    if size == nil then
-        text(20, 20, "Can't display " + path, rgb(255, 90, 90), 1)
-        return
-    end
-
-    let box_w = w - 40
-    let box_h = h - 80
+# The size that shows the whole picture in a box: shrunk to fit if it is
+# too big, or blown up by the biggest whole number that still fits.
+func fit_size(size, box_w, box_h)
 
     let pw = size[0]
     let ph = size[1]
@@ -567,24 +561,157 @@ func show(path)
             ph = box_h
         end
 
-    else
+        # a very long, thin picture still gets at least one pixel
+        if pw < 1 then pw = 1 end
+        if ph < 1 then ph = 1 end
 
-        let zoom = 1
-
-        while size[0] * (zoom + 1) <= box_w and size[1] * (zoom + 1) <= box_h do
-            zoom = zoom + 1
-        end
-
-        pw = size[0] * zoom
-        ph = size[1] * zoom
+        return [pw, ph]
     end
 
-    image(data, (w - pw) / 2, (h - 60 - ph) / 2, pw, ph)
+    let times = 1
 
-    let caption = path + "   " + str(size[0]) + " x " + str(size[1])
+    while pw * (times + 1) <= box_w and ph * (times + 1) <= box_h do
+        times = times + 1
+    end
 
-    text(20, h - 40, caption, rgb(240, 240, 240), 1)
-    text(w - 300, h - 40, "LEFT / RIGHT   ESC = back", rgb(255, 127, 0), 1)
+    return [pw * times, ph * times]
+end
+
+# Where a picture `length` pixels long starts along a view `room` pixels
+# long: centred if it fits, otherwise moved no further than the edges.
+func place(pos, length, room)
+
+    if length <= room then return (room - length) / 2 end
+    if pos > 0 then return 0 end
+    if pos < room - length then return room - length end
+
+    return pos
+end
+
+# The new start after the picture grows (or shrinks) from `old` to `new`
+# pixels, keeping the spot at `middle` of the view where it is.
+func rescale(pos, middle, old, new)
+    return middle - (middle - pos) * new / old
+end
+
+func caption(path, size, pw, zoom, w, h)
+
+    rect(0, h - BAR, w, BAR, BACKGROUND)
+
+    let words = path + "   " + str(size[0]) + " x " + str(size[1])
+    words = words + "   " + str(pw * 100 / size[0]) + "%"
+
+    let help = "LEFT / RIGHT   + / - zoom   ESC = back"
+
+    if zoom > 1 then
+        help = "ARROWS move   + / - zoom   0 = fit   ESC = back"
+    end
+
+    text(20, h - 40, words, rgb(240, 240, 240), 1)
+    text(w - 20 - len(help) * 8, h - 40, help, rgb(255, 127, 0), 1)
+end
+
+# Wait for a key that leaves the picture: LEFT, RIGHT or ESC.
+func wait_to_leave()
+
+    while true do
+        let k = key()
+        if k == KEY_ESCAPE or k == KEY_LEFT or k == KEY_RIGHT then return k end
+    end
+end
+
+# Show one picture until the user leaves it.
+# Returns the key that left: LEFT, RIGHT or ESC.
+func view(path)
+
+    let w = gfx_width()
+    let h = gfx_height()
+    let room = h - BAR
+
+    gfx_clear(BACKGROUND)
+
+    let data = load_picture(path)
+    let size = nil
+
+    if data != nil then size = image_size(data) end
+
+    if size == nil then
+        gfx_clear(BACKGROUND)
+        text(20, 20, "Can't show " + path, rgb(255, 90, 90), 1)
+        text(w - 300, h - 40, "LEFT / RIGHT   ESC = back", rgb(255, 127, 0), 1)
+        return wait_to_leave()
+    end
+
+    let fit = fit_size(size, w - 40, h - 80)
+    let zoom = 1
+    let pw = fit[0]
+    let ph = fit[1]
+    let x = place(0, pw, w)
+    let y = place(0, ph, room)
+    let changed = true
+
+    while true do
+
+        if changed then
+
+            # gaps around the picture need clearing, a picture covering
+            # the whole view doesn't (and doesn't flicker)
+            if pw < w or ph < room then gfx_clear(BACKGROUND) end
+
+            image(data, x, y, pw, ph)
+            caption(path, size, pw, zoom, w, h)
+        end
+
+        let k = key()
+        let new_zoom = zoom
+
+        if k == ord("+") or k == ord("=") then new_zoom = zoom * 2 end
+        if k == ord("-") or k == ord("_") then new_zoom = zoom / 2 end
+        if k == ord("0") then new_zoom = 1 end
+
+        if new_zoom < 1 then new_zoom = 1 end
+
+        if new_zoom > MAX_ZOOM or fit[0] * new_zoom > MAX_SIDE or fit[1] * new_zoom > MAX_SIDE then
+            new_zoom = zoom
+        end
+
+        let old_x = x
+        let old_y = y
+
+        if new_zoom != zoom then
+
+            let new_w = fit[0] * new_zoom
+            let new_h = fit[1] * new_zoom
+
+            x = place(rescale(x, w / 2, pw, new_w), new_w, w)
+            y = place(rescale(y, room / 2, ph, new_h), new_h, room)
+
+            zoom = new_zoom
+            pw = new_w
+            ph = new_h
+
+            changed = true
+
+        elif zoom > 1 and (k == KEY_LEFT or k == KEY_RIGHT or k == KEY_UP or k == KEY_DOWN) then
+
+            # move a quarter of the screen, looking further that way
+            if k == KEY_LEFT then x = place(x + w / 4, pw, w) end
+            if k == KEY_RIGHT then x = place(x - w / 4, pw, w) end
+            if k == KEY_UP then y = place(y + room / 4, ph, room) end
+            if k == KEY_DOWN then y = place(y - room / 4, ph, room) end
+
+            # already at the edge: nothing to redraw
+            changed = x != old_x or y != old_y
+
+        elif k == KEY_ESCAPE or k == KEY_LEFT or k == KEY_RIGHT then
+
+            return k
+
+        else
+
+            changed = false
+        end
+    end
 end
 
 # ------------------------------------------------
@@ -624,13 +751,7 @@ while current >= 0 do
         exit()
     end
 
-    show(pictures[current])
-
-    let k = key()
-
-    while k != KEY_ESCAPE and k != KEY_LEFT and k != KEY_RIGHT do
-        k = key()
-    end
+    let k = view(pictures[current])
 
     if k == KEY_LEFT then
 

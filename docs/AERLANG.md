@@ -159,7 +159,8 @@ Colours are numbers like `0xFF7F00`, or `rgb(255, 127, 0)`. Drawing off the edge
 `gfx_width()` · `gfx_height()` · `gfx_clear(colour)` · `pixel(x, y, colour)` ·
 `rect(x, y, w, h, colour)` filled · `line(x1, y1, x2, y2, colour)` ·
 `text(x, y, text, colour, size)` (size 1 is 8 x 16 pixels per character) ·
-`image(bytes, x, y, w, h)` draw a BMP picture (8, 24 or 32 bit), scaled to fit `w` x `h` if given ·
+`image(bytes, x, y, w, h)` draw a BMP picture (8, 24 or 32 bit), scaled to fit `w` x `h` if given
+(up to 16384 x 16384, so it can be far bigger than the screen; only the part on screen is drawn) ·
 `image_size(bytes)` its `[width, height]`, or nil if it isn't a BMP
 
 ```
@@ -170,6 +171,7 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
-`/bin/viewer.aer` is a complete app built from these: a picture picker and viewer.
+`/bin/viewer.aer` is a complete app built from these: a picture picker and viewer that zooms
+(`+` / `-`, `0` to fit) by drawing the picture bigger than the screen and moving it around.
 `/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
 own parsers, word wrapping and link navigation, all in AerLang.

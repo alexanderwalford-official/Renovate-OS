@@ -34,7 +34,9 @@ void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale);
 bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h);
 
 // draw a BMP picture with its top left corner at x, y. If max_w and max_h are above 0 the picture
-// is scaled (up or down, keeping its shape) to fit in that box. False if it isn't a BMP we can show.
+// is scaled (up or down, keeping its shape) to fit in that box. The box may be bigger than the
+// screen (up to 16384 pixels each way) and x, y may be negative, which is how a picture is zoomed
+// in on: only the part that lands on the screen is drawn. False if it isn't a BMP we can show.
 bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, int max_h);
 
 #endif /* GFX_H */

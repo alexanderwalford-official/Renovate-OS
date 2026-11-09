@@ -127,7 +127,8 @@ end
 Colours are numbers like `0xFF7F00` or `rgb(255, 127, 0)`.
 `gfx_width()`, `gfx_height()`, `gfx_clear(c)`, `pixel(x, y, c)`, `rect(x, y, w, h, c)`,
 `line(x1, y1, x2, y2, c)`, `text(x, y, s, c, size)`, `image(bytes, x, y, w, h)` (a BMP
-picture), `image_size(bytes)`.
+picture), `image_size(bytes)`. `w` x `h` can be bigger than the screen and `x`, `y`
+negative: only the part on the screen is drawn, which is how the viewer zooms in.
 
 ```
 gfx_open()

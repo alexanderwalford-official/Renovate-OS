@@ -215,14 +215,15 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
     bmp_t b;
     if (!active || !bmp_open(data, length, &b)) return false;
 
-    // the size to draw at: as it is, or as big as fits in the box while keeping its shape
-    // (pictures are at most 16384 pixels across and the box is screen sized, so these products
-    // fit easily in 32 bits; 64 bit division would need libgcc, which the kernel doesn't link)
+    // the size to draw at: as it is, or as big as fits in the box while keeping its shape.
+    // The box can be far bigger than the screen (a zoomed in picture, only part of which shows).
+    // Pictures and boxes are both at most 16384 pixels across, so every product below stays under
+    // 2^28 and fits in 32 bits (64 bit division would need libgcc, which the kernel doesn't link)
     uint32_t w = (uint32_t)b.width;
     uint32_t h = (uint32_t)b.height;
     if (max_w > 0 && max_h > 0) {
-        if (max_w > 8192) max_w = 8192;
-        if (max_h > 8192) max_h = 8192;
+        if (max_w > 16384) max_w = 16384;
+        if (max_h > 16384) max_h = 16384;
         if ((uint32_t)b.width * (uint32_t)max_h <= (uint32_t)b.height * (uint32_t)max_w) {
             h = (uint32_t)max_h;
             w = (uint32_t)b.width * (uint32_t)max_h / (uint32_t)b.height;
@@ -234,16 +235,21 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
         if (h < 1) h = 1;
     }
 
+    // only the part of the picture that lands on the screen is worth drawing: tx and ty run over
+    // the drawn picture, so start where it comes onto the screen and stop where it goes off.
+    // A zoomed in picture can be thousands of pixels wider than the screen
+    uint32_t x0 = x < 0 ? (uint32_t)-x : 0, x1 = w;
+    uint32_t y0 = y < 0 ? (uint32_t)-y : 0, y1 = h;
+    if (x >= (int)fb.width || y >= (int)fb.height) return true;
+    if (x + (int)w > (int)fb.width) x1 = (uint32_t)((int)fb.width - x);
+    if (y + (int)h > (int)fb.height) y1 = (uint32_t)((int)fb.height - y);
+
     // nearest neighbour: every screen pixel takes the colour of the picture pixel under it
-    for (uint32_t ty = 0; ty < h; ty++) {
-        int sy = y + (int)ty;
-        if (sy < 0 || (uint32_t)sy >= fb.height) continue;
+    for (uint32_t ty = y0; ty < y1; ty++) {
         int py = (int)(ty * (uint32_t)b.height / h);
-        for (uint32_t tx = 0; tx < w; tx++) {
-            int sx = x + (int)tx;
-            if (sx < 0 || (uint32_t)sx >= fb.width) continue;
+        for (uint32_t tx = x0; tx < x1; tx++) {
             int px = (int)(tx * (uint32_t)b.width / w);
-            put((uint32_t)sx, (uint32_t)sy, pack(bmp_pixel(&b, px, py)));
+            put((uint32_t)(x + (int)tx), (uint32_t)(y + (int)ty), pack(bmp_pixel(&b, px, py)));
         }
     }
     return true;
