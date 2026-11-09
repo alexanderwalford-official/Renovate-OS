@@ -454,14 +454,50 @@ static void after_wrong_password (const char* name, uint32_t wrong_passwords) {
 
 // ---- the login screen -----------------------------------------------------------------------
 
-// clear the screen and draw the "AerOS" title with a line under it
+#define TITLE           "aerOS" // the big title at the top of the login screen
+#define TITLE_COLOUR    ORANGE
+#define TYPING_DELAY_MS 120     // how long each letter of the title takes to "type"
+
+// Draw the title in big letters as if it is being typed: a big "_" cursor runs ahead, and the
+// letters appear one at a time behind it, left to right. It runs once, each time the login
+// screen is drawn. (Keys pressed meanwhile aren't lost: they turn up in the Username box)
+static void type_title (uint8_t x, uint8_t y) {
+    const char* title = TITLE;
+    char letter[2] = { 0, 0 }; // one letter at a time, as a string for big_text
+
+    // hide the console's blinking cursor while the title types (it would sit in the top left
+    // corner). The next console_set_cursor() shows it again
+    vga_disable_cursor();
+
+    for (int i = 0; title[i] != '\0'; i++) {
+        uint8_t letter_x = (uint8_t)(x + i * BIG_TEXT_COLS);
+
+        // the cursor where the next letter goes, a moment's pause, then the letter over it
+        // (big_text draws every cell of a letter, background too, so the cursor is gone)
+        big_text(letter_x, y, TITLE_COLOUR, BLACK, "_");
+        sleep_ms(TYPING_DELAY_MS);
+        letter[0] = title[i];
+        big_text(letter_x, y, TITLE_COLOUR, BLACK, letter);
+    }
+
+    // the cursor after the last letter for a moment, then take it away
+    uint8_t end_x = (uint8_t)(x + strlen(title) * BIG_TEXT_COLS);
+    big_text(end_x, y, TITLE_COLOUR, BLACK, "_");
+    sleep_ms(TYPING_DELAY_MS * 3);
+    big_text(end_x, y, TITLE_COLOUR, BLACK, " ");
+}
+
+// clear the screen and draw the big title, with a line under it
 static void heading (const char* subtitle) {
     console_set_color(BRIGHT, BLACK);
     console_clear();
-    printf("\n");
-    console_set_color(YELLOW, BLACK);
-    printf("  AerOS\n");
-    console_set_color(BRIGHT, BLACK);
+
+    // the title in big letters from row 1 (big_text is in drivers/video/VGA_linear.h)
+    uint8_t title_row = 1;
+    type_title(2, title_row);
+
+    // carry on printing on the line under the title
+    console_set_cursor(0, (uint8_t)(title_row + BIG_TEXT_ROWS));
     printf("  %s\n\n", subtitle);
 }
 

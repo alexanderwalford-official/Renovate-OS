@@ -98,7 +98,7 @@ one side is a string: `"Score: " + 10`.
 `write(...)` the same without the new line ·
 `input(prompt)` read a line · `input_secret(prompt)` the same, showing `*` (for passwords) ·
 `cls()` clear the screen ·
-`color(fg, bg)` text colours (`BLACK` ... `WHITE`) ·
+`color(fg, bg)` text colours (`BLACK` ... `WHITE`, and `ORANGE`, the logo orange) ·
 `at(x, y)` move the cursor ·
 `key()` wait for a key and return its code: a character code, or one of `KEY_UP`, `KEY_DOWN`,
 `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`,
@@ -140,6 +140,12 @@ rows, e.g. `["Processor", "Speed", "about 2400 MHz"]` (`/bin/sysinfo.aer` shows 
 pulse, dots, bounce); returns how many cells it took ·
 `frame(fps)` wait until it's time for the next frame, so a loop runs at a steady speed however
 long the drawing took. The colours can be left out.
+
+`big_text(x, y, text, colour, background)` text in big letters, like the splash screen's
+"aerOS": each letter is 8 columns wide and 7 rows tall (10 fit across the screen), drawn with
+half block characters, so it works on any screen. The colour (WHITE) and background (BLACK)
+can be left out; returns how many columns wide it is, e.g. to centre it:
+`big_text((80 - len(title) * 8) / 2, 2, title, ORANGE)`
 
 ```
 while not haskey() do

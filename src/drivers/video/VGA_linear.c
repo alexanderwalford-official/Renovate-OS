@@ -98,10 +98,12 @@ static struct {
 static int border_color = BLACK; // the colour of the margin around the grid
 static vga_framebuffer_t fb_info; // what GRUB told us, handed on to the graphics module
 
-// the 16 colours as red, green, blue: the standard VGA colours until the palette is changed
+// the 16 colours as red, green, blue: the standard VGA colours, except that colour 6 (brown)
+// is the logo's orange, ORANGE. The palette can still be changed later with vga_set_palette()
+#define ORANGE_RGB 0xFF, 0x7F, 0x00
 static uint8_t palette[16][3] = {
     { 0x00, 0x00, 0x00 }, { 0x00, 0x00, 0xAA }, { 0x00, 0xAA, 0x00 }, { 0x00, 0xAA, 0xAA },
-    { 0xAA, 0x00, 0x00 }, { 0xAA, 0x00, 0xAA }, { 0xAA, 0x55, 0x00 }, { 0xAA, 0xAA, 0xAA },
+    { 0xAA, 0x00, 0x00 }, { 0xAA, 0x00, 0xAA }, { ORANGE_RGB },       { 0xAA, 0xAA, 0xAA },
     { 0x55, 0x55, 0x55 }, { 0x55, 0x55, 0xFF }, { 0x55, 0xFF, 0x55 }, { 0x55, 0xFF, 0xFF },
     { 0xFF, 0x55, 0x55 }, { 0xFF, 0x55, 0xFF }, { 0xFF, 0xFF, 0x55 }, { 0xFF, 0xFF, 0xFF },
 };
@@ -390,6 +392,66 @@ void puts(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* s) {
         cell_set(cy * COLS + cx, VGA_ENTRY(*s, fg, bg));
         cx++;
     }
+}
+
+// ---- big text -----------------------------------------------------------------------------------
+//
+// Each pixel of a letter in the 8x16 font becomes half a character cell. One cell holds two
+// pixels, one above the other, using the "upper half block" character (0xDF, ▀) and the
+// "lower half block" (0xDC, ▄):
+//
+//     top pixel  bottom pixel   the cell
+//     on         on             a space with the background set to the text colour (solid)
+//     on         off            ▀ in the text colour
+//     off        on             ▄ in the text colour
+//     off        off            a space (just the background)
+//
+// So a letter is 8 cells wide (one per pixel across) and 8 cells tall (16 pixel rows, two per
+// cell). The top and bottom rows of the font are blank for every printable character, so they
+// are left out: font rows 1 to 14 make the BIG_TEXT_ROWS = 7 rows of cells.
+// This is the same trick the splash screen uses to draw its logo in text mode.
+
+#define BIG_TEXT_FIRST_FONT_ROW 1
+
+// one cell of big text, from the two pixels it shows
+static void big_text_cell(uint8_t x, uint8_t y, enum color fg, enum color bg, bool top, bool bottom) {
+    if (top && bottom) {
+        putc(x, y, fg, fg, ' ');
+    } else if (top) {
+        putc(x, y, fg, bg, (char)0xDF);
+    } else if (bottom) {
+        putc(x, y, fg, bg, (char)0xDC);
+    } else {
+        putc(x, y, fg, bg, ' ');
+    }
+}
+
+int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text) {
+    int width = 0;
+
+    for (const char* c = text; *c != '\0'; c++) {
+        const uint8_t* glyph = font8x16[(uint8_t)*c];
+        int letter_x = x + width;
+
+        for (int row = 0; row < BIG_TEXT_ROWS; row++) {
+            // the two font rows this row of cells shows
+            uint8_t top_row = glyph[BIG_TEXT_FIRST_FONT_ROW + row * 2];
+            uint8_t bottom_row = glyph[BIG_TEXT_FIRST_FONT_ROW + row * 2 + 1];
+
+            for (int column = 0; column < BIG_TEXT_COLS; column++) {
+                int cell_x = letter_x + column;
+                if (cell_x >= COLS) {
+                    break; // off the right edge (putc would skip it anyway)
+                }
+                uint8_t pixel = (uint8_t)(0x80 >> column); // bit 7 is the leftmost pixel
+                bool top = (top_row & pixel) != 0;
+                bool bottom = (bottom_row & pixel) != 0;
+                big_text_cell((uint8_t)cell_x, (uint8_t)(y + row), fg, bg, top, bottom);
+            }
+        }
+        width += BIG_TEXT_COLS;
+    }
+    return width;
 }
 
 // fill the whole screen with colour bg (spaces drawn in bg on bg) and hand the screen over to
@@ -684,6 +746,11 @@ void vga_init(const vga_framebuffer_t* framebuffer) {
         outb(0x3C0, 0x30);         // select the mode control register (bit 5 keeps the screen on)
         uint8_t mode = inb(0x3C1);
         outb(0x3C0, mode & ~0x08); // clear the blink bit
+
+        // In text mode the graphics card draws the colours itself, from its own palette, so
+        // brown has to be repainted to orange there. (On a framebuffer AerOS draws every pixel
+        // itself, from the palette table above, which already has the orange)
+        vga_set_palette(ORANGE, ORANGE_RGB);
     }
     vga_set_glyph((uint8_t)VGA_COPYRIGHT[0], copyright);
 

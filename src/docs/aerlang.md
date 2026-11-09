@@ -81,11 +81,11 @@ print(area(3, 4))               # 12
 `input_secret(prompt)` (shows `*`), `cls()`, `color(fg, bg)`, `at(x, y)`, `key()` (waits,
 gives the key's code), `haskey()`.
 
-Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGHT`,
-`DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`, `LIGHT_CYAN`, `LIGHT_RED`, `LIGHT_PURPLE`,
-`YELLOW`, `WHITE`. Keys: `KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`,
-`KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`, `KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`,
-`KEY_ESCAPE`.
+Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `ORANGE` (the logo
+orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`,
+`LIGHT_CYAN`, `LIGHT_RED`, `LIGHT_PURPLE`, `YELLOW`, `WHITE`. Keys: `KEY_UP`,
+`KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`,
+`KEY_DELETE`, `KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`, `KEY_ESCAPE`.
 
 **Text:** `len(x)`, `str(x)`, `int("42")` (nil if not a number), `chr(65)`, `ord("A")`,
 `sub(s, start, count)`, `find(s, part)` (-1 if missing), `upper(s)`, `lower(s)`,
@@ -112,6 +112,15 @@ gives back how many are queued.
 `[#####.....]  50%`, `spinner(x, y, style, colour)` draws a spinner as it should look right
 now (styles 0 to 4: line, arrows, pulse, dots, bounce), and `frame(fps)` waits for the next
 frame, so a loop runs at a steady speed. The colour can be left out.
+
+**Big text:** `big_text(x, y, text, colour, background)` writes text in big letters like the
+splash screen's "aerOS": each letter is 8 columns wide and 7 rows tall, so 10 fit across the
+screen. It gives back how many columns wide it is, handy for centring:
+
+```
+let title = "Hello"
+big_text((80 - len(title) * 8) / 2, 2, title, ORANGE)
+```
 
 ```
 let done = 0

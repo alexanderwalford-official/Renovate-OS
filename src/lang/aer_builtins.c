@@ -566,6 +566,26 @@ static void cell_args (value_t* argv, int line, const char* fn, uint8_t* x, uint
     *y = (uint8_t)cy;
 }
 
+// big_text(x, y, text, colour, background): text in big letters, like the splash screen's
+// "aerOS", with its top left corner at column x, row y. Each letter is 8 columns wide and 7 rows
+// tall. The colour is WHITE and the background BLACK if they are left out.
+// Returns how many columns wide it is, so it can be centred
+static value_t bi_big_text (int argc, value_t* argv, int line) {
+    uint8_t x, y;
+    cell_args(argv, line, "big_text", &x, &y);
+    aer_object_t* text = str_arg(argv, 2, line, "big_text");
+
+    enum color colour = WHITE;
+    if (argc > 3) {
+        colour = (enum color)(int_arg(argv, 3, line, "big_text") & 15); // one of the 16 colours
+    }
+    enum color background = BLACK;
+    if (argc > 4) {
+        background = (enum color)(int_arg(argv, 4, line, "big_text") & 15);
+    }
+    return aer_int(big_text(x, y, colour, background, text->data.chars));
+}
+
 // progress(x, y, width, done, total, colour): [#####.....]  50%
 static value_t bi_progress (int argc, value_t* argv, int line) {
     uint8_t x, y;
@@ -836,6 +856,7 @@ const aer_builtin_t aer_builtins[] = {
     { "sleep", bi_sleep, 1, 1 },
     { "time", bi_time, 0, 0 },
     { "system_info", bi_system_info, 0, 0 },
+    { "big_text", bi_big_text, 3, 5 },
     { "progress", bi_progress, 5, 6 },
     { "spinner", bi_spinner, 2, 4 },
     { "frame", bi_frame, 1, 1 },
@@ -867,7 +888,7 @@ void aer_define_constants (void) {
         { "KEY_DELETE", KEY_DELETE }, { "KEY_ESCAPE", KEY_ESCAPE }, { "KEY_ENTER", '\n' },
         { "KEY_BACKSPACE", '\b' }, { "KEY_TAB", '\t' }, { "KEY_PGUP", KEY_PGUP }, { "KEY_PGDN", KEY_PGDN },
         { "BLACK", BLACK }, { "DARK_BLUE", DARK_BLUE }, { "GREEN", GREEN }, { "CYAN", CYAN },
-        { "RED", RED }, { "PURPLE", PURPLE }, { "BROWN", BROWN }, { "BRIGHT", BRIGHT },
+        { "RED", RED }, { "PURPLE", PURPLE }, { "ORANGE", ORANGE }, { "BROWN", BROWN }, { "BRIGHT", BRIGHT },
         { "DARK_GRAY", DARK_GRAY }, { "LIGHT_BLUE", LIGHT_BLUE }, { "LIGHT_GREEN", LIGHT_GREEN },
         { "LIGHT_CYAN", LIGHT_CYAN }, { "LIGHT_RED", LIGHT_RED }, { "LIGHT_PURPLE", LIGHT_PURPLE },
         { "YELLOW", YELLOW }, { "WHITE", WHITE },

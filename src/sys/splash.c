@@ -27,8 +27,9 @@
 #include "../lib/aer_stdlib.h"
 #include "../drivers/video/VGA_linear.h"
 
-// the borrowed colours
-#define SPLASH_ORANGE BROWN     // the background, #FF7F00
+// the colours the splash uses. Orange is a real colour (ORANGE); the two shades between it and
+// white are borrowed from other colours for as long as the splash is up
+#define SPLASH_ORANGE ORANGE    // the background, #FF7F00
 #define SPLASH_LIGHT  LIGHT_RED // a third of the way from orange to white
 #define SPLASH_PALE   YELLOW    // two thirds of the way
 
@@ -196,7 +197,8 @@ void splash_draw(void) {
 }
 
 void splash_close(void) {
-    // blank the screen first, or the splash would flash brown as the colours change back
+    // blank the screen first, or the logo's shades would flash red and yellow as the colours
+    // change back
     clear(BLACK);
     for (int i = 0; i < 3; i++) {
         vga_set_palette(borrowed[i], saved[i][0], saved[i][1], saved[i][2]);
