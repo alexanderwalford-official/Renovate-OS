@@ -19,7 +19,7 @@
 // The file offers two layers:
 // - positional drawing (putc / puts / clear) for full screen layouts that place text exactly
 // - a console that remembers a cursor, wraps, scrolls and mirrors everything to the serial port,
-//   which is what printf and the terminal use
+//   which is what prtf and the terminal use
 
 #ifndef VGA_LINEAR_H
 #define VGA_LINEAR_H

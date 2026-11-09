@@ -7,7 +7,7 @@
     Think of this as the kernel's "include everything" header. Most modules (the terminal,
     the process manager, the file system, AerLang) include just this one file and get:
     - the fixed size integer types (uint8_t, uint32_t...), bool / true / false, size_t / NULL
-    - the whole of our little C library: strings, memory, number conversion, malloc, printf
+    - the whole of our little C library: strings, memory, number conversion, malloc, prtf
     - the VGA console functions, so anything can draw on the screen
     - the AerOS string helpers below, which predate the C library and give the kernel a
       slightly friendlier, Python flavoured way of handling strings (contains, split, remove...)
@@ -32,7 +32,7 @@
 #include "../drivers/video/VGA_linear.h"
 
 // pi to 5 decimal places, a double
-// note: any floating point maths would run on the x87 FPU (SSE is switched off), and printf can't print floats
+// note: any floating point maths would run on the x87 FPU (SSE is switched off), and prtf can't print floats
 #ifndef PI
 #define PI 3.14159
 #endif
@@ -40,7 +40,7 @@
 // "for each" loop, only works on real arrays (not pointers), e.g.
 //     int values[3] = {1, 2, 3};
 //     int* item;
-//     foreach(item, values) { printf("%d\n", *item); }
+//     foreach(item, values) { prtf("%d\n", *item); }
 //
 // How the macro works (it's a well known trick, two nested for loops):
 // - the OUTER loop counts foreach_count from 0 up to the number of elements, which it works out
@@ -73,7 +73,7 @@ bool contains_str(const char* string, const char* target);
 // nesting is fine: StrCombine(StrCombine("a", "b"), "c") gives "abc"
 char* StrCombine(const char* str1, const char* str2);
 // turn a number into decimal text, e.g. toArray(-42) gives "-42"
-// gotcha: printf("%s %s", toArray(1), toArray(2)) prints the same number twice, both point at the one buffer
+// gotcha: prtf("%s %s", toArray(1), toArray(2)) prints the same number twice, both point at the one buffer
 char* toArray(int number);
 
 // 1 when the strings match, 0 when they don't (or either is NULL)

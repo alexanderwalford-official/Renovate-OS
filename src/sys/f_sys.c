@@ -441,13 +441,13 @@ static int mem_print (const char* path) {
             // the name is what comes after the parent's path, '/' and all: "cache/" from "/sys/cache/"
             char name[FS_NAME_MAX + 1];
             strlcpy(name, directories[i].d_path + strlen(path), sizeof(name));
-            printf("  <DIR>   %-22s %s\n", name, directories[i].d_name);
+            prtf("  <DIR>   %-22s %s\n", name, directories[i].d_name);
             shown++;
         }
     }
     for (int i = 0; i < FS_MAX_FILES; i++) {
         if (files[i].f_used && StrCompare(files[i].f_path, path)) {
-            printf("  <FILE>  %-22s %6d bytes  %s\n", files[i].f_name, files[i].f_size, files[i].f_datetime);
+            prtf("  <FILE>  %-22s %6d bytes  %s\n", files[i].f_name, files[i].f_size, files[i].f_datetime);
             shown++;
         }
     }
@@ -779,9 +779,9 @@ int fs_set_cd (const char* input) {
 // LA: list what is in the current folder
 void fs_print (void) {
     if (on_disk()) {
-        printf("Directory of %s  (disk)\n", cd);
+        prtf("Directory of %s  (disk)\n", cd);
     } else {
-        printf("Directory of %s\n", cd);
+        prtf("Directory of %s\n", cd);
     }
 
     // both return how many lines they printed (the disk one -1 if it couldn't read the folder)
@@ -793,9 +793,9 @@ void fs_print (void) {
     }
 
     if (shown == 0) {
-        printf("  (empty)\n");
+        prtf("  (empty)\n");
     } else if (shown < 0) {
-        printf("  (could not read the directory)\n");
+        prtf("  (could not read the directory)\n");
     }
 }
 
@@ -821,9 +821,9 @@ static int make_file_if_missing (const char* folder, const char* name, const cha
 // make it, and a parent comes before what goes in it ("/sys/" before "/sys/cache/")
 static void make_base_folders (void) {
     if (on_disk()) {
-        printf("< CHK REQ FS .. >\n");
+        prtf("< CHK REQ FS .. >\n");
     } else {
-        printf("< MK TMP REQ FS .. >\n");
+        prtf("< MK TMP REQ FS .. >\n");
         // a FAT disk always has a top folder, the VFS has to make its own (fs_create_d refuses "/")
         mem_create_folder("/", "root");
     }
@@ -838,11 +838,11 @@ static void make_base_folders (void) {
     made += make_file_if_missing("/", "conf.aer", "# here you will find all major system config options");
 
     if (on_disk()) {
-        printf("< REQ FS DONE .. > %d missing item(s) created\n", made);
+        prtf("< REQ FS DONE .. > %d missing item(s) created\n", made);
     } else {
-        printf("< TMP REQ FS DONE .. > %d directories, %d files\n", d_c, f_c);
+        prtf("< TMP REQ FS DONE .. > %d directories, %d files\n", d_c, f_c);
     }
-    printf("[E:fs0f1]\n"); // the boot log's marker for the end of the file system stage
+    prtf("[E:fs0f1]\n"); // the boot log's marker for the end of the file system stage
 }
 
 // boot.c calls this once, with:
@@ -867,17 +867,17 @@ int fs_init (const char* arg) {
 
     if (found_disk) {
         fs_mode = FS_MODE_DISK;
-        printf("[ OK ] Disk: %s\n", fs_disk_status);
-        printf("< INIT DISK FS .. >\n");
+        prtf("[ OK ] Disk: %s\n", fs_disk_status);
+        prtf("< INIT DISK FS .. >\n");
     } else {
         fs_mode = FS_MODE_MEMORY;
         if (demo) {
-            printf("[INFO] Demo mode: disks are not loaded, files will not be saved\n");
+            prtf("[INFO] Demo mode: disks are not loaded, files will not be saved\n");
         } else {
             // fs_disk_status says why, e.g. "no AEROS disk found"
-            printf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
+            prtf("[INFO] Disk: %s, files will not be saved\n", fs_disk_status);
         }
-        printf("< INIT TMP FS .. >\n");
+        prtf("< INIT TMP FS .. >\n");
     }
     make_base_folders();
     return 0;

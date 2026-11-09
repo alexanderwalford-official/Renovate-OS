@@ -136,7 +136,7 @@ int compile (const char* code) {
     // "s:<text>" prints (says) the text
     // everything after the two character prefix is printed as it is, spaces and all
     if (strncmp(code, "s:", 2) == 0) {
-        printf("%s\n", code + 2);
+        prtf("%s\n", code + 2);
     }
     else if (StrCompare(code, "update_stack")) {
         p_stack_update();
@@ -159,7 +159,7 @@ int compile (const char* code) {
         // (the process manager already refuses to re-run the RUNNING terminal process, this catches
         // a brand new "terminal" process, e.g. typing "run terminal" in the terminal)
         if (cli_active) {
-            printf("The terminal is already running.\n");
+            prtf("The terminal is already running.\n");
         } else {
             // 1 = log in first (only asked for in DISK mode, see sys/accounts/auth.h)
             cli_init(1);

@@ -150,14 +150,14 @@ void aer_error (int line, const char* format, ...) {
     enum color old_fg = console_fg;
     console_set_color(LIGHT_RED, console_bg);
     if (line > 0) {
-        printf("Error in %s on line %d: ", aer->name, line);
+        prtf("Error in %s on line %d: ", aer->name, line);
     } else {
-        printf("Error in %s: ", aer->name);
+        prtf("Error in %s: ", aer->name);
     }
     va_start(ap, format);
-    vprintf(format, ap);
+    vprtf(format, ap);
     va_end(ap);
-    printf("\n");
+    prtf("\n");
     console_set_color(old_fg, console_bg);
     longjmp(aer->error, 1);
 }
@@ -392,7 +392,7 @@ void aer_print_value (value_t v) {
         return;
     }
     value_t s = aer_to_string(v);
-    printf("%s", s.as.obj->data.chars);
+    prtf("%s", s.as.obj->data.chars);
     aer_release(s);
 }
 
@@ -758,7 +758,7 @@ static exec_t exec (aer_node_t* n) {
             if (aer->repl && aer->locals == 0 && v.type != V_NIL) {
                 // at the prompt, show what an expression worked out to
                 aer_print_value(v);
-                printf("\n");
+                prtf("\n");
             }
             aer_release(v);
             return EXEC_NEXT;
@@ -994,7 +994,7 @@ int aer_run_file (const char* path, const char* args) {
     char name[FS_NAME_MAX];
     char* source = find_program(path, name, sizeof(name));
     if (source == 0) {
-        printf("Program not found: %s\n", path);
+        prtf("Program not found: %s\n", path);
         return -1;
     }
     int result = aer_run_source(source, name, args);
@@ -1006,7 +1006,7 @@ int aer_run_file (const char* path, const char* args) {
 // line are still there on the next
 void aer_repl (void) {
     char line[256];
-    printf("AerLang - type code to run it, \"exit\" to leave.\n");
+    prtf("AerLang - type code to run it, \"exit\" to leave.\n");
     session_begin("prompt", 0);
     aer->repl = true;
     for (;;) {
@@ -1014,10 +1014,10 @@ void aer_repl (void) {
         uint8_t x, y;
         console_get_cursor(&x, &y);
         if (x != 0) {
-            printf("\n");
+            prtf("\n");
         }
         console_set_color(LIGHT_CYAN, console_bg);
-        printf("aer> ");
+        prtf("aer> ");
         console_set_color(BRIGHT, console_bg);
         GetString(line, sizeof(line));
         if (strcmp(StrTrim(line), "exit") == 0) {

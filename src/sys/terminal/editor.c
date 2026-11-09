@@ -547,7 +547,7 @@ static void run_program (void) {
     aer_run_file(path, "");
 
     console_set_color(DARK_GRAY, BLACK);
-    printf("\n-- press any key to go back to the editor --");
+    prtf("\n-- press any key to go back to the editor --");
     GetChar();
 
     vga_invalidate(); // the program may have drawn graphics: redraw every cell next time
@@ -654,7 +654,7 @@ void editor_open (const char* path) {
     bool path_ok = fs_split_path(path, folder, sizeof(folder), file_name, sizeof(file_name))
                    && fs_dir_exists(folder);
     if (!path_ok) {
-        printf("Can't edit %s\n", path);
+        prtf("Can't edit %s\n", path);
         return;
     }
 

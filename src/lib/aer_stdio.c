@@ -6,7 +6,7 @@
 
     How it fits together:
 
-        printf ---> vprintf ----\                          /--> console_out --> VGA console
+        prtf -----> vprtf ------\                          /--> console_out --> VGA console
                                  >--> vformat(out, ctx) --<                     (+ serial port)
         sprintf --> vsprintf ---\                          \--> buffer_out ---> your char buffer
         snprintf -> vsnprintf --/
@@ -108,7 +108,7 @@ static void emit_chars(out_fn out, void* ctx, const char* s, int n) {
 
 // the formatting engine shared by every printf style function
 // out = where each character goes, ctx = passed through to out, fmt = the format string,
-// ap = the arguments. Returns the number of characters produced, which is what printf returns.
+// ap = the arguments. Returns the number of characters produced, which is what prtf returns.
 // (for snprintf that includes characters that didn't fit in the buffer)
 static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
     int count = 0;
@@ -440,7 +440,7 @@ int sprintf(char* buf, const char* fmt, ...) {
     return n;
 }
 
-// output function for printf: puts the character on the console (which also mirrors it to the serial port)
+// output function for prtf: puts the character on the console (which also mirrors it to the serial port)
 // it uses the "raw" version that doesn't move the blinking hardware cursor, because moving it
 // means talking to the VGA controller through I/O ports, which is slow to do for every character
 static void console_out(char c, void* ctx) {
@@ -449,19 +449,19 @@ static void console_out(char c, void* ctx) {
     console_putchar_raw(c);
 }
 
-// printf with a va_list: format straight onto the console
-int vprintf(const char* fmt, va_list ap) {
+// prtf with a va_list: format straight onto the console
+int vprtf(const char* fmt, va_list ap) {
     int n = vformat(console_out, NULL, fmt, ap);
     console_update_cursor(); // once at the end, not after every character
     return n;
 }
 
-// print to the console, e.g. printf("%d files, %u KB free\n", count, kb)
+// print to the console, e.g. prtf("%d files, %u KB free\n", count, kb)
 // returns the number of characters printed
-int printf(const char* fmt, ...) {
+int prtf(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    int n = vprintf(fmt, ap);
+    int n = vprtf(fmt, ap);
     va_end(ap);
     return n;
 }

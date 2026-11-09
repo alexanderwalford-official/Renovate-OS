@@ -1293,11 +1293,11 @@ static bool fat_list_visit (const fat_entry_t* e, void* ctx) {
         return false;
     }
     if (is_dir) {
-        printf("  <DIR>   %s/\n", e->name);
+        prtf("  <DIR>   %s/\n", e->name);
     } else {
         char when[20]; // "DD-MM-YY--HH:MM:SS" + '\0'
         fat_format_datetime(e->entry.mdate, e->entry.mtime, when, sizeof(when));
-        printf("  <FILE>  %-22s %6u bytes  %s\n", e->name, e->entry.size, when);
+        prtf("  <FILE>  %-22s %6u bytes  %s\n", e->name, e->entry.size, when);
     }
     list->shown++;
     return false;

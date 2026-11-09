@@ -97,11 +97,11 @@ void ui_progress_begin (ui_progress_t* p, uint32_t total) {
     uint8_t x, y;
     console_get_cursor(&x, &y);
     if (x != 0) {
-        printf("\n");
+        prtf("\n");
         console_get_cursor(&x, &y);
     }
     // print the line first (a newline at the bottom scrolls the screen), then draw over it
-    printf("\n");
+    prtf("\n");
     console_get_cursor(&x, &y);
     p->y = (uint8_t)(y - 1);
     p->total = total;
@@ -149,10 +149,10 @@ void ui_busy_begin (const char* label) {
     uint8_t x, y;
     console_get_cursor(&x, &y);
     if (x != 0) {
-        printf("\n");
+        prtf("\n");
     }
     // "  |  Checking the password" (the spinner goes in column 2)
-    printf("     %s", label);
+    prtf("     %s", label);
     console_get_cursor(&x, &y);
     busy_y = y;
     busy_last_ms = 0;

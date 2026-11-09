@@ -34,7 +34,7 @@
     nothing else. To add one, write a function like this and add a line to the table:
 
         static void cli_hello (char* arguments) {
-            printf("Hello, %s!\n", arguments);
+            prtf("Hello, %s!\n", arguments);
         }
 
     `arguments` is everything after the command, with the spaces at both ends removed. It is
@@ -144,25 +144,25 @@ static void show_usage (const char* hint) {
     command_usage(running_command, usage, sizeof(usage));
 
     if (hint != NULL) {
-        printf("Usage: %s   (%s)\n", usage, hint);
+        prtf("Usage: %s   (%s)\n", usage, hint);
     } else {
-        printf("Usage: %s\n", usage);
+        prtf("Usage: %s\n", usage);
     }
 }
 
 // print some text, adding a newline at the end unless it already ends with one, so the
 // prompt after it always starts on a fresh line
 static void print_text_block (const char* text, size_t length) {
-    printf("%s", text);
+    prtf("%s", text);
     bool ends_with_newline = length > 0 && text[length - 1] == '\n';
     if (!ends_with_newline) {
-        printf("\n");
+        prtf("\n");
     }
 }
 
 // ask a question and read the answer without showing it (each key shows as *)
 static void ask_secret (const char* question, char* answer, int size) {
-    printf("%s", question);
+    prtf("%s", question);
     GetSecret(answer, size);
 }
 
@@ -170,7 +170,7 @@ static void ask_secret (const char* question, char* answer, int size) {
 static bool ask_yes_no (void) {
     int key = GetChar();
     bool yes = key == 'y' || key == 'Y';
-    printf("%c\n", yes ? 'y' : 'n');
+    prtf("%c\n", yes ? 'y' : 'n');
     return yes;
 }
 
@@ -232,36 +232,36 @@ int cli_rend_main (void) {
     // console_clear() fills the screen with the current colours, so set those first
     console_set_color(WHITE, BLACK);
     console_clear();
-    printf("AerOS - Version " AEROS_VERSION "\n");
-    printf("Alexander Walford 2026\n\n");
+    prtf("AerOS - Version " AEROS_VERSION "\n");
+    prtf("Alexander Walford 2026\n\n");
 
     if (fs_mode == FS_MODE_DISK) {
         console_set_color(LIGHT_GREEN, BLACK);
-        printf("[ * ] You are in DISK mode, your files are saved to the %s disk.\n", fat_vol.label);
+        prtf("[ * ] You are in DISK mode, your files are saved to the %s disk.\n", fat_vol.label);
     } else if (boot_option == BOOT_OPT_DEMO) {
         console_set_color(YELLOW, BLACK);
-        printf("[ ! ] You are in DEMO mode, no disks are loaded and files will not be written.\n");
+        prtf("[ ! ] You are in DEMO mode, no disks are loaded and files will not be written.\n");
     } else {
         console_set_color(RED, BLACK);
-        printf("[ ! ] You are in VFS mode, your files will not be written.\n");
+        prtf("[ ! ] You are in VFS mode, your files will not be written.\n");
     }
 
     // if someone typed wrong passwords for this account since its last login, say so (once)
     if (auth_failures_seen > 0) {
         console_set_color(YELLOW, BLACK);
-        printf("[ ! ] %u wrong password(s) were typed for %s since your last login.\n",
+        prtf("[ ! ] %u wrong password(s) were typed for %s since your last login.\n",
                auth_failures_seen, auth_user);
 
         uint32_t times_wiped = auth_failures_seen / AUTH_MAX_FAILURES;
         if (times_wiped > 0) {
-            printf("[ ! ] Your home folder was wiped %u time(s) because of them.\n", times_wiped);
+            prtf("[ ! ] Your home folder was wiped %u time(s) because of them.\n", times_wiped);
         }
         auth_failures_seen = 0;
     }
 
     // the normal terminal colours, light grey on black, for everything after the banner
     console_set_color(BRIGHT, BLACK);
-    printf("Type %s for a list of commands, or DOCS to read the manual.\n\n", help_command_name());
+    prtf("Type %s for a list of commands, or DOCS to read the manual.\n\n", help_command_name());
 
     // forget keys pressed while something else had the screen (the splash screen, a menu), so
     // they don't turn up at the start of the next command, and make sure keys are kept again
@@ -274,9 +274,9 @@ int cli_rend_main (void) {
 // with '/'. e.g. "alex@0//: " at the top folder, "alex@0//home/alex/: " in a home folder
 void cli_prompt (void) {
     console_set_color(LIGHT_GREEN, BLACK);
-    printf("%s", auth_user);
+    prtf("%s", auth_user);
     console_set_color(BRIGHT, BLACK);
-    printf("@0/%s: ", cd);
+    prtf("@0/%s: ", cd);
 }
 
 
@@ -290,7 +290,7 @@ static bool refuse_if_encrypted (const char* path) {
     if (!fcrypt_file_is_encrypted(path)) {
         return false;
     }
-    printf("%s is encrypted, DECRYPT it first.\n", path);
+    prtf("%s is encrypted, DECRYPT it first.\n", path);
     return true;
 }
 
@@ -308,7 +308,7 @@ static void read_encrypted_file (const char* path) {
     crypto_wipe(password, sizeof(password)); // never leave a password lying around in memory
 
     if (result != FCRYPT_OK) {
-        printf("Can't read %s: %s\n", path, fcrypt_strerror(result));
+        prtf("Can't read %s: %s\n", path, fcrypt_strerror(result));
         return;
     }
     print_text_block((char*)contents, length);
@@ -329,11 +329,11 @@ static void cli_encrypt (char* arguments) {
     bool found = fs_split_path(arguments, folder, sizeof(folder), name, sizeof(name))
                  && fs_file_exists(folder, name);
     if (!found) {
-        printf("File not found: %s\n", arguments);
+        prtf("File not found: %s\n", arguments);
         return;
     }
     if (fcrypt_file_is_encrypted(arguments)) {
-        printf("%s is already encrypted.\n", arguments);
+        prtf("%s is already encrypted.\n", arguments);
         return;
     }
 
@@ -343,16 +343,16 @@ static void cli_encrypt (char* arguments) {
     ask_secret("Again:    ", again, sizeof(again));
 
     if (strcmp(password, again) != 0) {
-        printf("The passwords don't match, nothing was changed.\n");
+        prtf("The passwords don't match, nothing was changed.\n");
     } else {
         ui_busy_begin("Encrypting");
         int result = fcrypt_encrypt_file(arguments, password);
         ui_busy_end();
 
         if (result == FCRYPT_OK) {
-            printf("Encrypted %s. Don't lose the password, there is no way back without it.\n", arguments);
+            prtf("Encrypted %s. Don't lose the password, there is no way back without it.\n", arguments);
         } else {
-            printf("Couldn't encrypt %s: %s\n", arguments, fcrypt_strerror(result));
+            prtf("Couldn't encrypt %s: %s\n", arguments, fcrypt_strerror(result));
         }
     }
 
@@ -367,7 +367,7 @@ static void cli_decrypt (char* arguments) {
         return;
     }
     if (!fcrypt_file_is_encrypted(arguments)) {
-        printf("%s isn't an encrypted file.\n", arguments);
+        prtf("%s isn't an encrypted file.\n", arguments);
         return;
     }
 
@@ -380,9 +380,9 @@ static void cli_decrypt (char* arguments) {
     crypto_wipe(password, sizeof(password));
 
     if (result == FCRYPT_OK) {
-        printf("Decrypted %s.\n", arguments);
+        prtf("Decrypted %s.\n", arguments);
     } else {
-        printf("Couldn't decrypt %s: %s\n", arguments, fcrypt_strerror(result));
+        prtf("Couldn't decrypt %s: %s\n", arguments, fcrypt_strerror(result));
     }
 }
 
@@ -421,7 +421,7 @@ static void cli_set_directory (char* arguments) {
         return;
     }
     if (fs_set_cd(arguments) != 0) {
-        printf("Directory not found: %s\n", arguments);
+        prtf("Directory not found: %s\n", arguments);
     }
 }
 
@@ -444,7 +444,7 @@ static void cli_read_file (char* arguments) {
     // fs_read_f gives back its own copy of the contents, which has to be freed afterwards
     char* contents = fs_read_f(folder, name);
     if (contents == NULL) {
-        printf("File not found: %s\n", arguments);
+        prtf("File not found: %s\n", arguments);
         return;
     }
     print_text_block(contents, strlen(contents));
@@ -466,7 +466,7 @@ static void cli_make_file (char* arguments) {
     // fails if the file is already there, the folder isn't, or the disk is full
     int result = fs_create_f(folder, name, text);
     if (result != FS_OK) {
-        printf("Could not create %s: %s\n", file, fs_strerror(result));
+        prtf("Could not create %s: %s\n", file, fs_strerror(result));
     }
 }
 
@@ -489,7 +489,7 @@ static void cli_write_file (char* arguments) {
     // read the file first: to check it is there, and to see whether it is empty
     char* existing = fs_read_f(folder, name);
     if (existing == NULL) {
-        printf("File not found: %s\n", file);
+        prtf("File not found: %s\n", file);
         return;
     }
     bool file_is_empty = existing[0] == '\0';
@@ -500,7 +500,7 @@ static void cli_write_file (char* arguments) {
     size_t line_size = strlen(text) + 2; // room for the '\n' and the '\0'
     char* line = malloc(line_size);
     if (line == NULL) {
-        printf("Out of memory.\n");
+        prtf("Out of memory.\n");
         return;
     }
     if (file_is_empty) {
@@ -515,7 +515,7 @@ static void cli_write_file (char* arguments) {
     free(line);
 
     if (result != FS_OK) {
-        printf("Could not write %s: %s\n", file, fs_strerror(result));
+        prtf("Could not write %s: %s\n", file, fs_strerror(result));
     }
 }
 
@@ -542,7 +542,7 @@ static void cli_make_directory (char* arguments) {
 
     int result = fs_create_d(path, name);
     if (result != FS_OK) {
-        printf("Could not create %s: %s\n", path, fs_strerror(result));
+        prtf("Could not create %s: %s\n", path, fs_strerror(result));
     }
 }
 
@@ -581,9 +581,9 @@ static void delete_file (const char* typed, const char* folder, const char* name
     ui_busy_end();
 
     if (result == FS_OK) {
-        printf("Deleted %s.\n", name);
+        prtf("Deleted %s.\n", name);
     } else {
-        printf("Can't delete %s: %s\n", typed, fs_strerror(result));
+        prtf("Can't delete %s: %s\n", typed, fs_strerror(result));
     }
 }
 
@@ -593,12 +593,12 @@ static void delete_folder (const char* path) {
     // the same rules fs_delete_d() has, but checked BEFORE anything is emptied:
     // never the top folder, and never the folder you are in (or one it is inside)
     if (StrCompare(path, "/")) {
-        printf("The top folder, /, can't be deleted.\n");
+        prtf("The top folder, /, can't be deleted.\n");
         return;
     }
     bool standing_in_it = strncmp(cd, path, strlen(path)) == 0;
     if (standing_in_it) {
-        printf("Can't delete %s: you are in it (SD somewhere else first).\n", path);
+        prtf("Can't delete %s: you are in it (SD somewhere else first).\n", path);
         return;
     }
 
@@ -614,9 +614,9 @@ static void delete_folder (const char* path) {
     }
 
     if (entry_count > 0) {
-        printf("%s has %d file(s) in it. Delete it and everything in it? (y/n) ", path, file_count);
+        prtf("%s has %d file(s) in it. Delete it and everything in it? (y/n) ", path, file_count);
         if (!ask_yes_no()) {
-            printf("Nothing was deleted.\n");
+            prtf("Nothing was deleted.\n");
             return;
         }
 
@@ -630,15 +630,15 @@ static void delete_folder (const char* path) {
         if (deleted < 0) {
             deleted = 0;
         }
-        printf("Deleted %d file(s).\n", deleted);
+        prtf("Deleted %d file(s).\n", deleted);
     }
 
     // the folder is empty now, so it can go
     int result = fs_delete_d(path);
     if (result == FS_OK) {
-        printf("Deleted %s.\n", path);
+        prtf("Deleted %s.\n", path);
     } else {
-        printf("Can't delete %s: %s\n", path, fs_strerror(result));
+        prtf("Can't delete %s: %s\n", path, fs_strerror(result));
     }
 }
 
@@ -666,7 +666,7 @@ static void cli_delete (char* arguments) {
         return;
     }
 
-    printf("Not found: %s\n", arguments);
+    prtf("Not found: %s\n", arguments);
 }
 
 
@@ -676,7 +676,7 @@ static void cli_delete (char* arguments) {
 
 // ECHO <TEXT>: print the text back
 static void cli_echo (char* arguments) {
-    printf("%s\n", arguments);
+    prtf("%s\n", arguments);
 }
 
 // CLS: clear the screen.
@@ -694,7 +694,7 @@ static void cli_clock (char* arguments) {
     rtc_time_t now;
     rtc_read(&now);
     // day-month-year, the British way round
-    printf("System time: %02u-%02u-%04u %02u:%02u:%02u\n",
+    prtf("System time: %02u-%02u-%04u %02u:%02u:%02u\n",
            now.day, now.month, now.year, now.hour, now.minute, now.second);
 }
 
@@ -707,13 +707,13 @@ static void cli_uptime (char* arguments) {
     uint32_t hours = seconds / 3600;
     uint32_t minutes = (seconds / 60) % 60; // 0 to 59
     seconds = seconds % 60;                 // 0 to 59
-    printf("Time since boot: %uh %02um %02us (%u ms)\n", hours, minutes, seconds, milliseconds);
+    prtf("Time since boot: %uh %02um %02us (%u ms)\n", hours, minutes, seconds, milliseconds);
 }
 
 // PMAN: print the process stack (the terminal itself is in it, RUNNING)
 static void cli_pman (char* arguments) {
     (void)arguments;
-    printf("> PMAN:\n");
+    prtf("> PMAN:\n");
     stack_print();
 }
 
@@ -724,21 +724,21 @@ static void cli_memory (char* arguments) {
     // the computer's memory is only known if GRUB told us about it (see sys/boot.c)
     if (boot_multiboot_valid) {
         uint32_t total_mb = (sys_mem_lower_kb + sys_mem_upper_kb) / 1024;
-        printf("System memory: %u KB lower, %u KB upper (%u MB total)\n",
+        prtf("System memory: %u KB lower, %u KB upper (%u MB total)\n",
                sys_mem_lower_kb, sys_mem_upper_kb, total_mb);
     }
-    printf("Kernel heap: %u / %u bytes used\n", (unsigned int)heap_used(), (unsigned int)heap_total());
-    printf("Processes: %d / %d\n", p_cnt, P_STACK_SIZE);
+    prtf("Kernel heap: %u / %u bytes used\n", (unsigned int)heap_used(), (unsigned int)heap_total());
+    prtf("Processes: %d / %d\n", p_cnt, P_STACK_SIZE);
 
     if (fs_mode == FS_MODE_DISK) {
         // Work in sectors (512 bytes, so 2 sectors = 1 KB) rather than "cluster size in KB": a
         // cluster can be a single sector, half a KB, which would round down to 0 KB
         uint32_t free_kb = fat_free_clusters() * fat_vol.sectors_per_cluster / 2;
         uint32_t total_kb = fat_vol.cluster_count * fat_vol.sectors_per_cluster / 2;
-        printf("Disk: FAT%d \"%s\", %u KB free of %u KB\n", fat_vol.type, fat_vol.label, free_kb, total_kb);
+        prtf("Disk: FAT%d \"%s\", %u KB free of %u KB\n", fat_vol.type, fat_vol.label, free_kb, total_kb);
     } else {
         // without a disk the limits are the sizes of the in-memory file and folder tables
-        printf("VFS: %d / %d files, %d / %d directories\n", f_c, FS_MAX_FILES, d_c, FS_MAX_DIRS);
+        prtf("VFS: %d / %d files, %d / %d directories\n", f_c, FS_MAX_FILES, d_c, FS_MAX_DIRS);
     }
 }
 
@@ -755,18 +755,18 @@ static void cli_drives (char* arguments) {
             int type = drive_probe_info(bus, slave, model, sizeof(model), &sectors);
 
             const char* position = slave ? "slave" : "master";
-            printf("%-9s %-6s : %s %s", bus_names[bus], position, drive_type_name(type), model);
+            prtf("%-9s %-6s : %s %s", bus_names[bus], position, drive_type_name(type), model);
 
             // only hard drives report a size. 2048 sectors of 512 bytes = 1 MB
             if (sectors > 0) {
-                printf(" (%u MB)", sectors / 2048);
+                prtf(" (%u MB)", sectors / 2048);
             }
             // point out the drive AerOS keeps its files on
             bool mounted = fs_mode == FS_MODE_DISK && fat_vol.bus == bus && fat_vol.slave == slave;
             if (mounted) {
-                printf(" [mounted]");
+                prtf(" [mounted]");
             }
-            printf("\n");
+            prtf("\n");
         }
     }
 }
@@ -838,12 +838,12 @@ static void cli_resolution (char* arguments) {
     // no size given: say what it is now
     if (arguments[0] == '\0') {
         if (graphics) {
-            printf("Screen: %ux%u, %u bits per pixel\n", screen.width, screen.height, (unsigned int)screen.bpp);
+            prtf("Screen: %ux%u, %u bits per pixel\n", screen.width, screen.height, (unsigned int)screen.bpp);
         } else {
-            printf("Screen: VGA text mode\n");
+            prtf("Screen: VGA text mode\n");
         }
-        printf("Change it with RES <width>x<height>, e.g. RES 1280x720\n");
-        printf("Common sizes: 640x480 800x600 1024x768 1280x720 1280x1024 1600x900 1920x1080\n");
+        prtf("Change it with RES <width>x<height>, e.g. RES 1280x720\n");
+        prtf("Common sizes: 640x480 800x600 1024x768 1280x720 1280x1024 1600x900 1920x1080\n");
         return;
     }
 
@@ -859,15 +859,15 @@ static void cli_resolution (char* arguments) {
 
     if (changed) {
         vga_framebuffer_info(&screen);
-        printf("The screen is now %ux%u.\n", screen.width, screen.height);
+        prtf("The screen is now %ux%u.\n", screen.width, screen.height);
     }
     if (saved) {
-        printf("Saved: AerOS will start at %ldx%ld from now on.\n", width, height);
+        prtf("Saved: AerOS will start at %ldx%ld from now on.\n", width, height);
     } else if (changed) {
-        printf("Not saved for the next start, that needs an AEROS disk.\n");
+        prtf("Not saved for the next start, that needs an AEROS disk.\n");
     } else {
-        printf("This graphics card can't change resolution while AerOS is running,\n");
-        printf("and without an AEROS disk it can't be saved for the next start either.\n");
+        prtf("This graphics card can't change resolution while AerOS is running,\n");
+        prtf("and without an AEROS disk it can't be saved for the next start either.\n");
     }
 }
 
@@ -900,7 +900,7 @@ static bool play_should_stop (void) {
         ui_busy_end();
         uint8_t column;
         console_get_cursor(&column, &play_status.row);
-        printf("\n");
+        prtf("\n");
         play_status.playing = true;
         play_status.started_ms = now;
         play_status.last_drawn_ms = 0;
@@ -947,7 +947,7 @@ static void cli_play (char* arguments) {
         ui_busy_end();
     }
     if (result != SOUND_OK) {
-        printf("Can't play %s: %s\n", arguments, sound_strerror(result));
+        prtf("Can't play %s: %s\n", arguments, sound_strerror(result));
     }
 }
 
@@ -993,7 +993,7 @@ static void cli_docs (char* arguments) {
 static bool run_as_process (const char* code) {
     int pid = p_create(code);
     if (pid < 0) {
-        printf("The process stack is full.\n");
+        prtf("The process stack is full.\n");
         return false;
     }
     // The terminal is itself a RUNNING process, so p_exec() runs just this new one (it knows
@@ -1064,16 +1064,16 @@ static bool run_program (const char* program, const char* arguments) {
 // p_queue_each() calls this for each queued program, in the order they will run
 static void print_queued_program (int position, const char* code, void* context) {
     (void)context;
-    printf("  %d. %s\n", position, code);
+    prtf("  %d. %s\n", position, code);
 }
 
 // QUEUE on its own: list what is queued
 static void list_queue (void) {
     if (p_queue_count() == 0) {
-        printf("The queue is empty. QUEUE <program> adds one, GO runs them in order.\n");
+        prtf("The queue is empty. QUEUE <program> adds one, GO runs them in order.\n");
         return;
     }
-    printf("Queued, in the order GO will run them:\n");
+    prtf("Queued, in the order GO will run them:\n");
     p_queue_each(print_queued_program, NULL);
 }
 
@@ -1088,7 +1088,7 @@ static void cli_queue (char* arguments) {
         return;
     }
     if (strcasecmp(arguments, "clear") == 0) {
-        printf("Took %d program(s) out of the queue.\n", p_queue_clear());
+        prtf("Took %d program(s) out of the queue.\n", p_queue_clear());
         return;
     }
 
@@ -1100,23 +1100,23 @@ static void cli_queue (char* arguments) {
         char* program_arguments;
         char* program = split_first_word(arguments, &program_arguments);
         if (!make_program_line(program, program_arguments, line, sizeof(line))) {
-            printf("There is no program called %s to queue.\n", program);
+            prtf("There is no program called %s to queue.\n", program);
             return;
         }
     }
 
     int queued = p_queue_add(line);
     if (queued < 0) {
-        printf("The process stack is full.\n");
+        prtf("The process stack is full.\n");
     } else {
-        printf("Queued %s (%d in the queue, GO runs them).\n", line, queued);
+        prtf("Queued %s (%d in the queue, GO runs them).\n", line, queued);
     }
 }
 
 // GO calls this before each queued program: a grey "[2/3] hello.aer" line
 static void announce_queued_program (int number, int total, const char* code) {
     console_set_color(DARK_GRAY, BLACK);
-    printf("[%d/%d] %s\n", number, total, code);
+    prtf("[%d/%d] %s\n", number, total, code);
     console_set_color(BRIGHT, BLACK);
 }
 
@@ -1129,7 +1129,7 @@ static bool queue_should_stop (void) {
 static void cli_go (char* arguments) {
     (void)arguments;
     if (p_queue_count() == 0) {
-        printf("The queue is empty. QUEUE <program> adds one.\n");
+        prtf("The queue is empty. QUEUE <program> adds one.\n");
         return;
     }
 
@@ -1138,9 +1138,9 @@ static void cli_go (char* arguments) {
     int left = p_queue_count();
 
     if (left > 0) {
-        printf("Stopped the queue after %d program(s), %d still queued (GO carries on).\n", ran, left);
+        prtf("Stopped the queue after %d program(s), %d still queued (GO carries on).\n", ran, left);
     } else {
-        printf("Ran %d program(s), the queue is empty.\n", ran);
+        prtf("Ran %d program(s), the queue is empty.\n", ran);
     }
 }
 
@@ -1154,7 +1154,7 @@ static bool accounts_available (void) {
     if (auth_required()) {
         return true;
     }
-    printf("Accounts need an AEROS disk, without one everyone is guest.\n");
+    prtf("Accounts need an AEROS disk, without one everyone is guest.\n");
     return false;
 }
 
@@ -1169,11 +1169,11 @@ static bool ask_new_password (char* password, int size) {
     crypto_wipe(again, sizeof(again));
 
     if (empty) {
-        printf("The passwords can't be empty, nothing was changed.\n");
+        prtf("The passwords can't be empty, nothing was changed.\n");
         return false;
     }
     if (!match) {
-        printf("The passwords don't match, nothing was changed.\n");
+        prtf("The passwords don't match, nothing was changed.\n");
         return false;
     }
     return true;
@@ -1191,7 +1191,7 @@ static bool confirm_own_password (void) {
     crypto_wipe(password, sizeof(password));
 
     if (!right) {
-        printf("Wrong password.\n");
+        prtf("Wrong password.\n");
     }
     return right;
 }
@@ -1199,16 +1199,16 @@ static bool confirm_own_password (void) {
 // WHOAMI: print who is logged in
 static void cli_whoami (char* arguments) {
     (void)arguments;
-    printf("%s\n", auth_user);
+    prtf("%s\n", auth_user);
 }
 
 // auth_list() calls this for every account
 static void print_user (const char* name, void* context) {
     (void)context;
     if (StrCompare(name, auth_user)) {
-        printf("%s  (you)\n", name);
+        prtf("%s  (you)\n", name);
     } else {
-        printf("%s\n", name);
+        prtf("%s\n", name);
     }
 }
 
@@ -1232,11 +1232,11 @@ static void cli_add_user (char* arguments) {
     }
     // check the name before asking for a password, not after
     if (!auth_valid_new_name(name)) {
-        printf("Can't use that name: %s\n", auth_strerror(AUTH_ERR_NAME));
+        prtf("Can't use that name: %s\n", auth_strerror(AUTH_ERR_NAME));
         return;
     }
     if (auth_exists(name)) {
-        printf("%s already exists.\n", name);
+        prtf("%s already exists.\n", name);
         return;
     }
 
@@ -1249,12 +1249,12 @@ static void cli_add_user (char* arguments) {
         if (result == AUTH_OK) {
             char home[FS_PATH_MAX];
             if (auth_home(name, home, sizeof(home))) {
-                printf("Made the account %s, with the home folder %s.\n", name, home);
+                prtf("Made the account %s, with the home folder %s.\n", name, home);
             } else {
-                printf("Made the account %s.\n", name);
+                prtf("Made the account %s.\n", name);
             }
         } else {
-            printf("Couldn't make the account: %s\n", auth_strerror(result));
+            prtf("Couldn't make the account: %s\n", auth_strerror(result));
         }
     }
     crypto_wipe(password, sizeof(password));
@@ -1272,11 +1272,11 @@ static void cli_delete_user (char* arguments) {
         return;
     }
     if (StrCompare(name, auth_user)) {
-        printf("You can't delete the account you are logged in as.\n");
+        prtf("You can't delete the account you are logged in as.\n");
         return;
     }
     if (!auth_exists(name)) {
-        printf("There is no user called %s.\n", name);
+        prtf("There is no user called %s.\n", name);
         return;
     }
     if (!confirm_own_password()) {
@@ -1284,9 +1284,9 @@ static void cli_delete_user (char* arguments) {
     }
 
     if (auth_delete(name) == AUTH_OK) {
-        printf("Deleted %s.\n", name);
+        prtf("Deleted %s.\n", name);
     } else {
-        printf("Couldn't delete %s.\n", name);
+        prtf("Couldn't delete %s.\n", name);
     }
 }
 
@@ -1304,9 +1304,9 @@ static void cli_password (char* arguments) {
         ui_busy_end();
 
         if (result == AUTH_OK) {
-            printf("Password changed.\n");
+            prtf("Password changed.\n");
         } else {
-            printf("Couldn't save the new password.\n");
+            prtf("Couldn't save the new password.\n");
         }
     }
     crypto_wipe(password, sizeof(password));
@@ -1403,14 +1403,14 @@ static const char* help_command_name (void) {
 // HELP: one line for every command, in table order, then a line about apps
 static void cli_help (char* arguments) {
     (void)arguments;
-    printf("> %s:\n", help_command_name());
+    prtf("> %s:\n", help_command_name());
 
     for (size_t i = 0; i < command_count; i++) {
         char usage[64];
         command_usage(&commands[i], usage, sizeof(usage));
-        printf("%-*s - %s\n", HELP_COLUMN, usage, commands[i].description);
+        prtf("%-*s - %s\n", HELP_COLUMN, usage, commands[i].description);
     }
-    printf("%-*s - %s\n", HELP_COLUMN, "<APP> [ARGS]", "RUN AN AERLANG PROGRAM, e.g. HELLO (/bin/hello.aer)");
+    prtf("%-*s - %s\n", HELP_COLUMN, "<APP> [ARGS]", "RUN AN AERLANG PROGRAM, e.g. HELLO (/bin/hello.aer)");
 }
 
 // find a command in the table by name, ignoring upper / lower case. NULL if there is none
@@ -1575,17 +1575,17 @@ static void list_completions (const char* line) {
         per_row = 1;
     }
 
-    printf("\n");
+    prtf("\n");
     for (int i = 0; i < completion.count; i++) {
         bool end_of_row = (i + 1) % per_row == 0 || i + 1 == completion.count;
         if (end_of_row) {
-            printf("%s\n", completion.names[i]);
+            prtf("%s\n", completion.names[i]);
         } else {
-            printf("%-*s", column_width, completion.names[i]); // padded out to the column width
+            prtf("%-*s", column_width, completion.names[i]); // padded out to the column width
         }
     }
     cli_prompt();
-    printf("%s", line);
+    prtf("%s", line);
 }
 
 // add characters to the end of the line, showing them as they go. Returns the new length
@@ -1691,8 +1691,8 @@ void HandleInput (char* in) {
     } else if (run_program(command_name, arguments)) {
         // it was an app, e.g. "hello" ran /bin/hello.aer
     } else {
-        printf("> %s\n", command_name);
-        printf("Unrecognised command, please try again.\n");
+        prtf("> %s\n", command_name);
+        prtf("Unrecognised command, please try again.\n");
     }
 
     // A program drew over the whole screen (the editor, the error screen...): bring the terminal

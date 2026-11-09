@@ -646,7 +646,7 @@ static void view_draw(void) {
         }
     }
 
-    // " 48 lines back  PgUp / PgDn " (the number written out by hand: no printf down here)
+    // " 48 lines back  PgUp / PgDn " (the number written out by hand: no prtf down here)
     char tag[40];
     char digits[8];
     unsigned int n = view_back, d = 0, t = 0;

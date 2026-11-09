@@ -206,7 +206,7 @@ void p_stack_exec (int p_id) {
 
     // a process with no code has nothing to compile (p_create("") makes one of these)
     if (p->p_inst[0] == '\0') {
-        printf("INSTRUCTIONS NULL\n");
+        prtf("INSTRUCTIONS NULL\n");
     } else {
         compile(p->p_inst);
     }
@@ -235,13 +235,13 @@ static const char* p_state_name (int state) {
 // e.g. from the terminal, PMAN shows the terminal process as RUNNING, and "run print_stack" shows
 // both the terminal and the print_stack process, each RUNNING
 void stack_print (void) {
-    printf("Process Stack: %d process(es)\n", p_cnt);
-    printf("  PID  STATE    ET(ms)  TICKET  INSTRUCTIONS\n");
+    prtf("Process Stack: %d process(es)\n", p_cnt);
+    prtf("  PID  STATE    ET(ms)  TICKET  INSTRUCTIONS\n");
     for (int i = 0; i < P_STACK_SIZE; ++i) {
         const struct process* p = &p_stack[i];
         if (p->p_used) {
             // the field widths line the columns up under the heading above
-            printf("  %3u  %-7s  %6u  %6u  %s\n", p->p_id, p_state_name(p->p_rs), p->p_et, p->p_t, p->p_inst);
+            prtf("  %3u  %-7s  %6u  %6u  %s\n", p->p_id, p_state_name(p->p_rs), p->p_et, p->p_t, p->p_inst);
         }
     }
 }

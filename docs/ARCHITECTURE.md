@@ -71,7 +71,7 @@ src/
 
   lib/                  the kernel's own small C library
     aer_string.c          memcpy, strlen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
-    aer_stdio.c           printf, snprintf                 aer_ctype.h   isdigit, toupper...
+    aer_stdio.c           prtf, snprintf                 aer_ctype.h   isdigit, toupper...
     aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  StrCompare, split, StrTrim
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
     busy.c                busy(): long loops call it so a spinner can turn (see sys/ui.h)
@@ -262,7 +262,7 @@ In `src/sys/terminal/t_int.c`:
 // VER: print the version
 static void cli_version (char* arguments) {
     (void)arguments; // VER takes no arguments
-    printf("AerOS " AEROS_VERSION "\n");
+    prtf("AerOS " AEROS_VERSION "\n");
 }
 ```
 

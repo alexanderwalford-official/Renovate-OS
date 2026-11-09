@@ -431,23 +431,23 @@ static void after_wrong_password (const char* name, uint32_t wrong_passwords) {
 
     if (in_this_run != 0) {
         console_set_color(YELLOW, BLACK);
-        printf("  Warning: that is %u of %u wrong passwords in a row for %s.\n",
+        prtf("  Warning: that is %u of %u wrong passwords in a row for %s.\n",
                in_this_run, AUTH_MAX_FAILURES, name);
         if (has_home) {
-            printf("  After %u, everything in %s is deleted.\n", AUTH_MAX_FAILURES, home);
+            prtf("  After %u, everything in %s is deleted.\n", AUTH_MAX_FAILURES, home);
         }
         return;
     }
 
     console_set_color(LIGHT_RED, BLACK);
-    printf("  %u wrong passwords in a row for %s.\n", AUTH_MAX_FAILURES, name);
+    prtf("  %u wrong passwords in a row for %s.\n", AUTH_MAX_FAILURES, name);
     if (has_home) {
         int wiped = wipe_home(home);
         if (wiped < 0) {
             wiped = 0;
         }
         console_set_color(LIGHT_RED, BLACK);
-        printf("  The %d file(s) in %s have been securely deleted.\n", wiped, home);
+        prtf("  The %d file(s) in %s have been securely deleted.\n", wiped, home);
     }
 }
 
@@ -498,13 +498,13 @@ static void heading (const char* subtitle) {
 
     // carry on printing on the line under the title
     console_set_cursor(0, (uint8_t)(title_row + BIG_TEXT_ROWS));
-    printf("  %s\n\n", subtitle);
+    prtf("  %s\n\n", subtitle);
 }
 
 // print a question and read the answer. A secret answer (a password) shows as *
 static void ask (const char* question, char* answer, int size, bool secret) {
     console_set_color(WHITE, BLACK);
-    printf("  %s", question);
+    prtf("  %s", question);
     console_set_color(BRIGHT, BLACK);
     if (secret) {
         GetSecret(answer, size);
@@ -522,7 +522,7 @@ static void create_first_account (void) {
         ask("User name: ", name, sizeof(name), false);
         char* user = strlwr(StrTrim(name)); // names are kept in lower case
         if (!valid_name(user, AUTH_HOME_NAME_MAX)) {
-            printf("  Names are 1 to 8 of a-z, 0-9, _ and -\n\n");
+            prtf("  Names are 1 to 8 of a-z, 0-9, _ and -\n\n");
             continue;
         }
 
@@ -532,11 +532,11 @@ static void create_first_account (void) {
         ask("Again:     ", again, sizeof(again), true);
 
         if (password[0] == '\0') {
-            printf("  The passwords can't be empty, try again.\n\n");
+            prtf("  The passwords can't be empty, try again.\n\n");
             continue;
         }
         if (strcmp(password, again) != 0) {
-            printf("  The passwords don't match, try again.\n\n");
+            prtf("  The passwords don't match, try again.\n\n");
             continue;
         }
 
@@ -547,7 +547,7 @@ static void create_first_account (void) {
         crypto_wipe(again, sizeof(again));
 
         if (result != AUTH_OK) {
-            printf("  Couldn't create the account: %s\n\n", auth_strerror(result));
+            prtf("  Couldn't create the account: %s\n\n", auth_strerror(result));
             continue;
         }
 
@@ -598,10 +598,10 @@ void auth_login (void) {
         sleep_ms(WRONG_PASSWORD_DELAY_MS);
         uint32_t wrong_passwords = count_wrong_password(user);
         console_set_color(LIGHT_RED, BLACK);
-        printf("  Wrong user name or password.\n");
+        prtf("  Wrong user name or password.\n");
         if (wrong_passwords > 0) {
             after_wrong_password(user, wrong_passwords);
         }
-        printf("\n");
+        prtf("\n");
     }
 }
