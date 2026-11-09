@@ -47,7 +47,7 @@ src/
     storage/  ata.c       IDE / ATA disks, read and write sectors (PIO)
     pci/      pci.c       finding devices on the PCI bus
     audio/    ac97.c      the AC'97 sound card
-              tone.c      the PC speaker (BEEP)
+              tone.c      the PC speaker (BP)
     serial/   serial.c    COM1: everything printed on screen is copied here, for debugging
 
   sys/                  the operating system proper
@@ -67,7 +67,7 @@ src/
     power.c               reboot and shut down
     accounts/auth.c       user accounts and the login screen
     terminal/t_int.c      the terminal and all its commands
-    terminal/editor.c     the text editor (EDIT)
+    terminal/editor.c     the text editor (EDT)
 
   lib/                  the kernel's own small C library
     aer_string.c          memcpy, slen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
@@ -85,7 +85,7 @@ src/
     aer_builtins.c        print, rdf, play, gfx_... (every function a program can call)
 
   apps/                 built-in apps and files, linked into the kernel and copied to /bin/ or /sys/
-  docs/                 the in-OS manual (Markdown and HTML), copied to /docs/ and shown by DOCS
+  docs/                 the in-OS manual (Markdown and HTML), copied to /docs/ and shown by DOC
   iso/boot/grub/grub.cfg  GRUB's menu: loads main.elf, restores the saved screen resolution
 ```
 
@@ -105,7 +105,7 @@ sequenceDiagram
     K->>P: "splash_screen": logo, startup sound, 4 s to press X
     P-->>K: X pressed? -> boot options (normal, fast, demo, reboot, off)
     K->>P: "init_boot": boot log, crypto self-test, sound card, file system, built-in files
-    K->>P: "terminal": login (DISK mode), then the command loop, until REBOOT / SHUTDOWN
+    K->>P: "terminal": login (DISK mode), then the command loop, until RBT / OFF
 ```
 
 Each step after the hardware set-up is a **process**: a line of code (`"splash_screen"`,
@@ -114,7 +114,7 @@ Each step after the hardware set-up is a **process**: a line of code (`"splash_s
 shortest first. The terminal's `RUN` command creates processes the same way.
 
 Since nothing runs side by side, programs can instead be **queued** to run one after another:
-`QUEUE <program>` (or AerLang's `queue()`) puts a process on the stack as WAITING, and `GO`
+`QUE <program>` (or AerLang's `queue()`) puts a process on the stack as WAITING, and `GO`
 runs the waiting ones in the order they were queued, each to completion. Ctrl+C in one of them
 stops the rest of the queue as well. See "The queue" in `sys/p_man.h`.
 
@@ -194,7 +194,7 @@ record is replaced by a newer built-in version, and one that doesn't (you change
 Apps installed before the record existed are kept too, since there is no way to tell. See
 the top of `sys/apps.c`.
 
-`DOCS [topic]` opens it in the reader, `/bin/read.aer`. The reader is an AerLang app that shows
+`DOC [topic]` opens it in the reader, `/bin/read.aer`. The reader is an AerLang app that shows
 Markdown, HTML and plain text with colours, word wrapping, tables and links (Tab picks a link,
 Enter opens it, Backspace goes back). To change a page, edit it in `src/docs/` and rebuild. To
 add one, also add it to the table in `src/sys/apps.c` and link to it from `index.md`.

@@ -98,7 +98,7 @@ static char cli_input[CLI_INPUT_MAX];
 // The table itself is near the bottom of the file, after all the functions it points to. Its
 // shape comes first, so the usage messages up here can use it.
 // (C reads a file from top to bottom, so anything used before it is written out in full has
-// to be declared first, like the two functions at the end of this block.)
+// to be declared first, like the functions at the end of this block.)
 
 typedef struct {
     const char* name;          // what the user types, in lower case: "del" (DEL and Del work too)
@@ -110,9 +110,18 @@ typedef struct {
 // the command that is running right now, so show_usage() knows which one to explain
 static const command_t* running_command = NULL;
 
-static void cli_help (char* arguments);
-static const char* help_command_name (void); // "HELP", or whatever it has been renamed to
+// a command's name in capitals, found by the function it runs (see the command table)
+static const char* command_name (void (*run)(char* arguments));
 static int cli_complete (char* line, int length, int size);
+
+// commands that messages mention by name ("DEC it first"), so they can find the current name
+static void cli_help (char* arguments);
+static void cli_set_directory (char* arguments);
+static void cli_decrypt (char* arguments);
+static void cli_resolution (char* arguments);
+static void cli_docs (char* arguments);
+static void cli_queue (char* arguments);
+static void cli_go (char* arguments);
 
 
 // =================================================================================================
@@ -199,7 +208,7 @@ int flash_pointer (int times, int already_done) {
 
 // start the terminal. ask_login = 1 shows the login screen first (it only appears when there
 // is a disk to keep accounts on), 0 skips it and runs as "guest".
-// This loop only ends if cli_active goes false, which nothing does yet: REBOOT and SHUTDOWN
+// This loop only ends if cli_active goes false, which nothing does yet: RBT and OFF
 // never come back, and logging out only ends the inner loop, back to the login screen
 int cli_init (int ask_login) {
     cli_active = true;
@@ -261,7 +270,8 @@ int cli_rend_main (void) {
 
     // the normal terminal colours, light grey on black, for everything after the banner
     colour(BRIGHT, BLACK);
-    prtf("Type %s for a list of commands, or DOCS to read the manual.\n\n", help_command_name());
+    prtf("Type %s for a list of commands, or %s to read the manual.\n\n",
+         command_name(cli_help), command_name(cli_docs));
 
     // forget keys pressed while something else had the screen (the splash screen, a menu), so
     // they don't turn up at the start of the next command, and make sure keys are kept again
@@ -290,7 +300,7 @@ static bool refuse_if_encrypted (const char* path) {
     if (!fcrypt_file_is_encrypted(path)) {
         return false;
     }
-    prtf("%s is encrypted, DECRYPT it first.\n", path);
+    prtf("%s is encrypted, %s it first.\n", path, command_name(cli_decrypt));
     return true;
 }
 
@@ -317,7 +327,7 @@ static void read_encrypted_file (const char* path) {
     free(contents);
 }
 
-// ENCRYPT <FILE>: lock a file with a password, asked for twice to catch typing mistakes
+// ENC <FILE>: lock a file with a password, asked for twice to catch typing mistakes
 static void cli_encrypt (char* arguments) {
     if (arguments[0] == '\0') {
         show_usage(NULL);
@@ -360,7 +370,7 @@ static void cli_encrypt (char* arguments) {
     wipe(again, sizeof(again));
 }
 
-// DECRYPT <FILE>: turn an encrypted file back into a normal one
+// DEC <FILE>: turn an encrypted file back into a normal one
 static void cli_decrypt (char* arguments) {
     if (arguments[0] == '\0') {
         show_usage(NULL);
@@ -417,7 +427,7 @@ static void cli_list (char* arguments) {
 // ("cache", "..", "."), fs_set_cd() works that out
 static void cli_set_directory (char* arguments) {
     if (arguments[0] == '\0') {
-        show_usage("e.g. SD /sys, SD .., SD /");
+        show_usage("e.g. /sys, .. or /");
         return;
     }
     if (fs_set_cd(arguments) != 0) {
@@ -598,7 +608,8 @@ static void delete_folder (const char* path) {
     }
     bool standing_in_it = strncmp(cd, path, slen(path)) == 0;
     if (standing_in_it) {
-        prtf("Can't delete %s: you are in it (SD somewhere else first).\n", path);
+        prtf("Can't delete %s: you are in it (%s somewhere else first).\n", path,
+             command_name(cli_set_directory));
         return;
     }
 
@@ -674,7 +685,7 @@ static void cli_delete (char* arguments) {
 //  The system
 // =================================================================================================
 
-// ECHO <TEXT>: print the text back
+// ECH <TEXT>: print the text back
 static void cli_echo (char* arguments) {
     prtf("%s\n", arguments);
 }
@@ -698,7 +709,7 @@ static void cli_clock (char* arguments) {
            now.day, now.month, now.year, now.hour, now.minute, now.second);
 }
 
-// TIME: how long AerOS has been running, counted by the system timer (1000 ticks a second)
+// UP: how long AerOS has been running, counted by the system timer (1000 ticks a second)
 static void cli_uptime (char* arguments) {
     (void)arguments;
     uint32_t milliseconds = clkuptms();
@@ -710,10 +721,10 @@ static void cli_uptime (char* arguments) {
     prtf("Time since boot: %uh %02um %02us (%u ms)\n", hours, minutes, seconds, milliseconds);
 }
 
-// PMAN: print the process stack (the terminal itself is in it, RUNNING)
+// PM: print the process stack (the terminal itself is in it, RUNNING)
 static void cli_pman (char* arguments) {
     (void)arguments;
-    prtf("> PMAN:\n");
+    prtf("> Processes:\n");
     stack_print();
 }
 
@@ -771,19 +782,19 @@ static void cli_drives (char* arguments) {
     }
 }
 
-// BEEP [HZ]: a beep on the PC speaker. atoi() gives 0 for nothing (or not a number), and
+// BP [HZ]: a beep on the PC speaker. atoi() gives 0 for nothing (or not a number), and
 // beep(0) is the standard beep
 static void cli_beep (char* arguments) {
     beep(atoi(arguments));
 }
 
-// REBOOT: restart the computer (never comes back)
+// RBT: restart the computer (never comes back)
 static void cli_reboot (char* arguments) {
     (void)arguments;
     sys_reboot();
 }
 
-// SHUTDOWN: turn the computer off, or show "It is now safe to turn off your computer" if it
+// OFF: turn the computer off, or show "It is now safe to turn off your computer" if it
 // can't be turned off by software (never comes back)
 static void cli_shutdown (char* arguments) {
     (void)arguments;
@@ -842,14 +853,15 @@ static void cli_resolution (char* arguments) {
         } else {
             prtf("Screen: VGA text mode\n");
         }
-        prtf("Change it with RES <width>x<height>, e.g. RES 1280x720\n");
+        prtf("Change it with %s <width>x<height>, e.g. %s 1280x720\n",
+             command_name(cli_resolution), command_name(cli_resolution));
         prtf("Common sizes: 640x480 800x600 1024x768 1280x720 1280x1024 1600x900 1920x1080\n");
         return;
     }
 
     long width, height;
     if (!parse_resolution(arguments, &width, &height)) {
-        show_usage("at least 640x400, e.g. RES 1280x720");
+        show_usage("at least 640x400, e.g. 1280x720");
         return;
     }
 
@@ -876,7 +888,7 @@ static void cli_resolution (char* arguments) {
 //  Sound
 // =================================================================================================
 //
-// PLAY shows one status line. While the file is being read (and an MP3 decoded) it is a
+// PLY shows one status line. While the file is being read (and an MP3 decoded) it is a
 // "Reading song.mp3" spinner, turned by busy() calls from the decoder. Once the sound card
 // starts, it asks play_should_stop() every few milliseconds, and the line becomes
 //
@@ -926,7 +938,7 @@ static bool play_should_stop (void) {
     return kb_haschar() && getk() == KEY_ESCAPE;
 }
 
-// PLAY <FILE>: play a WAV or MP3 file on the sound card
+// PLY <FILE>: play a WAV or MP3 file on the sound card
 static void cli_play (char* arguments) {
     if (arguments[0] == '\0') {
         show_usage("a .wav or .mp3 file");
@@ -962,10 +974,10 @@ static void cli_aer (char* arguments) {
     aer_repl();
 }
 
-// EDIT <FILE>: open a file in the text editor (sys/terminal/editor.c)
+// EDT <FILE>: open a file in the text editor (sys/terminal/editor.c)
 static void cli_edit (char* arguments) {
     if (arguments[0] == '\0') {
-        show_usage("e.g. EDIT hello.aer");
+        show_usage("e.g. hello.aer");
         return;
     }
     if (refuse_if_encrypted(arguments)) {
@@ -974,7 +986,7 @@ static void cli_edit (char* arguments) {
     editor_open(arguments);
 }
 
-// DOCS [TOPIC]: open the manual in the reader app. "docs sound" opens /docs/sound.md
+// DOC [TOPIC]: open the manual in the reader app. "doc sound" opens /docs/sound.md
 static void cli_docs (char* arguments) {
     char path[FS_PATH_MAX];
 
@@ -1007,7 +1019,7 @@ static bool run_as_process (const char* code) {
 // Code that doesn't make sense shows the red error screen, and the terminal is redrawn after
 static void cli_run (char* arguments) {
     if (arguments[0] == '\0') {
-        show_usage("e.g. RUN print_stack, RUN s:hi");
+        show_usage("e.g. print_stack or s:hi");
         return;
     }
     run_as_process(arguments);
@@ -1067,21 +1079,22 @@ static void print_queued_program (int position, const char* code, void* context)
     prtf("  %d. %s\n", position, code);
 }
 
-// QUEUE on its own: list what is queued
+// QUE on its own: list what is queued
 static void list_queue (void) {
     if (p_queue_count() == 0) {
-        prtf("The queue is empty. QUEUE <program> adds one, GO runs them in order.\n");
+        prtf("The queue is empty. %s <program> adds one, %s runs them in order.\n",
+             command_name(cli_queue), command_name(cli_go));
         return;
     }
     prtf("Queued, in the order GO will run them:\n");
     p_queue_each(print_queued_program, NULL);
 }
 
-// QUEUE [PROGRAM]:
-//     QUEUE hello a b     put hello.aer (with arguments "a b") at the end of the queue
-//     QUEUE s:some text   queue a line of text to print, handy between programs
-//     QUEUE               list the queue
-//     QUEUE CLEAR         empty it
+// QUE [PROGRAM]:
+//     QUE hello a b       put hello.aer (with arguments "a b") at the end of the queue
+//     QUE s:some text     queue a line of text to print, handy between programs
+//     QUE                 list the queue
+//     QUE CLEAR           empty it
 static void cli_queue (char* arguments) {
     if (arguments[0] == '\0') {
         list_queue();
@@ -1109,7 +1122,7 @@ static void cli_queue (char* arguments) {
     if (queued < 0) {
         prtf("The process stack is full.\n");
     } else {
-        prtf("Queued %s (%d in the queue, GO runs them).\n", line, queued);
+        prtf("Queued %s (%d in the queue, %s runs them).\n", line, queued, command_name(cli_go));
     }
 }
 
@@ -1129,7 +1142,7 @@ static bool queue_should_stop (void) {
 static void cli_go (char* arguments) {
     (void)arguments;
     if (p_queue_count() == 0) {
-        prtf("The queue is empty. QUEUE <program> adds one.\n");
+        prtf("The queue is empty. %s <program> adds one.\n", command_name(cli_queue));
         return;
     }
 
@@ -1138,7 +1151,8 @@ static void cli_go (char* arguments) {
     int left = p_queue_count();
 
     if (left > 0) {
-        prtf("Stopped the queue after %d program(s), %d still queued (GO carries on).\n", ran, left);
+        prtf("Stopped the queue after %d program(s), %d still queued (%s carries on).\n",
+             ran, left, command_name(cli_go));
     } else {
         prtf("Ran %d program(s), the queue is empty.\n", ran);
     }
@@ -1196,7 +1210,7 @@ static bool confirm_own_password (void) {
     return right;
 }
 
-// WHOAMI: print who is logged in
+// ME: print who is logged in
 static void cli_whoami (char* arguments) {
     (void)arguments;
     prtf("%s\n", auth_user);
@@ -1212,7 +1226,7 @@ static void print_user (const char* name, void* context) {
     }
 }
 
-// USERS: list every account
+// USRS: list every account
 static void cli_users (char* arguments) {
     (void)arguments;
     if (accounts_available()) {
@@ -1334,41 +1348,46 @@ static void cli_logout (char* arguments) {
 // In the order HELP lists them. Names are matched without caring about upper or lower case.
 // Columns: name, what goes after it, what it does, the function that runs it.
 
+// The names are short on purpose, and built so they can be guessed:
+//     rd read, wr write, mk make, del delete, f file, d folder (directory), u user,
+//     and the rest are the word with letters left out: ply (play), rbt (reboot), edt (edit)...
+// (AerLang's built-in functions use the same pieces: rdf, wrf, isf...)
+
 static const command_t commands[] = {
-    { "hlp",      "",           "THIS COMMAND",                                               cli_help },
-    { "la",       "",           "LIST ALL FILES AND DIRECTORIES IN THE CURRENT DIRECTORY",    cli_list },
-    { "sd",       "<DIR>",      "SET THE CURRENT DIRECTORY (e.g. SD /sys, SD .., SD /)",      cli_set_directory },
-    { "clk",      "",           "PRINTS THE SYSTEM TIME",                                     cli_clock },
-    { "time",     "",           "PRINTS THE TIME SINCE BOOT",                                 cli_uptime },
-    { "pman",     "",           "PRINTS THE PROCESS STACK",                                   cli_pman },
-    { "queue",    "[PROGRAM]",  "QUEUE A PROGRAM FOR GO, OR LIST THE QUEUE (QUEUE CLEAR)",    cli_queue },
-    { "go",       "",           "RUN EVERYTHING IN THE QUEUE, IN ORDER (CTRL+C STOPS IT)",    cli_go },
-    { "run",      "<CODE>",     "RUN CODE AS A PROCESS (e.g. run print_stack, run s:hi)",     cli_run },
-    { "rd",       "<FILE>",     "READ A FILE",                                                cli_read_file },
-    { "mkf",      "<FILE> [T]", "MAKE A FILE, WITH OPTIONAL TEXT",                            cli_make_file },
-    { "wr",       "<FILE> <T>", "ADD A LINE OF TEXT TO THE END OF A FILE",                    cli_write_file },
-    { "mkd",      "<DIR>",      "MAKE A DIRECTORY",                                           cli_make_directory },
-    { "del",      "<NAME>",     "DELETE A FILE, OR A DIRECTORY AND ALL IN IT (ASKS FIRST)",   cli_delete },
-    { "echo",     "<TEXT>",     "PRINT TEXT",                                                 cli_echo },
-    { "cls",      "",           "CLEAR THE SCREEN",                                           cli_clear },
-    { "mem",      "",           "MEMORY USAGE",                                               cli_memory },
-    { "drv",      "",           "LIST IDE / ATA DRIVES",                                      cli_drives },
-    { "beep",     "[HZ]",       "PLAY A BEEP ON THE PC SPEAKER",                              cli_beep },
-    { "play",     "<FILE>",     "PLAY A .WAV OR .MP3 FILE (ESC TO STOP)",                     cli_play },
-    { "reboot",   "",           "RESTART THE COMPUTER",                                       cli_reboot },
-    { "shutdown", "",           "TURN OFF THE COMPUTER",                                      cli_shutdown },
-    { "res",      "[WxH]",      "SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)",   cli_resolution },
-    { "edit",     "<FILE>",     "EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .AER, CTRL+Q QUIT)",  cli_edit },
-    { "aer",      "",           "THE AERLANG PROMPT, TYPE CODE TO RUN IT",                    cli_aer },
-    { "docs",     "[TOPIC]",    "READ THE MANUAL (e.g. DOCS SOUND), READ <FILE> FOR ANY FILE", cli_docs },
-    { "encrypt",  "<FILE>",     "LOCK A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW THE FILE)", cli_encrypt },
-    { "decrypt",  "<FILE>",     "UNLOCK AN ENCRYPTED FILE",                                   cli_decrypt },
-    { "whoami",   "",           "PRINT WHO IS LOGGED IN",                                     cli_whoami },
-    { "users",    "",           "LIST THE USER ACCOUNTS",                                     cli_users },
-    { "newuser",  "<NAME>",     "MAKE A NEW USER ACCOUNT",                                    cli_add_user },
-    { "deluser",  "<NAME>",     "DELETE A USER ACCOUNT",                                      cli_delete_user },
-    { "pass",     "",           "CHANGE YOUR PASSWORD",                                       cli_password },
-    { "out",      "",           "LOG OUT, BACK TO THE LOGIN SCREEN",                          cli_logout },
+    { "hlp",  "",           "THIS COMMAND (HELP)",                                         cli_help },
+    { "la",   "",           "LIST ALL FILES AND DIRECTORIES IN THE CURRENT DIRECTORY",     cli_list },
+    { "sd",   "<DIR>",      "SET THE CURRENT DIRECTORY (e.g. SD /sys, SD .., SD /)",       cli_set_directory },
+    { "clk",  "",           "PRINTS THE SYSTEM TIME (CLOCK)",                              cli_clock },
+    { "up",   "",           "PRINTS THE TIME SINCE BOOT (UPTIME)",                         cli_uptime },
+    { "pm",   "",           "PRINTS THE PROCESS STACK (PROCESS MANAGER)",                  cli_pman },
+    { "que",  "[PROGRAM]",  "QUEUE A PROGRAM FOR GO, OR LIST THE QUEUE (QUE CLEAR)",       cli_queue },
+    { "go",   "",           "RUN EVERYTHING IN THE QUEUE, IN ORDER (CTRL+C STOPS IT)",     cli_go },
+    { "run",  "<CODE>",     "RUN CODE AS A PROCESS (e.g. run print_stack, run s:hi)",      cli_run },
+    { "rd",   "<FILE>",     "READ A FILE",                                                 cli_read_file },
+    { "mkf",  "<FILE> [T]", "MAKE A FILE, WITH OPTIONAL TEXT",                             cli_make_file },
+    { "wr",   "<FILE> <T>", "WRITE A LINE OF TEXT ON THE END OF A FILE",                   cli_write_file },
+    { "mkd",  "<DIR>",      "MAKE A DIRECTORY",                                            cli_make_directory },
+    { "del",  "<NAME>",     "DELETE A FILE, OR A DIRECTORY AND ALL IN IT (ASKS FIRST)",    cli_delete },
+    { "ech",  "<TEXT>",     "PRINT TEXT (ECHO)",                                           cli_echo },
+    { "cls",  "",           "CLEAR THE SCREEN",                                            cli_clear },
+    { "mem",  "",           "MEMORY USAGE",                                                cli_memory },
+    { "drv",  "",           "LIST IDE / ATA DRIVES",                                       cli_drives },
+    { "bp",   "[HZ]",       "BEEP THE PC SPEAKER",                                         cli_beep },
+    { "ply",  "<FILE>",     "PLAY A .WAV OR .MP3 FILE (ESC TO STOP)",                      cli_play },
+    { "rbt",  "",           "RESTART THE COMPUTER (REBOOT)",                               cli_reboot },
+    { "off",  "",           "TURN OFF THE COMPUTER (SHUT DOWN)",                           cli_shutdown },
+    { "res",  "[WxH]",      "SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)",    cli_resolution },
+    { "edt",  "<FILE>",     "EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .AER, CTRL+Q QUIT)",   cli_edit },
+    { "aer",  "",           "THE AERLANG PROMPT, TYPE CODE TO RUN IT",                     cli_aer },
+    { "doc",  "[TOPIC]",    "READ THE MANUAL (e.g. DOC SOUND), READ <FILE> FOR ANY FILE",  cli_docs },
+    { "enc",  "<FILE>",     "ENCRYPT A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW IT)",  cli_encrypt },
+    { "dec",  "<FILE>",     "DECRYPT AN ENCRYPTED FILE",                                   cli_decrypt },
+    { "me",   "",           "PRINT WHO IS LOGGED IN",                                      cli_whoami },
+    { "usrs", "",           "LIST THE USER ACCOUNTS",                                      cli_users },
+    { "mku",  "<NAME>",     "MAKE A NEW USER ACCOUNT",                                     cli_add_user },
+    { "delu", "<NAME>",     "DELETE A USER ACCOUNT",                                       cli_delete_user },
+    { "pw",   "",           "CHANGE YOUR PASSWORD",                                        cli_password },
+    { "out",  "",           "LOG OUT, BACK TO THE LOGIN SCREEN",                           cli_logout },
 };
 
 // how many commands there are: the size of the whole table divided by the size of one entry
@@ -1385,14 +1404,21 @@ static const command_t* command_running (void (*run)(char* arguments)) {
     return NULL;
 }
 
-// the name of the help command in capitals, for the banner and HELP's own heading
-static const char* help_command_name (void) {
-    static char name[16];
-    const command_t* help = command_running(cli_help);
-    if (help == NULL) {
-        return "HELP";
+// The name of a command in capitals, found by the function it runs: command_name(cli_decrypt)
+// gives "DEC". Messages that mention another command use this, so renaming a command in the
+// table renames it in every message too.
+// The name is written into one of a few small buffers, used in turn, so up to four names can
+// be used in one prtf ("QUE adds one, GO runs them") without overwriting each other
+static const char* command_name (void (*run)(char* arguments)) {
+    static char names[4][16];
+    static int next = 0;
+    const command_t* command = command_running(run);
+    if (command == NULL) {
+        return "?";
     }
-    scpy(name, help->name, sizeof(name));
+    char* name = names[next];
+    next = (next + 1) % 4;
+    scpy(name, command->name, sizeof(names[0]));
     strupr(name);
     return name;
 }
@@ -1403,7 +1429,7 @@ static const char* help_command_name (void) {
 // HELP: one line for every command, in table order, then a line about apps
 static void cli_help (char* arguments) {
     (void)arguments;
-    prtf("> %s:\n", help_command_name());
+    prtf("> %s:\n", command_name(cli_help));
 
     for (size_t i = 0; i < command_count; i++) {
         char usage[64];
@@ -1430,7 +1456,7 @@ static const command_t* find_command (const char* name) {
 //
 // Like a Linux shell: press Tab part way through a word and the terminal finishes it.
 //
-//     the first word     commands (DEL, PLAY...), apps in /bin/, and .aer programs here
+//     the first word     commands (DEL, PLY...), apps in /bin/, and .aer programs here
 //     any later word     files and folders, here ("no" -> "notes.txt") or along a path
 //                        ("/bin/he" -> "/bin/hello.aer", "../"...). After SD, only folders
 //

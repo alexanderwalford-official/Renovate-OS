@@ -33,7 +33,7 @@ compared.
 | few hints | "Wrong user name or password" (but see the warning below) |
 | hidden typing | passwords show as `*` and stay out of the history |
 
-Commands: `whoami`, `users`, `newuser`, `deluser`, `pass`, `out`.
+Commands: `me`, `usrs`, `mku`, `delu`, `pw`, `out`.
 
 ### Home folders
 
@@ -62,9 +62,9 @@ anything important.
 
 ## Encrypted files
 
-`encrypt notes.txt` locks a file with a password. It keeps its name, only its contents
+`enc notes.txt` locks a file with a password. It keeps its name, only its contents
 change. `rd notes.txt` asks for the password and shows it without unlocking it, and
-`decrypt notes.txt` turns it back into a normal file.
+`dec notes.txt` turns it back into a normal file.
 
 **There is no way back without the password.** Nobody can unlock a file whose password is
 lost, not even AerOS.

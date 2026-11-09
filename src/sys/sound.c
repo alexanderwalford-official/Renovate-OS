@@ -20,7 +20,7 @@
                                      the card's rate? -- no --> resample (straight lines)
                                                                     |
                                                                     v
-                                      PLAY / play(): ac97_play (waits until the end)
+                                      PLY / play(): ac97_play (waits until the end)
                                       startup sound: ac97_start (plays in the background)
 */
 

@@ -2,7 +2,7 @@
 
 AerLang is the programming language built into AerOS. A program is a text file ending in
 `.aer`. Every app in `/bin/`, including this reader, is an AerLang program you can open with
-`read` and change with `edit`.
+`read` and change with `edt`.
 
 ## Running programs
 
@@ -11,7 +11,7 @@ AerLang is the programming language built into AerOS. A program is a text file e
 | `hello` | run `hello.aer` from here, or from `/bin/` |
 | `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
 | `aer` | the prompt: type code and see the result, `exit` to leave |
-| `edit app.aer` then Ctrl+R | write a program and run it |
+| `edt app.aer` then Ctrl+R | write a program and run it |
 
 **Ctrl+C** stops a program that is stuck.
 

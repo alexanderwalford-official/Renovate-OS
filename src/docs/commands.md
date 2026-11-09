@@ -21,16 +21,16 @@ takes you back to the prompt. Logging out forgets them.
 | `wr <file> <text>` | add a line to the end of a file |
 | `mkd <dir>` | make a folder |
 | `del <name>` | delete a file, or a folder and everything in it (asks first) |
-| `edit <file>` | open a file in the [editor](editor.md) |
+| `edt <file>` | open a file in the [editor](editor.md) |
 | `read [file]` | open a file in the [reader](reader.md) |
-| `docs [topic]` | this manual, e.g. `docs sound` |
+| `doc [topic]` | this manual, e.g. `doc sound` |
 
 ## Encrypted files
 
 | Command | Does |
 | --- | --- |
-| `encrypt <file>` | lock a file with a password |
-| `decrypt <file>` | unlock it again |
+| `enc <file>` | lock a file with a password |
+| `dec <file>` | unlock it again |
 
 See [Accounts and encryption](security.md).
 
@@ -38,11 +38,11 @@ See [Accounts and encryption](security.md).
 
 | Command | Does |
 | --- | --- |
-| `whoami` | who is logged in |
-| `users` | list the accounts |
-| `newuser <name>` | make a new account and its home folder |
-| `deluser <name>` | delete an account (asks for your password) |
-| `pass` | change your password |
+| `me` | who is logged in |
+| `usrs` | list the accounts |
+| `mku <name>` | make a new account and its home folder |
+| `delu <name>` | delete an account (asks for your password) |
+| `pw` | change your password |
 | `out` | log out, back to the login screen |
 
 ## Programs
@@ -54,41 +54,41 @@ See [Accounts and encryption](security.md).
 | `sysinfo` | the system information screen: processor, memory, disks, devices |
 | `anim` | a demo of the animations AerLang can draw |
 | `run <code>` | run code as a process: `run s:hi` |
-| `queue <app> [args]` | line a program up to run later (`queue` lists them, `queue clear` empties it) |
+| `que <app> [args]` | line a program up to run later (`que` lists them, `que clear` empties it) |
 | `go` | run everything queued, in order (Ctrl+C stops the rest) |
 
 AerOS runs one program at a time, so instead of running several together you can queue them
 and let `go` run them one after another:
 
 ```
-queue hello
-queue s:--- now the game ---
-queue guess
+que hello
+que s:--- now the game ---
+que guess
 go
 ```
 
-`queue s:<text>` queues a line of text to print, handy between programs.
-| `pman` | show the process stack |
+`que s:<text>` queues a line of text to print, handy between programs.
+| `pm` | show the process stack |
 
 ## Sound and screen
 
 | Command | Does |
 | --- | --- |
-| `play <file>` | play a WAV or MP3 file, Esc stops it |
-| `beep [hz]` | beep the PC speaker |
+| `ply <file>` | play a WAV or MP3 file, Esc stops it |
+| `bp [hz]` | beep the PC speaker |
 | `res [WxH]` | show or change the resolution: `res 1280x720` |
 | `cls` | clear the screen |
-| `echo <text>` | print some text |
+| `ech <text>` | print some text |
 
 ## The computer
 
 | Command | Does |
 | --- | --- |
 | `clk` | the date and time |
-| `time` | how long since it started |
+| `up` | how long since it started |
 | `mem` | memory use |
 | `drv` | the disks AerOS can see |
-| `reboot` | restart |
-| `shutdown` | turn off |
+| `rbt` | restart |
+| `off` | turn off |
 
 Press **Ctrl+C** to stop a program that has got stuck.

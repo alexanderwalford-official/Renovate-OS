@@ -232,7 +232,7 @@ static const char* p_state_name (int state) {
 
 // print the process stack
 // one row per used slot: ID, run state, execution time left, ticket and the code itself
-// e.g. from the terminal, PMAN shows the terminal process as RUNNING, and "run print_stack" shows
+// e.g. from the terminal, PM shows the terminal process as RUNNING, and "run print_stack" shows
 // both the terminal and the print_stack process, each RUNNING
 void stack_print (void) {
     prtf("Process Stack: %d process(es)\n", p_cnt);

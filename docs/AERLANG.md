@@ -19,7 +19,7 @@ type the name with its extension (`old.ren`), and the editor still colours them 
 
 ## Writing programs on AerOS
 
-`edit myapp.aer` opens the editor (the file is made when you first save it). AerLang code is
+`edt myapp.aer` opens the editor (the file is made when you first save it). AerLang code is
 coloured in, and a new line keeps the indentation of the one above.
 
 | Key | |
@@ -192,5 +192,5 @@ key()
 
 `/bin/viewer.aer` is a complete app built from these: a picture picker and viewer that zooms
 (`+` / `-`, `0` to fit) by drawing the picture bigger than the screen and moving it around.
-`/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
+`/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOC` command, with its
 own parsers, word wrapping and link navigation, all in AerLang.

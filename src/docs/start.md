@@ -48,7 +48,7 @@ shows who you are (`alex`) and the folder you are in (`/`). Type a command and p
 The up and down arrows bring back earlier commands, and **Page Up** / **Page Down** scroll
 back through output that has gone off the top of the screen (any other key comes back).
 
-**Tab** finishes what you are typing, like on Linux: `ec` then Tab gives `echo`, and
+**Tab** finishes what you are typing, like on Linux: `ec` then Tab gives `ech`, and
 `rd /docs/sec` then Tab gives `rd /docs/security.md`. If more than one thing fits, Tab fills
 in as much as they share, and when there is nothing more to fill in it lists them all.
 
@@ -57,14 +57,14 @@ in as much as they share, and when there is nothing more to fill in it lists the
 | Type | To |
 | --- | --- |
 | `hlp` | list every command |
-| `docs` | open this manual |
+| `doc` | open this manual |
 | `la` | list the files here |
 | `hello` | run the hello program |
 | `guess` | play a guessing game |
 | `viewer` | look at the pictures in `/bin/` (`+` / `-` zoom, arrows move around) |
 | `sysinfo` | see what's inside this computer |
-| `play /sys/startup.wav` | hear the startup sound again |
-| `edit notes.txt` | write a file |
+| `ply /sys/startup.wav` | hear the startup sound again |
+| `edt notes.txt` | write a file |
 | `aer` | try AerLang, type `exit` to leave |
 
 Next: [Terminal commands](commands.md)

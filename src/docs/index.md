@@ -15,7 +15,7 @@ in `/docs/` on your computer and is shown by the reader app, `/bin/read.aer`.
 ## Making things
 
 - [AerLang](aerlang.md): the built-in programming language
-- [The editor](editor.md): writing files and programs with EDIT
+- [The editor](editor.md): writing files and programs with EDT
 - [The reader](reader.md): this app, and the Markdown and HTML it understands
 
 ## Features

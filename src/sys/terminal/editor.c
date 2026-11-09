@@ -1,5 +1,5 @@
 /*
-    editor.c - the AerOS text editor (EDIT <file>)
+    editor.c - the AerOS text editor (EDT <file>)
 
     WHAT IS ON THE SCREEN
 
