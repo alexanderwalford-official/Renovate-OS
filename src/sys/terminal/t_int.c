@@ -732,21 +732,29 @@ static bool program_exists (const char* file) {
     return fs_file_exists(dir, name) || (!strchr(file, '/') && fs_file_exists("/bin/", name));
 }
 
-// run "command args" as an AerLang program if command names one ("hello" or "hello.aer"),
-// returns false if there is no such program
-static bool cli_run_program (const char* command, const char* args) {
-    char line[P_INST_MAX];
-    strlcpy(line, command, sizeof(line));
+// turn "hello" + "a b" into the process code "hello.aer a b", false if there is no such program
+static bool cli_program_line (const char* command, const char* args, char* line, size_t size) {
+    strlcpy(line, command, size);
     size_t length = strlen(line);
     if (!aer_is_program_name(line, length)) {
-        strlcat(line, ".aer", sizeof(line));
+        strlcat(line, ".aer", size);
     }
     if (!program_exists(line)) {
         return false;
     }
     if (*args) {
-        strlcat(line, " ", sizeof(line));
-        strlcat(line, args, sizeof(line));
+        strlcat(line, " ", size);
+        strlcat(line, args, size);
+    }
+    return true;
+}
+
+// run "command args" as an AerLang program if command names one ("hello" or "hello.aer"),
+// returns false if there is no such program
+static bool cli_run_program (const char* command, const char* args) {
+    char line[P_INST_MAX];
+    if (!cli_program_line(command, args, line, sizeof(line))) {
+        return false;
     }
     // like RUN: as its own process, which hands the line to compile()
     int pid = p_create(line);
@@ -757,6 +765,78 @@ static bool cli_run_program (const char* command, const char* args) {
     p_exec(pid);
     p_destroy(pid);
     return true;
+}
+
+// ---- the queue (see "The queue" in sys/p_man.h) ---------------------------------------------------
+
+static void cli_queue_print (int position, const char* code, void* ctx) {
+    (void)ctx;
+    printf("  %d. %s\n", position, code);
+}
+
+// QUEUE <program> [args] / QUEUE / QUEUE CLEAR
+static void cli_queue (char* args) {
+    if (*args == '\0') {
+        if (p_queue_count() == 0) {
+            printf("The queue is empty. QUEUE <program> adds one, GO runs them in order.\n");
+        } else {
+            printf("Queued, in the order GO will run them:\n");
+            p_queue_each(cli_queue_print, NULL);
+        }
+        return;
+    }
+    if (strcasecmp(args, "clear") == 0) {
+        printf("Took %d program(s) out of the queue.\n", p_queue_clear());
+        return;
+    }
+    // a program and its arguments, or "s:<text>" to print a line between programs
+    char line[P_INST_MAX];
+    if (strncmp(args, "s:", 2) == 0) {
+        strlcpy(line, args, sizeof(line));
+    } else {
+        char* parts[2] = { args, NULL };
+        char none[1] = "";
+        int n = split(args, ' ', parts, 2);
+        if (!cli_program_line(parts[0], n > 1 ? StrTrim(parts[1]) : none, line, sizeof(line))) {
+            printf("There is no program called %s to queue.\n", parts[0]);
+            return;
+        }
+    }
+    int count = p_queue_add(line);
+    if (count < 0) {
+        printf("The process stack is full.\n");
+    } else {
+        printf("Queued %s (%d in the queue, GO runs them).\n", line, count);
+    }
+}
+
+// GO: before each queued program, a line saying which one it is
+static void cli_go_next (int number, int total, const char* code) {
+    console_set_color(DARK_GRAY, BLACK);
+    printf("[%d/%d] %s\n", number, total, code);
+    console_set_color(BRIGHT, BLACK);
+}
+
+// GO: Ctrl+C in a queued program stops the rest of the queue too
+static bool cli_go_stop (void) {
+    return aer_take_stopped();
+}
+
+// GO: run everything in the queue, oldest first
+static void cli_go (char* args) {
+    (void)args;
+    if (p_queue_count() == 0) {
+        printf("The queue is empty. QUEUE <program> adds one.\n");
+        return;
+    }
+    aer_take_stopped(); // forget a stop from before
+    int ran = p_queue_run(cli_go_next, cli_go_stop);
+    int left = p_queue_count();
+    if (left > 0) {
+        printf("Stopped the queue after %d program(s), %d still queued (GO carries on).\n", ran, left);
+    } else {
+        printf("Ran %d program(s), the queue is empty.\n", ran);
+    }
 }
 
 // accounts (see sys/accounts/auth.h)
@@ -914,6 +994,8 @@ static const struct cli_command {
     { "clk",      cli_clock,          "CLK             - PRINTS THE SYSTEM TIME" },
     { "time",     cli_uptime,         "TIME            - PRINTS THE TIME SINCE BOOT" },
     { "pman",     cli_pman,           "PMAN            - PRINTS THE PROCESS STACK" },
+    { "queue",    cli_queue,          "QUEUE [PROGRAM] - QUEUE A PROGRAM FOR GO, OR LIST THE QUEUE (QUEUE CLEAR)" },
+    { "go",       cli_go,             "GO              - RUN EVERYTHING IN THE QUEUE, IN ORDER (CTRL+C STOPS IT)" },
     { "run",      cli_run,            "RUN <CODE>      - RUN CODE AS A PROCESS (e.g. run print_stack, run s:hi)" },
     { "rd",       cli_read_file,      "RD <FILE>       - READ A FILE" },
     { "mkf",      cli_make_file,      "MKF <FILE> [T]  - MAKE A FILE, WITH OPTIONAL TEXT" },

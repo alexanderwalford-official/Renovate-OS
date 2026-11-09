@@ -50,6 +50,20 @@ See [Accounts and encryption](security.md).
 | `sysinfo` | the system information screen: processor, memory, disks, devices |
 | `anim` | a demo of the animations AerLang can draw |
 | `run <code>` | run code as a process: `run s:hi` |
+| `queue <app> [args]` | line a program up to run later (`queue` lists them, `queue clear` empties it) |
+| `go` | run everything queued, in order (Ctrl+C stops the rest) |
+
+AerOS runs one program at a time, so instead of running several together you can queue them
+and let `go` run them one after another:
+
+```
+queue hello
+queue s:--- now the game ---
+queue guess
+go
+```
+
+`queue s:<text>` queues a line of text to print, handy between programs.
 | `pman` | show the process stack |
 
 ## Sound and screen

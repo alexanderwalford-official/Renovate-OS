@@ -30,6 +30,7 @@
 #include "../sys/sound.h"
 #include "../sys/sysinfo.h"
 #include "../sys/ui.h"
+#include "../sys/p_man.h"
 #include "../lib/crypto.h"
 
 // argument checks
@@ -469,7 +470,7 @@ static value_t bi_sleep (int argc, value_t* argv, int line) {
         sleep_ms(ms > 20 ? 20 : (uint32_t)ms);
         ms -= 20;
     }
-    if (ms > 0) aer_error(line, "stopped (Ctrl+C)");
+    if (ms > 0) aer_stop(line);
     return aer_nil();
 }
 
@@ -486,7 +487,7 @@ static value_t bi_play (int argc, value_t* argv, int line) {
     (void)argc;
     play_interrupted = false;
     int result = sound_play_file(str_arg(argv, 0, line, "play")->data.chars, play_should_stop);
-    if (play_interrupted) aer_error(line, "stopped (Ctrl+C)");
+    if (play_interrupted) aer_stop(line);
     return aer_bool(result == SOUND_OK);
 }
 
@@ -541,11 +542,21 @@ static value_t bi_frame (int argc, value_t* argv, int line) {
     // a long gap (the first frame, or after something slow) starts the timing again
     if (clck_uptime_ms() - last_frame_ms > period * 4) last_frame_ms = clck_uptime_ms();
     while (clck_uptime_ms() - last_frame_ms < period) {
-        if (kb_take_break()) aer_error(line, "stopped (Ctrl+C)");
+        if (kb_take_break()) aer_stop(line);
         sleep_ms(1);
     }
     last_frame_ms += period;
     return aer_nil();
+}
+
+// queue("hello.aer a b"): put a program (and its arguments) at the end of the queue the GO
+// command runs, or "s:text" to print a line between programs. Returns how many are now queued,
+// or -1 if the process stack is full. The line isn't checked until it runs
+static value_t bi_queue (int argc, value_t* argv, int line) {
+    (void)argc;
+    aer_object_t* code = str_arg(argv, 0, line, "queue");
+    if (code->length == 0) aer_error(line, "queue() needs a program to queue");
+    return aer_int(p_queue_add(code->data.chars));
 }
 
 // add one row of system information to the list as [group, name, value]
@@ -743,6 +754,7 @@ const aer_builtin_t aer_builtins[] = {
     { "progress", bi_progress, 5, 6 },
     { "spinner", bi_spinner, 2, 4 },
     { "frame", bi_frame, 1, 1 },
+    { "queue", bi_queue, 1, 1 },
     { "random", bi_random, 1, 1 },
     { "beep", bi_beep, 0, 1 },
     { "play", bi_play, 1, 1 },

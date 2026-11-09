@@ -35,6 +35,17 @@
     The execution time is only an estimate (longer code = longer job). p_stack_update() sorts the
     LIVE processes by it and gives them tickets 1, 2, 3 ... and p_stack_runtime() always runs the
     lowest ticket next. https://en.wikipedia.org/wiki/Shortest_job_next
+
+    The queue:
+    AerOS runs one thing at a time, so instead of running programs side by side they can be lined
+    up to run one after another. p_queue_add() puts a process on the stack as WAITING, a state the
+    scheduler above leaves alone (a LIVE process would be run by the next p_exec() of anything at
+    all). p_queue_run() then runs the WAITING ones in the order they were added, each through
+    p_exec(), and destroys each when it is done:
+
+        QUEUE hello      ->  [ hello.aer  WAITING #1 ]
+        QUEUE guess      ->  [ hello.aer  WAITING #1 ] [ guess.aer  WAITING #2 ]
+        GO               ->  hello.aer runs to the end, then guess.aer
 */
 
 // how many processes can exist at once (the number of slots on the process stack)
@@ -47,6 +58,7 @@
 #define P_LIVE    1 // queued for execution
 #define P_FROZEN  2 // paused by p_freeze()
 #define P_RUNNING 3 // currently executing
+#define P_WAITING 4 // in the queue (p_queue_add), runs when p_queue_run gets to it
 
 // one slot of the process stack
 typedef struct process {
@@ -56,6 +68,7 @@ typedef struct process {
     unsigned int p_t; // process ticket - when it will be executed, defined by the process stack (0 = none)
     char p_inst[P_INST_MAX]; // process instructions (the AerLang code handed to compile())
     bool p_used; // this slot of the process stack holds a process
+    unsigned int p_seq; // WAITING processes: their place in the queue (lower runs first)
 } process_t;
 
 extern int p_cnt; // process count
@@ -88,5 +101,21 @@ void p_stack_exec (int p_id);
 
 // print a table of every process on the stack (used by PMAN and "print_stack")
 void stack_print (void);
+
+// add code to the end of the queue (WAITING), returns how many are now queued, -1 if the stack is full
+int p_queue_add (const char* code);
+
+// how many processes are waiting in the queue
+int p_queue_count (void);
+
+// call fn with each queued process's code, in the order they will run
+void p_queue_each (void (*fn)(int position, const char* code, void* ctx), void* ctx);
+
+// take everything out of the queue without running it, returns how many there were
+int p_queue_clear (void);
+
+// run the queue, oldest first, until it is empty or stop() (may be NULL) says to stop after a
+// process. before (may be NULL) is told which one is next, as "number of total". Returns how many ran
+int p_queue_run (void (*before)(int number, int total, const char* code), bool (*stop)(void));
 
 #endif /* P_MAN_H */

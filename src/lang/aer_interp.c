@@ -162,8 +162,23 @@ static void check_stack (int line) {
         aer_error(line, "too much recursion");
     }
     if (kb_take_break()) {
-        aer_error(line, "stopped (Ctrl+C)");
+        aer_stop(line);
     }
+}
+
+// set when a program is stopped with Ctrl+C, so whoever ran it (the GO command running the
+// queue) can tell a deliberate stop from a program that simply finished or failed
+static bool stopped_by_user = false;
+
+void aer_stop (int line) {
+    stopped_by_user = true;
+    aer_error(line, "stopped (Ctrl+C)");
+}
+
+bool aer_take_stopped (void) {
+    bool stopped = stopped_by_user;
+    stopped_by_user = false;
+    return stopped;
 }
 
 // ---- values -----------------------------------------------------------------------------------

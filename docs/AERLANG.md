@@ -126,6 +126,8 @@ one side is a string: `"Score: " + 10`.
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
 `play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()` ·
+`queue(line)` add a program to the queue the `GO` command runs, e.g. `queue("hello.aer a b")`
+or `queue("s:some text")`; returns how many are queued (-1 if the process stack is full) ·
 `system_info()` everything AerOS knows about the computer, as a list of `[group, name, value]`
 rows, e.g. `["Processor", "Speed", "about 2400 MHz"]` (`/bin/sysinfo.aer` shows them)
 

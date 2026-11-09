@@ -130,6 +130,9 @@ const char* aer_intern (const char* text, size_t length);
 // errors: print "error in <file> on line <n>: ..." and abandon the program
 __attribute__((noreturn, format(printf, 2, 3))) void aer_error (int line, const char* format, ...);
 
+// Ctrl+C was pressed: say so, remember it (aer_take_stopped) and abandon the program
+__attribute__((noreturn)) void aer_stop (int line);
+
 // lexer and parser
 token_t* aer_lex (const char* source, int* count);
 aer_node_t* aer_parse (token_t* tokens, int count);

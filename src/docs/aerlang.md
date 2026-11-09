@@ -105,6 +105,8 @@ Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGH
 `play(path)`, `exit()`. `args` is the list of words typed after the program's name.
 `system_info()` gives everything AerOS knows about the computer as a list of
 `[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
+`queue("hello.aer")` adds a program (with its arguments) to the queue that `go` runs, and
+gives back how many are queued.
 
 **Animation:** `progress(x, y, width, done, total, colour)` draws a bar like
 `[#####.....]  50%`, `spinner(x, y, style, colour)` draws a spinner as it should look right

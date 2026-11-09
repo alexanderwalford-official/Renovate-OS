@@ -113,6 +113,11 @@ Each step after the hardware set-up is a **process**: a line of code (`"splash_s
 `lib/aer_comp.c`, which knows what each name means. Processes run one at a time to completion,
 shortest first. The terminal's `RUN` command creates processes the same way.
 
+Since nothing runs side by side, programs can instead be **queued** to run one after another:
+`QUEUE <program>` (or AerLang's `queue()`) puts a process on the stack as WAITING, and `GO`
+runs the waiting ones in the order they were queued, each to completion. Ctrl+C in one of them
+stops the rest of the queue as well. See "The queue" in `sys/p_man.h`.
+
 ## Memory
 
 There is no paging, so these are the real physical addresses:

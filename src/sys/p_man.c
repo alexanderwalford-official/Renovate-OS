@@ -21,6 +21,7 @@
 
 int p_cnt = 0; // process count, automatic handler
 struct process p_stack[P_STACK_SIZE]; // process stack
+static unsigned int p_next_seq = 1; // the queue position the next p_queue_add() hands out
 
 // true if p_id refers to an existing process
 // (in range for the array, and the slot is actually in use rather than empty)
@@ -216,6 +217,7 @@ static const char* p_state_name (int state) {
         case P_LIVE: return "LIVE";
         case P_FROZEN: return "FROZEN";
         case P_RUNNING: return "RUNNING";
+        case P_WAITING: return "WAITING";
         default: return "?";
     }
 }
@@ -234,4 +236,78 @@ void stack_print (void) {
             printf("  %3u  %-7s  %6u  %6u  %s\n", p->p_id, p_state_name(p->p_rs), p->p_et, p->p_t, p->p_inst);
         }
     }
+}
+
+// ---- the queue ----------------------------------------------------------------------------------
+// see "The queue" in p_man.h
+
+int p_queue_add (const char* code) {
+    int id = p_create(code);
+    if (id < 0) return -1;
+    p_stack[id].p_rs = P_WAITING;
+    p_stack[id].p_seq = p_next_seq++;
+    return p_queue_count();
+}
+
+int p_queue_count (void) {
+    int count = 0;
+    for (int i = 0; i < P_STACK_SIZE; ++i) {
+        if (p_stack[i].p_used && p_stack[i].p_rs == P_WAITING) count++;
+    }
+    return count;
+}
+
+// the WAITING process that was queued first, -1 if the queue is empty
+static int p_queue_first (void) {
+    int first = -1;
+    for (int i = 0; i < P_STACK_SIZE; ++i) {
+        if (p_stack[i].p_used && p_stack[i].p_rs == P_WAITING &&
+            (first < 0 || p_stack[i].p_seq < p_stack[first].p_seq)) {
+            first = i;
+        }
+    }
+    return first;
+}
+
+void p_queue_each (void (*fn)(int position, const char* code, void* ctx), void* ctx) {
+    // walk the queue in order by repeatedly finding the next sequence number after the last one
+    unsigned int after = 0;
+    for (int position = 1;; position++) {
+        int next = -1;
+        for (int i = 0; i < P_STACK_SIZE; ++i) {
+            if (p_stack[i].p_used && p_stack[i].p_rs == P_WAITING && p_stack[i].p_seq > after &&
+                (next < 0 || p_stack[i].p_seq < p_stack[next].p_seq)) {
+                next = i;
+            }
+        }
+        if (next < 0) return;
+        after = p_stack[next].p_seq;
+        fn(position, p_stack[next].p_inst, ctx);
+    }
+}
+
+int p_queue_clear (void) {
+    int cleared = 0;
+    for (int i = 0; i < P_STACK_SIZE; ++i) {
+        if (p_stack[i].p_used && p_stack[i].p_rs == P_WAITING) {
+            p_destroy(i);
+            cleared++;
+        }
+    }
+    return cleared;
+}
+
+int p_queue_run (void (*before)(int number, int total, const char* code), bool (*stop)(void)) {
+    int ran = 0;
+    for (;;) {
+        int next = p_queue_first();
+        if (next < 0) break;
+        ran++;
+        // a program that queues more while it runs makes the total grow, so it is counted each time
+        if (before) before(ran, ran + p_queue_count() - 1, p_stack[next].p_inst);
+        p_exec(next); // WAITING -> LIVE -> RUNNING -> DEAD
+        p_destroy(next);
+        if (stop && stop()) break;
+    }
+    return ran;
 }
