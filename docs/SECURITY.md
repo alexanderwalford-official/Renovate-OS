@@ -9,7 +9,7 @@ here is in four files:
 | [`src/lib/crypto.c`](../src/lib/crypto.c) | the algorithms: SHA-256, HMAC, PBKDF2, AES-256, CTR mode, random numbers |
 | [`src/sys/accounts/auth.c`](../src/sys/accounts/auth.c) | user accounts and the login screen |
 | [`src/sys/fcrypt.c`](../src/sys/fcrypt.c) | password protected files |
-| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENCRYPT`, `DECRYPT`, `RD`, `PASSWD`, `ADDUSER`... commands |
+| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENCRYPT`, `DECRYPT`, `RD`, `PASS`, `NEWUSER`... commands |
 
 The crypto library is about 600 lines of C, most of it comments, written from the published
 standards. Nothing is
@@ -150,10 +150,10 @@ flowchart TD
     B -- yes --> C{/acc/users has accounts?}
     C -- no --> F["Welcome! Create the first account"]
     C -- yes --> L[Log in screen]
-    F --> T[terminal: alex@0//: ]
+    F --> T["terminal, in /home/alex/"]
     L --> T
     G --> T
-    T -- LOGOUT --> A
+    T -- OUT --> A
 ```
 
 ### The accounts file
@@ -161,29 +161,58 @@ flowchart TD
 `/acc/users` is a text file with one line per user:
 
 ```
-alex:100000:ddc76e8311a11dfcb75bdea5ba79573a:7bf4cd0afe31b001a6616f92ce10caa45f9c491589c19f7c3723feac727e75e4
-|    |      |                                |
-|    |      salt: 16 random bytes, hex       hash: PBKDF2(password, salt, rounds), 32 bytes, hex
-|    PBKDF2 rounds for this password
-user name (1-16 of a-z 0-9 _ -)
+alex:100000:ddc76e8311a11dfcb75bdea5ba79573a:7bf4cd0afe31b001a6616f92ce10caa45f9c491589c19f7c3723feac727e75e4:0
+|    |      |                                |                                                                |
+|    |      salt: 16 random bytes, hex       hash: PBKDF2(password, salt, rounds), 32 bytes, hex               |
+|    PBKDF2 rounds for this password                                                  wrong passwords since the
+user name (1-8 of a-z 0-9 _ -)                                                        last good login
 ```
 
 **The password itself is never stored.** To check a login, AerOS runs the typed password
 through PBKDF2 with the stored salt and rounds, then compares the result with the stored hash.
+
+### Home folders
+
+Every account has a home folder, `/home/<name>/`, made with the account (or at the first login
+for accounts made before home folders existed). The terminal starts there after logging in.
+A folder name on the disk must fit the 8.3 rule, so new user names are at most 8 characters.
+
+### Three wrong passwords
+
+Each account counts the wrong passwords typed for it since its last good login. The count is
+saved in `/acc/users`, so turning the computer off and on again doesn't reset it.
+
+```mermaid
+flowchart TD
+    W[wrong password for an existing account] --> C[count + 1, saved]
+    C --> Q{count is a multiple of 3?}
+    Q -- "no (1st, 2nd)" --> WARN["Warning: that is 1 of 3 wrong passwords in a row for alex.<br/>After 3, everything in /home/alex/ is deleted."]
+    Q -- "yes (3rd)" --> WIPE["every file in /home/alex/ is zeroed on the disk, then deleted<br/>(sub folders too)"]
+    G[good login] --> R["count back to 0, and the banner says how many<br/>wrong passwords there were and how often the folder was wiped"]
+```
+
+* Only the home folder is wiped: other users' files, the apps and the system stay as they are.
+  The account itself and its password stay too.
+* Files are **overwritten with zeros** before they are deleted (`fs_wipe_dir` in
+  `src/sys/f_sys.c`), so their contents can't be read back from the raw disk afterwards.
+* A name that doesn't exist gets the plain "Wrong user name or password" message, and nothing
+  is counted.
 
 ### Details that matter
 
 | Protection | How |
 | --- | --- |
 | No password on disk | only the salted PBKDF2 hash is saved |
-| Same password, different hash | a fresh random salt per user, and again on every `PASSWD` |
+| Same password, different hash | a fresh random salt per user, and again on every `PASS` |
 | Unknown names cost as much as real ones | `auth_check` runs a full PBKDF2 even when the name doesn't exist, so timing doesn't reveal valid names |
-| No hint which part was wrong | always "Wrong user name or password" |
+| Few hints | "Wrong user name or password" either way, though real accounts also get the wrong-password warning (see section 4) |
 | Slow guessing at the keyboard | a 1 second pause after every wrong login |
+| Guessing costs the account's files | the home folder is wiped on every 3rd wrong password in a row |
+| Knowing someone tried | after a good login the banner reports the wrong passwords since the last one |
 | Comparing hashes | `crypto_equal` looks at every byte, so timing doesn't reveal how much matched |
 | Passwords in memory | password buffers are wiped with `crypto_wipe` as soon as they've been used |
 | Passwords on screen | typed as `*`, never added to the up-arrow history |
-| History between users | `LOGOUT` clears the command history and goes back to `/` |
+| History between users | `OUT` (log out) clears the command history and the scrollback, and leaves the home folder |
 | Damaged file | a line that doesn't parse is skipped, so one bad line can't lock everyone out |
 
 ### Commands
@@ -192,10 +221,10 @@ through PBKDF2 with the stored salt and rounds, then compares the result with th
 | --- | --- |
 | `WHOAMI` | prints who is logged in |
 | `USERS` | lists the accounts |
-| `ADDUSER <name>` | new account, password asked twice |
+| `NEWUSER <name>` | new account and its home folder, password asked twice |
 | `DELUSER <name>` | deletes an account after asking for *your own* password (you can't delete yourself) |
-| `PASSWD` | your current password, then the new one twice |
-| `LOGOUT` | back to the login screen |
+| `PASS` | your current password, then the new one twice |
+| `OUT` | log out, back to the login screen |
 
 ---
 
@@ -333,9 +362,16 @@ Being clear about the limits is part of good security:
   which means anyone who can log in, or who can write to the disk, can take the computer over.
   Encrypted files stay safe, because their keys come from their own passwords, not from the
   accounts.
-* **There are no administrator accounts.** Every user can `ADDUSER` and `DELUSER`. `DELUSER`
+* **There are no administrator accounts.** Every user can `NEWUSER` and `DELUSER`. `DELUSER`
   asks for your own password, so it protects against someone walking up to an unlocked
-  terminal, not against another user.
+  terminal, not against another user. Deleting an account leaves its home folder behind.
+* **Anyone at the keyboard can wipe a home folder.** Three wrong passwords for a name is all
+  it takes, so the wipe protects a folder's contents from someone guessing the password, not
+  from someone who just wants to destroy them. Keep copies of anything important.
+* **The warning shows which names exist.** Real accounts get the "1 of 3" warning and names
+  that don't exist don't, so the login screen now reveals which user names are real.
+* **Deleted names can linger.** Wiping zeros every file's contents, but the deleted entries in
+  the folder still hold their (8.3) file names until something reuses them.
 * **The disk is not encrypted.** Someone who plugs the disk into another computer can read all
   unencrypted files, every file and folder name and size, and the password hashes in
   `/acc/users`. PBKDF2 makes guessing those hashes slow, but a short or common password can

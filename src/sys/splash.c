@@ -27,8 +27,9 @@
 #include "../lib/aer_stdlib.h"
 #include "../drivers/video/VGA_linear.h"
 
-// the borrowed colours
-#define SPLASH_ORANGE BROWN     // the background, #FF7F00
+// the colours the splash uses. Orange is a real colour (ORANGE); the two shades between it and
+// white are borrowed from other colours for as long as the splash is up
+#define SPLASH_ORANGE ORANGE    // the background, #FF7F00
 #define SPLASH_LIGHT  LIGHT_RED // a third of the way from orange to white
 #define SPLASH_PALE   YELLOW    // two thirds of the way
 
@@ -131,11 +132,15 @@ static bool draw_logo_smooth(uint8_t col, uint8_t row) {
         // each screen pixel covers a little box of mask pixels: average them (when shrinking),
         // or take the one under it (when growing)
         uint32_t sy0 = ty * sh / th, sy1 = (ty + 1) * sh / th;
-        if (sy1 <= sy0) sy1 = sy0 + 1;
+        if (sy1 <= sy0) {
+            sy1 = sy0 + 1;
+        }
         uint8_t* pixel = (uint8_t*)(uintptr_t)fb.address + (y0 + ty) * fb.pitch + x0 * bytes;
         for (uint32_t tx = 0; tx < tw; tx++, pixel += bytes) {
             uint32_t sx0 = tx * sw / tw, sx1 = (tx + 1) * sw / tw;
-            if (sx1 <= sx0) sx1 = sx0 + 1;
+            if (sx1 <= sx0) {
+                sx1 = sx0 + 1;
+            }
             uint32_t sum = 0, count = 0;
             for (uint32_t sy = sy0; sy < sy1; sy++) {
                 for (uint32_t sx = sx0; sx < sx1; sx++) {
@@ -144,7 +149,9 @@ static bool draw_logo_smooth(uint8_t col, uint8_t row) {
                 }
             }
             uint32_t a = sum / count;
-            if (a == 0) continue; // plain orange, already drawn by the cells
+            if (a == 0) {
+                continue; // plain orange, already drawn by the cells
+            }
 
             // blend white over the orange #FF7F00: red is 255 either way
             uint32_t r = 255, g = 127 + (128 * a) / 255, b = (255 * a) / 255;
@@ -190,7 +197,8 @@ void splash_draw(void) {
 }
 
 void splash_close(void) {
-    // blank the screen first, or the splash would flash brown as the colours change back
+    // blank the screen first, or the logo's shades would flash red and yellow as the colours
+    // change back
     clear(BLACK);
     for (int i = 0; i < 3; i++) {
         vga_set_palette(borrowed[i], saved[i][0], saved[i][1], saved[i][2]);

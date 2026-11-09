@@ -29,10 +29,36 @@ compared.
 | same password, new hash | each user gets a random salt |
 | slow to guess | 100 000 rounds of hashing per try |
 | slow at the keyboard | a 1 second pause after a wrong try |
-| no hints | "Wrong user name or password", either way |
+| guessing costs files | 3 wrong in a row wipes the home folder |
+| few hints | "Wrong user name or password" (but see the warning below) |
 | hidden typing | passwords show as `*` and stay out of the history |
 
-Commands: `whoami`, `users`, `adduser`, `deluser`, `passwd`, `logout`.
+Commands: `whoami`, `users`, `newuser`, `deluser`, `pass`, `out`.
+
+### Home folders
+
+Every user has a home folder, `/home/<name>/`, and the prompt starts there after logging in.
+User names are up to 8 letters, numbers, `_` or `-`, so they fit as folder names.
+
+### Three wrong passwords
+
+AerOS counts the wrong passwords typed for each account, and keeps the count when the
+computer is turned off:
+
+```
+1st wrong password   Warning: that is 1 of 3 wrong passwords in a row for alex.
+                     After 3, everything in /home/alex/ is deleted.
+2nd                  the same warning, 2 of 3
+3rd                  every file in /home/alex/ is overwritten with zeros and deleted
+right password       the count goes back to 0
+```
+
+After logging in, the terminal tells you how many wrong passwords were typed for your
+account since you last logged in, and whether your home folder was wiped.
+
+Only your home folder is wiped: other users' files and the system stay. But anyone at the
+keyboard can wipe it by typing three wrong passwords for your name, so keep copies of
+anything important.
 
 ## Encrypted files
 
@@ -93,6 +119,8 @@ random numbers with the exact timing of key presses and timer ticks.
 - **Older copies**: files saved many times before being encrypted can leave old copies in
   free space on the disk. Encrypt secrets early.
 - **No administrators**: every user can add and delete users.
+- **The warning shows real names**: only real accounts get the "1 of 3" warning, so the
+  login screen shows which user names exist.
 
 The full design, with every algorithm explained step by step, is in `docs/SECURITY.md` in
 the AerOS source, and in the comments of `src/lib/crypto.c`.

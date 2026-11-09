@@ -336,9 +336,10 @@ void ClearInputHistory(void) {
 // the line editor: read keys until enter, echoing them and keeping in up to date as we go
 // in: buffer that receives the line, size: its size in bytes (the line is at most size - 1 characters)
 // returns in, which is left empty if there is no keyboard
-// supported keys: printable characters (appended at the end), backspace, enter and up / down for
-// the history. Anything else (left / right, tab, escape, ctrl codes...) is ignored.
-char* GetString(char* in, int size) {
+// supported keys: printable characters (appended at the end), backspace, enter, up / down for the
+// history, Page Up / Page Down to look back at earlier output, and Tab if a complete function
+// was given. Anything else (left / right, escape, ctrl codes...) is ignored.
+char* GetLine(char* in, int size, tab_complete_fn complete) {
     if (kb_clear_pending) {
         // throw away keys that were pressed between the clear and this point
         kb_tail = kb_head;
@@ -367,6 +368,14 @@ char* GetString(char* in, int size) {
             }
             continue;
         }
+        // Page Up / Page Down look back through what has scrolled off the top of the screen, a
+        // screen at a time (one line less, so the line at the edge stays in view). Any other key
+        // comes back to the live screen first, so typing carries on where it was
+        if (key == KEY_PGUP || key == KEY_PGDN) {
+            console_view_scroll(key == KEY_PGUP ? ROWS - 1 : -(ROWS - 1));
+            continue;
+        }
+        console_view_live();
         // up = an older line, down = a newer one, down from the newest gets back to an empty line
         // pressing past either end does nothing
         if (key == KEY_UP || key == KEY_DOWN) {
@@ -390,6 +399,11 @@ char* GetString(char* in, int size) {
             console_write(in);
             continue;
         }
+        // Tab: let the caller finish the word (it prints whatever it adds, see IO.h)
+        if (key == '\t' && complete) {
+            len = complete(in, len, size);
+            continue;
+        }
         // a normal character: append it if there is still room for it and the NUL
         if (isprint(key) && len < size - 1) {
             in[len++] = (char)key;
@@ -400,6 +414,10 @@ char* GetString(char* in, int size) {
 
     input_history_add(in);
     return in;
+}
+
+char* GetString(char* in, int size) {
+    return GetLine(in, size, NULL);
 }
 
 // state != 0 turns keyboard input on, 0 turns it off (kb_push then drops every key)

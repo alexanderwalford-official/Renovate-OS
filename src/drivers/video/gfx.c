@@ -79,13 +79,28 @@ void gfx_pixel(int x, int y, uint32_t rgb) {
 }
 
 void gfx_rect(int x, int y, int w, int h, uint32_t rgb) {
-    if (!active) return;
-    // clip to the screen
-    if (x < 0) { w += x; x = 0; }
-    if (y < 0) { h += y; y = 0; }
-    if (w <= 0 || h <= 0 || (uint32_t)x >= fb.width || (uint32_t)y >= fb.height) return;
-    if ((uint32_t)(x + w) > fb.width) w = (int)fb.width - x;
-    if ((uint32_t)(y + h) > fb.height) h = (int)fb.height - y;
+    if (!active) {
+        return;
+    }
+    // Clip to the screen. A rectangle starting off the left (or top) edge loses the part that is
+    // off screen: e.g. x = -10, w = 50 becomes x = 0, w = 40
+    if (x < 0) {
+        w += x;
+        x = 0;
+    }
+    if (y < 0) {
+        h += y;
+        y = 0;
+    }
+    if (w <= 0 || h <= 0 || (uint32_t)x >= fb.width || (uint32_t)y >= fb.height) {
+        return;
+    }
+    if ((uint32_t)(x + w) > fb.width) {
+        w = (int)fb.width - x;
+    }
+    if ((uint32_t)(y + h) > fb.height) {
+        h = (int)fb.height - y;
+    }
 
     uint32_t pixel = pack(rgb);
     for (int row = 0; row < h; row++) {
@@ -99,26 +114,58 @@ void gfx_clear(uint32_t rgb) {
     gfx_rect(0, 0, (int)fb.width, (int)fb.height, rgb);
 }
 
-// Bresenham's line: step along the longer direction one pixel at a time, and step along the
-// shorter one whenever the accumulated error says the line has drifted half a pixel
+// a number without its sign: 5 for both 5 and -5
+static int distance (int a, int b) {
+    if (a > b) {
+        return a - b;
+    }
+    return b - a;
+}
+
+// which way to step to get from a to b: +1, or -1
+static int direction (int from, int to) {
+    if (from < to) {
+        return 1;
+    }
+    return -1;
+}
+
+// Draw a line with Bresenham's method, using only whole numbers.
+// It moves one pixel at a time from (x0, y0) towards (x1, y1). `error` keeps track of how far
+// the pixels drawn so far have drifted from the true line; whenever that drift gets to half a
+// pixel in a direction, the next step goes that way too. A shallow line steps sideways every
+// time and only sometimes up or down; a steep line the other way round
 void gfx_line(int x0, int y0, int x1, int y1, uint32_t rgb) {
-    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
-    int dy = y1 > y0 ? y0 - y1 : y1 - y0; // negative
-    int sx = x0 < x1 ? 1 : -1;
-    int sy = y0 < y1 ? 1 : -1;
-    int error = dx + dy;
+    int width = distance(x0, x1);
+    int height = -distance(y0, y1); // negative: the maths below is neatest this way round
+    int step_x = direction(x0, x1);
+    int step_y = direction(y0, y1);
+    int error = width + height;
+
     for (;;) {
         gfx_pixel(x0, y0, rgb);
-        if (x0 == x1 && y0 == y1) break;
-        int e2 = 2 * error;
-        if (e2 >= dy) { error += dy; x0 += sx; }
-        if (e2 <= dx) { error += dx; y0 += sy; }
+        if (x0 == x1 && y0 == y1) {
+            break; // reached the end
+        }
+        int doubled = 2 * error;
+        if (doubled >= height) {
+            // drifted far enough to take a step sideways
+            error += height;
+            x0 += step_x;
+        }
+        if (doubled <= width) {
+            // drifted far enough to take a step up or down
+            error += width;
+            y0 += step_y;
+        }
     }
 }
 
 // text in the console's 8 x 16 font, each font pixel drawn as a scale x scale square
 void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale) {
-    if (scale < 1) scale = 1;
+    if (scale < 1) {
+        scale = 1;
+    }
     for (; *text; text++, x += 8 * scale) {
         const uint8_t* glyph = font8x16[(uint8_t)*text];
         for (int row = 0; row < 16; row++) {
@@ -160,7 +207,9 @@ static uint32_t u32(const uint8_t* p) { return u16(p) | (u16(p + 2) << 16); }
 // read and check the headers, false for anything that isn't a BMP we can draw, or that claims
 // more pixels than the file holds (so a damaged file can't make us read past its end)
 static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
-    if (d == 0 || length < 54 || d[0] != 'B' || d[1] != 'M') return false;
+    if (d == 0 || length < 54 || d[0] != 'B' || d[1] != 'M') {
+        return false;
+    }
     uint32_t header = u32(d + 14);
     int32_t width = (int32_t)u32(d + 18);
     int32_t height = (int32_t)u32(d + 22);
@@ -172,19 +221,29 @@ static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
     b->width = width;
     b->height = height < 0 ? -height : height;
 
-    if (header < 40 || width <= 0 || width > 16384 || b->height == 0 || b->height > 16384) return false;
-    if (b->bpp != 8 && b->bpp != 24 && b->bpp != 32) return false;
+    if (header < 40 || width <= 0 || width > 16384 || b->height == 0 || b->height > 16384) {
+        return false;
+    }
+    if (b->bpp != 8 && b->bpp != 24 && b->bpp != 32) {
+        return false;
+    }
     // 0 = plain, 3 = "bitfields", which for 32 bit pictures is the usual blue, green, red, alpha order
-    if (compression != 0 && !(compression == 3 && b->bpp == 32)) return false;
+    if (compression != 0 && !(compression == 3 && b->bpp == 32)) {
+        return false;
+    }
 
     // each row is padded to a whole number of 4 byte words
     b->stride = (((uint32_t)width * b->bpp + 31) / 32) * 4;
-    if ((uint64_t)b->pixels + (uint64_t)b->stride * (uint32_t)b->height > length) return false;
+    if ((uint64_t)b->pixels + (uint64_t)b->stride * (uint32_t)b->height > length) {
+        return false;
+    }
 
     if (b->bpp == 8) {
         b->colours = u32(d + 46) ? u32(d + 46) : 256;
         b->palette = d + 14 + header;
-        if (b->colours > 256 || 14 + header + b->colours * 4 > length) return false;
+        if (b->colours > 256 || 14 + header + b->colours * 4 > length) {
+            return false;
+        }
     }
     return true;
 }
@@ -195,7 +254,9 @@ static uint32_t bmp_pixel(const bmp_t* b, int x, int y) {
     const uint8_t* p = b->data + b->pixels + (uint32_t)row * b->stride;
     if (b->bpp == 8) {
         uint32_t index = p[x];
-        if (index >= b->colours) return 0;
+        if (index >= b->colours) {
+            return 0;
+        }
         p = b->palette + index * 4;
     } else {
         p += (uint32_t)x * (b->bpp / 8);
@@ -205,7 +266,9 @@ static uint32_t bmp_pixel(const bmp_t* b, int x, int y) {
 
 bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h) {
     bmp_t b;
-    if (!bmp_open(data, length, &b)) return false;
+    if (!bmp_open(data, length, &b)) {
+        return false;
+    }
     *w = b.width;
     *h = b.height;
     return true;
@@ -213,16 +276,23 @@ bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h) {
 
 bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, int max_h) {
     bmp_t b;
-    if (!active || !bmp_open(data, length, &b)) return false;
+    if (!active || !bmp_open(data, length, &b)) {
+        return false;
+    }
 
-    // the size to draw at: as it is, or as big as fits in the box while keeping its shape
-    // (pictures are at most 16384 pixels across and the box is screen sized, so these products
-    // fit easily in 32 bits; 64 bit division would need libgcc, which the kernel doesn't link)
+    // the size to draw at: as it is, or as big as fits in the box while keeping its shape.
+    // The box can be far bigger than the screen (a zoomed in picture, only part of which shows).
+    // Pictures and boxes are both at most 16384 pixels across, so every product below stays under
+    // 2^28 and fits in 32 bits (64 bit division would need libgcc, which the kernel doesn't link)
     uint32_t w = (uint32_t)b.width;
     uint32_t h = (uint32_t)b.height;
     if (max_w > 0 && max_h > 0) {
-        if (max_w > 8192) max_w = 8192;
-        if (max_h > 8192) max_h = 8192;
+        if (max_w > 16384) {
+            max_w = 16384;
+        }
+        if (max_h > 16384) {
+            max_h = 16384;
+        }
         if ((uint32_t)b.width * (uint32_t)max_h <= (uint32_t)b.height * (uint32_t)max_w) {
             h = (uint32_t)max_h;
             w = (uint32_t)b.width * (uint32_t)max_h / (uint32_t)b.height;
@@ -230,20 +300,35 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
             w = (uint32_t)max_w;
             h = (uint32_t)b.height * (uint32_t)max_w / (uint32_t)b.width;
         }
-        if (w < 1) w = 1;
-        if (h < 1) h = 1;
+        if (w < 1) {
+            w = 1;
+        }
+        if (h < 1) {
+            h = 1;
+        }
+    }
+
+    // only the part of the picture that lands on the screen is worth drawing: tx and ty run over
+    // the drawn picture, so start where it comes onto the screen and stop where it goes off.
+    // A zoomed in picture can be thousands of pixels wider than the screen
+    uint32_t x0 = x < 0 ? (uint32_t)-x : 0, x1 = w;
+    uint32_t y0 = y < 0 ? (uint32_t)-y : 0, y1 = h;
+    if (x >= (int)fb.width || y >= (int)fb.height) {
+        return true;
+    }
+    if (x + (int)w > (int)fb.width) {
+        x1 = (uint32_t)((int)fb.width - x);
+    }
+    if (y + (int)h > (int)fb.height) {
+        y1 = (uint32_t)((int)fb.height - y);
     }
 
     // nearest neighbour: every screen pixel takes the colour of the picture pixel under it
-    for (uint32_t ty = 0; ty < h; ty++) {
-        int sy = y + (int)ty;
-        if (sy < 0 || (uint32_t)sy >= fb.height) continue;
+    for (uint32_t ty = y0; ty < y1; ty++) {
         int py = (int)(ty * (uint32_t)b.height / h);
-        for (uint32_t tx = 0; tx < w; tx++) {
-            int sx = x + (int)tx;
-            if (sx < 0 || (uint32_t)sx >= fb.width) continue;
+        for (uint32_t tx = x0; tx < x1; tx++) {
             int px = (int)(tx * (uint32_t)b.width / w);
-            put((uint32_t)sx, (uint32_t)sy, pack(bmp_pixel(&b, px, py)));
+            put((uint32_t)(x + (int)tx), (uint32_t)(y + (int)ty), pack(bmp_pixel(&b, px, py)));
         }
     }
     return true;

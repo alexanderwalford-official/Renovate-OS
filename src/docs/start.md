@@ -31,9 +31,12 @@ An AEROS disk is any IDE disk formatted as FAT16 or FAT32 with the volume label 
 ## Logging in
 
 In DISK mode AerOS asks who you are. The very first time, it asks you to make an account:
-choose a name (lower case letters, numbers, `_` and `-`) and a password. After that, the
-login screen appears at every start. In VFS and DEMO mode there is no login and you are
-`guest`. See [Accounts and encryption](security.md).
+choose a name (up to 8 lower case letters, numbers, `_` and `-`) and a password. After that,
+the login screen appears at every start, and you start in your home folder, `/home/<name>/`.
+In VFS and DEMO mode there is no login and you are `guest`.
+
+**Careful:** after 3 wrong passwords in a row for an account, everything in its home folder
+is deleted. The first wrong password brings a warning. See [Accounts and encryption](security.md).
 
 ## The prompt
 
@@ -42,18 +45,24 @@ alex@0//:
 ```
 
 shows who you are (`alex`) and the folder you are in (`/`). Type a command and press Enter.
-The up and down arrows bring back earlier commands.
+The up and down arrows bring back earlier commands, and **Page Up** / **Page Down** scroll
+back through output that has gone off the top of the screen (any other key comes back).
+
+**Tab** finishes what you are typing, like on Linux: `ec` then Tab gives `echo`, and
+`rd /docs/sec` then Tab gives `rd /docs/security.md`. If more than one thing fits, Tab fills
+in as much as they share, and when there is nothing more to fill in it lists them all.
 
 ## First things to try
 
 | Type | To |
 | --- | --- |
-| `help` | list every command |
+| `hlp` | list every command |
 | `docs` | open this manual |
 | `la` | list the files here |
 | `hello` | run the hello program |
 | `guess` | play a guessing game |
-| `viewer` | look at the pictures in `/bin/` |
+| `viewer` | look at the pictures in `/bin/` (`+` / `-` zoom, arrows move around) |
+| `sysinfo` | see what's inside this computer |
 | `play /sys/startup.wav` | hear the startup sound again |
 | `edit notes.txt` | write a file |
 | `aer` | try AerLang, type `exit` to leave |

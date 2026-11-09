@@ -53,7 +53,9 @@ static token_t* add_token (token_list_t* list, token_type_t type, int line) {
 
 // the value of a hex digit, c must already be known to be one (0-9, a-f, A-F)
 static int hex_value (char c) {
-    if (isdigit((unsigned char)c)) return c - '0';
+    if (isdigit((unsigned char)c)) {
+        return c - '0';
+    }
     return tolower((unsigned char)c) - 'a' + 10;
 }
 
@@ -74,7 +76,9 @@ token_t* aer_lex (const char* src, int* count) {
         }
         // a comment runs to the end of the line (the '\n' itself is still seen below)
         if (c == '#') {
-            while (*p && *p != '\n') p++;
+            while (*p && *p != '\n') {
+                p++;
+            }
             continue;
         }
         if (c == '\n') {
@@ -93,19 +97,27 @@ token_t* aer_lex (const char* src, int* count) {
             uint32_t value = 0;
             if (c == '0' && (p[1] == 'x' || p[1] == 'X')) {
                 p += 2;
-                if (!isxdigit((unsigned char)*p)) aer_error(line, "expected hex digits after 0x");
+                if (!isxdigit((unsigned char)*p)) {
+                    aer_error(line, "expected hex digits after 0x");
+                }
                 while (isxdigit((unsigned char)*p)) {
-                    if (value > 0x0FFFFFFF) aer_error(line, "number is too big");
+                    if (value > 0x0FFFFFFF) {
+                        aer_error(line, "number is too big");
+                    }
                     value = value * 16 + (uint32_t)hex_value(*p++);
                 }
             } else {
                 while (isdigit((unsigned char)*p)) {
                     uint32_t digit = (uint32_t)(*p++ - '0');
-                    if (value > (0x7FFFFFFFu - digit) / 10) aer_error(line, "number is too big");
+                    if (value > (0x7FFFFFFFu - digit) / 10) {
+                        aer_error(line, "number is too big");
+                    }
                     value = value * 10 + digit;
                 }
             }
-            if (isalpha((unsigned char)*p) || *p == '_') aer_error(line, "bad number"); // e.g. 12abc
+            if (isalpha((unsigned char)*p) || *p == '_') {
+                aer_error(line, "bad number"); // e.g. 12abc
+            }
             add_token(&list, T_NUMBER, line)->number = (int32_t)value;
             continue;
         }
@@ -115,10 +127,14 @@ token_t* aer_lex (const char* src, int* count) {
             // first find the closing quote, skipping escaped characters (so \" doesn't end it)
             const char* start = ++p;
             while (*p && *p != '"' && *p != '\n') {
-                if (*p == '\\' && p[1]) p++;
+                if (*p == '\\' && p[1]) {
+                    p++;
+                }
                 p++;
             }
-            if (*p != '"') aer_error(line, "string is missing its closing \"");
+            if (*p != '"') {
+                aer_error(line, "string is missing its closing \"");
+            }
             // then copy it, decoding the escapes. The text can only get shorter (\n is 2
             // characters in the source and 1 in the string), so the source length is enough room
             char* text = aer_alloc((size_t)(p - start) + 1);
@@ -149,7 +165,9 @@ token_t* aer_lex (const char* src, int* count) {
         // names and keywords: a letter or _, then letters, digits and _
         if (isalpha((unsigned char)c) || c == '_') {
             const char* start = p;
-            while (isalnum((unsigned char)*p) || *p == '_') p++;
+            while (isalnum((unsigned char)*p) || *p == '_') {
+                p++;
+            }
             size_t length = (size_t)(p - start);
             token_type_t type = T_NAME;
             for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
@@ -170,10 +188,18 @@ token_t* aer_lex (const char* src, int* count) {
         // symbols, the two character ones first
         token_type_t type;
         int width = 2;
-        if (c == '=' && p[1] == '=') type = T_EQ;
-        else if (c == '!' && p[1] == '=') type = T_NE;
-        else if (c == '<' && p[1] == '=') type = T_LE;
-        else if (c == '>' && p[1] == '=') type = T_GE;
+        if (c == '=' && p[1] == '=') {
+            type = T_EQ;
+        }
+        else if (c == '!' && p[1] == '=') {
+            type = T_NE;
+        }
+        else if (c == '<' && p[1] == '=') {
+            type = T_LE;
+        }
+        else if (c == '>' && p[1] == '=') {
+            type = T_GE;
+        }
         else {
             width = 1;
             switch (c) {
@@ -191,7 +217,9 @@ token_t* aer_lex (const char* src, int* count) {
                 case '[': type = T_LBRACKET; depth++; break;
                 case ']': type = T_RBRACKET; if (depth > 0) depth--; break;
                 default:
-                    if (isprint((unsigned char)c)) aer_error(line, "unexpected character '%c'", c);
+                    if (isprint((unsigned char)c)) {
+                        aer_error(line, "unexpected character '%c'", c);
+                    }
                     aer_error(line, "unexpected character (code %d)", (unsigned char)c);
             }
         }

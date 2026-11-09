@@ -20,9 +20,13 @@
 #define PCI_SUBCLASS_AUDIO   0x01 // AC'97 style audio (0x03 would be HD Audio)
 
 typedef struct {
-    uint8_t bus, slot, function;
-    uint16_t vendor, device;
+    uint8_t bus, slot, function;  // where it is
+    uint16_t vendor, device;      // who made it and which product (e.g. 8086:2415, Intel AC'97)
+    uint8_t class_code, subclass; // what kind of device it is (e.g. 04:01, audio)
 } pci_device_t;
+
+// call fn for every device on the bus, stopping early if it returns true (and then returning true)
+bool pci_each (bool (*fn)(const pci_device_t* dev, void* ctx), void* ctx);
 
 // find the first device of this class and subclass, false if there is none
 bool pci_find_class (uint8_t class_code, uint8_t subclass, pci_device_t* out);

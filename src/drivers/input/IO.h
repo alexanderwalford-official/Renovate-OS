@@ -69,6 +69,15 @@ int getchar(void);
 // size must be at least 1
 char* GetString(char* in, int size);
 
+// what Tab does in GetLine. It is given the line typed so far (length characters, in a buffer of
+// size bytes), adds to it in place, prints whatever it added (or a list of choices followed by
+// the prompt and the line again), and returns the line's new length
+typedef int (*tab_complete_fn)(char* line, int length, int size);
+
+// GetString, with Tab handed to complete (the terminal's command line uses it to fill in
+// commands and file names). complete may be NULL, which is exactly GetString
+char* GetLine(char* in, int size, tab_complete_fn complete);
+
 // forget the up / down arrow history (done on logout)
 void ClearInputHistory(void);
 

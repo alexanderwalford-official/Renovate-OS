@@ -4,7 +4,7 @@
 
     This is the code behind aer_string.h. Nearly everything in the kernel leans on it:
     the terminal parses commands with strcmp / split, the file systems copy names
-    around with strlcpy, printf measures strings with strlen, and GCC itself quietly
+    around with strlcpy, prtf measures strings with strlen, and GCC itself quietly
     calls memcpy / memset whenever it copies or clears a struct (see aer_string.h).
 
     Design choices:
@@ -126,7 +126,7 @@ size_t strlen(const char* s) {
 
 // like strlen, but gives up after max characters
 // useful for fixed size buffers that might not have a terminator (e.g. names read off a disk),
-// or for printf's "%.5s" which must not read further than 5 characters
+// or for prtf's "%.5s" which must not read further than 5 characters
 size_t strnlen(const char* s, size_t max) {
     size_t len = 0;
     // check len < max FIRST so we never even read the byte at s[max]

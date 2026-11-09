@@ -59,6 +59,8 @@ src/
     fat.c                 the FAT16 / FAT32 driver
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
+    sysinfo.c             everything known about the computer (CPU, memory, disks, PCI), for SYSINFO
+    ui.c                  progress bars and spinners for long jobs (and AerLang's progress / spinner)
     apps.c                the built-in apps and files, copied to the disk at boot
     splash.c              the orange boot screen
     recovery.c            the boot options menu (press X on the splash)
@@ -69,9 +71,10 @@ src/
 
   lib/                  the kernel's own small C library
     aer_string.c          memcpy, strlen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
-    aer_stdio.c           printf, snprintf                 aer_ctype.h   isdigit, toupper...
+    aer_stdio.c           prtf, snprintf                 aer_ctype.h   isdigit, toupper...
     aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  StrCompare, split, StrTrim
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
+    busy.c                busy(): long loops call it so a spinner can turn (see sys/ui.h)
     mp3.c + minimp3/      MP3 decoding
     aer_comp.c            runs a process's line of code (the built-in "instructions")
 
@@ -109,6 +112,11 @@ Each step after the hardware set-up is a **process**: a line of code (`"splash_s
 `"init_boot"`, `"terminal"`) put on the process stack and handed to `compile()` in
 `lib/aer_comp.c`, which knows what each name means. Processes run one at a time to completion,
 shortest first. The terminal's `RUN` command creates processes the same way.
+
+Since nothing runs side by side, programs can instead be **queued** to run one after another:
+`QUEUE <program>` (or AerLang's `queue()`) puts a process on the stack as WAITING, and `GO`
+runs the waiting ones in the order they were queued, each to completion. Ctrl+C in one of them
+stops the rest of the queue as well. See "The queue" in `sys/p_man.h`.
 
 ## Memory
 
@@ -169,16 +177,22 @@ Users can type relative paths with `.` and `..`, and `fs_split_path` / `fs_resol
 them into that form. On disk, new names must fit 8.3 (`NOTES.TXT`). Existing long names can be
 read.
 
-The folders made at every boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
+Each user's home folder is `/home/<name>/`, made with the account. The folders made at every
+boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
 `/sys/` (system files: `startup.wav`, `cache/`, `tmp/`) and `/conf.aer`.
 
 ## The manual inside AerOS
 
 `src/docs/` holds the manual that ships inside the OS: short Markdown pages written for an
 80-column screen, plus an HTML sample. They are linked into the kernel like the apps and
-copied to `/docs/` at boot. Unlike the apps, which are only copied when missing so your own
-changes are kept, each page is **replaced whenever it differs** from the built-in copy, so the
-manual always matches the version that is running.
+copied to `/docs/` at boot. Each page is **replaced whenever it differs** from the built-in
+copy, so the manual always matches the version that is running.
+
+The apps are more careful, because they are yours to change. `/sys/apps.lst` records the
+SHA-256 of each app as AerOS installed it. At boot an app on the disk that still matches its
+record is replaced by a newer built-in version, and one that doesn't (you changed it) is kept.
+Apps installed before the record existed are kept too, since there is no way to tell. See
+the top of `sys/apps.c`.
 
 `DOCS [topic]` opens it in the reader, `/bin/read.aer`. The reader is an AerLang app that shows
 Markdown, HTML and plain text with colours, word wrapping, tables and links (Tab picks a link,
@@ -193,12 +207,17 @@ add one, also add it to the table in `src/sys/apps.c` and link to it from `index
 loop forever:
     auth_login()          (DISK mode only)
     draw the banner
-    until LOGOUT:
-        prompt "alex@0//: "  ->  read a line  ->  look the first word up in cli_commands[]
+    until OUT (log out):
+        prompt "alex@0//: "  ->  read a line  ->  look the first word up in commands[]
                                                   or run it as /bin/<word>.aer
 ```
 
-`HELP` lists every command from the same table, so a new command only needs one table line.
+Everything about a command's name comes from that one table: `HLP` (help) lists it, Tab
+completion offers it, and its "Usage:" message is built from it. So a new command only needs
+one table line, and renaming a command means changing one word. The line is read with
+`GetLine()` (in `drivers/input/IO.c`), which hands Tab to `cli_complete()`. That completes
+the first word from the command table and the `.aer` programs in `/bin/` and the current
+folder, and later words from the file system.
 
 ## AerLang
 
@@ -241,17 +260,21 @@ In `src/sys/terminal/t_int.c`:
 
 ```c
 // VER: print the version
-static void cli_version (char* args) {
-    (void)args;
-    printf("AerOS 0.01 ALPHA\n");
+static void cli_version (char* arguments) {
+    (void)arguments; // VER takes no arguments
+    prtf("AerOS " AEROS_VERSION "\n");
 }
 ```
 
-and one line in `cli_commands[]` (the help text is what `HELP` prints, at most 79 characters):
+and one line in `commands[]`: the name you type, what goes after it (for help and the "Usage:"
+message, "" if nothing), the description help shows, and the function:
 
 ```c
-    { "ver",      cli_version,        "VER             - PRINT THE AEROS VERSION" },
+    { "ver",      "",           "PRINT THE AEROS VERSION",                                    cli_version },
 ```
+
+A command that needs something after it can call `show_usage(NULL)` when it is missing, which
+prints e.g. `Usage: VER` built from the table.
 
 ### Add an AerLang function
 

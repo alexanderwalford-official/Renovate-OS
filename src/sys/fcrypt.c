@@ -71,10 +71,14 @@ bool fcrypt_is_sealed (const void* data, uint32_t length) {
 }
 
 int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8_t** out, uint32_t* out_length) {
-    if (password[0] == '\0') return FCRYPT_ERR_NO_PASSWORD;
+    if (password[0] == '\0') {
+        return FCRYPT_ERR_NO_PASSWORD;
+    }
     uint32_t total = HEADER_SIZE + length + TAG_SIZE;
     uint8_t* sealed = malloc(total);
-    if (sealed == 0) return FCRYPT_ERR_NO_MEMORY;
+    if (sealed == 0) {
+        return FCRYPT_ERR_NO_MEMORY;
+    }
 
     // the header: magic, rounds, and a fresh random salt and nonce
     memcpy(sealed, MAGIC, MAGIC_SIZE);
@@ -102,9 +106,13 @@ int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8
 
 int fcrypt_open (const void* sealed_data, uint32_t length, const char* password, uint8_t** out, uint32_t* out_length) {
     const uint8_t* sealed = sealed_data;
-    if (!fcrypt_is_sealed(sealed, length)) return FCRYPT_ERR_NOT_ENCRYPTED;
+    if (!fcrypt_is_sealed(sealed, length)) {
+        return FCRYPT_ERR_NOT_ENCRYPTED;
+    }
     uint32_t rounds = read_u32(sealed + OFFSET_ROUNDS);
-    if (rounds == 0 || rounds > ROUNDS_MAX) return FCRYPT_ERR_DAMAGED;
+    if (rounds == 0 || rounds > ROUNDS_MAX) {
+        return FCRYPT_ERR_DAMAGED;
+    }
     uint32_t plain_length = length - HEADER_SIZE - TAG_SIZE;
     const uint8_t* stored_tag = sealed + HEADER_SIZE + plain_length;
 
@@ -144,7 +152,9 @@ int fcrypt_open (const void* sealed_data, uint32_t length, const char* password,
 // read the whole file the user named, filling in its directory and name for writing it back
 // NULL if it isn't there
 static char* load (const char* path, char* dir, char* name, uint32_t* size) {
-    if (!fs_split_path(path, dir, FS_PATH_MAX, name, FS_NAME_MAX) || !fs_file_exists(dir, name)) return 0;
+    if (!fs_split_path(path, dir, FS_PATH_MAX, name, FS_NAME_MAX) || !fs_file_exists(dir, name)) {
+        return 0;
+    }
     return fs_read_bytes(dir, name, size);
 }
 
@@ -161,7 +171,9 @@ int fcrypt_encrypt_file (const char* path, const char* password) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
     char* data = load(path, dir, name, &size);
-    if (data == 0) return FCRYPT_ERR_NOT_FOUND;
+    if (data == 0) {
+        return FCRYPT_ERR_NOT_FOUND;
+    }
     if (fcrypt_is_sealed(data, size)) {
         free(data);
         return FCRYPT_ERR_ENCRYPTED; // encrypting twice would work, but is never what anyone means
@@ -171,7 +183,9 @@ int fcrypt_encrypt_file (const char* path, const char* password) {
     int result = fcrypt_seal(data, size, password, &sealed, &sealed_length);
     crypto_wipe(data, size); // our copy of the unencrypted contents
     free(data);
-    if (result != FCRYPT_OK) return result;
+    if (result != FCRYPT_OK) {
+        return result;
+    }
     // wipe_old = true: the old (unencrypted) contents are zeroed on the disk before being freed,
     // otherwise they would still be readable there until something else happened to overwrite them
     result = fs_write_bytes(dir, name, sealed, sealed_length, true) == FS_OK ? FCRYPT_OK : FCRYPT_ERR_SAVE;
@@ -183,7 +197,9 @@ int fcrypt_read_file (const char* path, const char* password, uint8_t** out, uin
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
     char* data = load(path, dir, name, &size);
-    if (data == 0) return FCRYPT_ERR_NOT_FOUND;
+    if (data == 0) {
+        return FCRYPT_ERR_NOT_FOUND;
+    }
     int result = fcrypt_open(data, size, password, out, out_length);
     free(data);
     return result;
@@ -193,12 +209,16 @@ int fcrypt_decrypt_file (const char* path, const char* password) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
     char* data = load(path, dir, name, &size);
-    if (data == 0) return FCRYPT_ERR_NOT_FOUND;
+    if (data == 0) {
+        return FCRYPT_ERR_NOT_FOUND;
+    }
     uint8_t* plain;
     uint32_t length;
     int result = fcrypt_open(data, size, password, &plain, &length);
     free(data);
-    if (result != FCRYPT_OK) return result;
+    if (result != FCRYPT_OK) {
+        return result;
+    }
     // the old contents were encrypted, so they don't need wiping
     result = fs_write_bytes(dir, name, plain, length, false) == FS_OK ? FCRYPT_OK : FCRYPT_ERR_SAVE;
     crypto_wipe(plain, length);

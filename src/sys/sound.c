@@ -73,12 +73,18 @@ static int wav_decode (const uint8_t* data, uint32_t size, pcm_t* out) {
     for (uint32_t at = 12; at + 8 <= size;) {
         uint32_t length = read_u32(data + at + 4);
         const uint8_t* body = data + at + 8;
-        if (length > size - at - 8) length = size - at - 8; // a cut short file, use what's there
+        if (length > size - at - 8) {
+            length = size - at - 8; // a cut short file, use what's there
+        }
         if (memcmp(data + at, "fmt ", 4) == 0 && length >= 16) {
             uint16_t format = read_u16(body);
             // extensible: the real format is the first 2 bytes of the sub format at offset 24
-            if (format == 0xFFFE && length >= 26) format = read_u16(body + 24);
-            if (format != 1) return SOUND_ERR_FORMAT;
+            if (format == 0xFFFE && length >= 26) {
+                format = read_u16(body + 24);
+            }
+            if (format != 1) {
+                return SOUND_ERR_FORMAT;
+            }
             channels = read_u16(body + 2);
             out->rate = read_u32(body + 4);
             frame_bytes = read_u16(body + 12);
@@ -96,7 +102,9 @@ static int wav_decode (const uint8_t* data, uint32_t size, pcm_t* out) {
 
     out->count = samples_size / frame_bytes;
     out->frames = malloc((size_t)out->count * 4 + 4);
-    if (out->frames == 0) return SOUND_ERR_NO_MEMORY;
+    if (out->frames == 0) {
+        return SOUND_ERR_NO_MEMORY;
+    }
     uint32_t sample_bytes = bits / 8;
     for (uint32_t i = 0; i < out->count; i++) {
         const uint8_t* frame = samples + i * frame_bytes;
@@ -124,7 +132,9 @@ static int resample (pcm_t* pcm, uint32_t rate) {
     // at most count / old rate * new rate frames, plus a second for the rounding
     uint32_t most = pcm->count / pcm->rate * rate + rate;
     int16_t* out = malloc((size_t)most * 4);
-    if (out == 0) return SOUND_ERR_NO_MEMORY;
+    if (out == 0) {
+        return SOUND_ERR_NO_MEMORY;
+    }
 
     uint32_t made = 0;
     for (uint64_t at = 0; (uint32_t)(at >> 16) < pcm->count && made < most; at += step, made++) {
@@ -155,7 +165,9 @@ static int decode (const uint8_t* data, uint32_t size, pcm_t* pcm) {
     }
     if (result == SOUND_OK) {
         uint32_t rate = ac97_set_rate(pcm->rate);
-        if (rate != pcm->rate) result = resample(pcm, rate);
+        if (rate != pcm->rate) {
+            result = resample(pcm, rate);
+        }
     }
     return result;
 }
@@ -170,14 +182,18 @@ static void stop_background (void) {
 }
 
 int sound_play_file (const char* path, bool (*should_stop)(void)) {
-    if (!ac97_ready) return SOUND_ERR_NO_CARD;
+    if (!ac97_ready) {
+        return SOUND_ERR_NO_CARD;
+    }
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     if (!fs_split_path(path, dir, sizeof(dir), name, sizeof(name)) || !fs_file_exists(dir, name)) {
         return SOUND_ERR_NOT_FOUND;
     }
     uint32_t size = 0;
     uint8_t* data = (uint8_t*)fs_read_bytes(dir, name, &size);
-    if (data == 0) return SOUND_ERR_NO_MEMORY;
+    if (data == 0) {
+        return SOUND_ERR_NO_MEMORY;
+    }
 
     stop_background(); // one sound at a time
     pcm_t pcm = { 0, 0, 0 };
@@ -191,7 +207,9 @@ int sound_play_file (const char* path, bool (*should_stop)(void)) {
 }
 
 void sound_startup (void) {
-    if (!ac97_init()) return;
+    if (!ac97_init()) {
+        return;
+    }
     // the file system isn't set up yet (the boot options can still choose demo mode), so the
     // disk is read directly. No disk, or no file on it yet (the first boot), uses the built-in copy
     char status[64];

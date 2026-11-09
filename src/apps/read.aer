@@ -89,12 +89,16 @@ let H_HEADER = false
 # ---- small helpers --------------------------------------------------------------------------
 
 func min(a, b)
-    if a < b then return a end
+    if a < b then
+        return a
+    end
     return b
 end
 
 func max(a, b)
-    if a > b then return a end
+    if a > b then
+        return a
+    end
     return b
 end
 
@@ -108,7 +112,9 @@ end
 
 # s with spaces added up to n characters
 func pad(s, n)
-    if len(s) >= n then return s end
+    if len(s) >= n then
+        return s
+    end
     return s + sub(SPACES, 0, n - len(s))
 end
 
@@ -123,15 +129,21 @@ end
 func trim(s)
     let a = 0
     let b = len(s)
-    while a < b and (s[a] == " " or s[a] == "\t") do a = a + 1 end
-    while b > a and (s[b - 1] == " " or s[b - 1] == "\t" or s[b - 1] == CR) do b = b - 1 end
+    while a < b and (s[a] == " " or s[a] == "\t") do
+        a = a + 1
+    end
+    while b > a and (s[b - 1] == " " or s[b - 1] == "\t" or s[b - 1] == CR) do
+        b = b - 1
+    end
     return sub(s, a, b - a)
 end
 
 # like find, but starting at position start
 func find_from(s, part, start)
     let i = find(sub(s, start), part)
-    if i < 0 then return -1 end
+    if i < 0 then
+        return -1
+    end
     return i + start
 end
 
@@ -140,7 +152,9 @@ func replace(s, old, new)
 end
 
 func strip_cr(s)
-    if ends_with(s, CR) then return sub(s, 0, len(s) - 1) end
+    if ends_with(s, CR) then
+        return sub(s, 0, len(s) - 1)
+    end
     return s
 end
 
@@ -150,7 +164,9 @@ end
 
 func indent_of(s)
     let i = 0
-    while i < len(s) and s[i] == " " do i = i + 1 end
+    while i < len(s) and s[i] == " " do
+        i = i + 1
+    end
     return i
 end
 
@@ -163,7 +179,9 @@ end
 # the text of some spans without their styles
 func plain(spans)
     let out = ""
-    for span in spans do out = out + span[0] end
+    for span in spans do
+        out = out + span[0]
+    end
     return out
 end
 
@@ -184,16 +202,24 @@ end
 # the folder a file is in, with its "/" ("/docs/index.md" -> "/docs/")
 func dir_of(path)
     let i = len(path) - 1
-    while i >= 0 and path[i] != "/" do i = i - 1 end
-    if i < 0 then return cwd() end
+    while i >= 0 and path[i] != "/" do
+        i = i - 1
+    end
+    if i < 0 then
+        return cwd()
+    end
     return sub(path, 0, i + 1)
 end
 
 # "md", "html" or "text", from the end of the name
 func file_kind(path)
     let name = lower(path)
-    if ends_with(name, ".md") or ends_with(name, ".markdown") then return "md" end
-    if ends_with(name, ".htm") or ends_with(name, ".html") then return "html" end
+    if ends_with(name, ".md") or ends_with(name, ".markdown") then
+        return "md"
+    end
+    if ends_with(name, ".htm") or ends_with(name, ".html") then
+        return "html"
+    end
     return "text"
 end
 
@@ -203,14 +229,18 @@ let MARKUP = ["*", "_", "`", "[", "\\", "<"]
 
 func has_markup(s)
     for c in MARKUP do
-        if find(s, c) >= 0 then return true end
+        if find(s, c) >= 0 then
+            return true
+        end
     end
     return false
 end
 
 # add the text collected so far as a span in the current style
 func add_span(spans, buf, bold, italic)
-    if buf == "" then return end
+    if buf == "" then
+        return
+    end
     let style = "n"
     if bold then
         style = "b"
@@ -226,9 +256,13 @@ end
 func emphasis(s, i, closing)
     let c = s[i]
     let before = " "
-    if i > 0 then before = s[i - 1] end
+    if i > 0 then
+        before = s[i - 1]
+    end
     let after = " "
-    if i + 1 < len(s) then after = s[i + 1] end
+    if i + 1 < len(s) then
+        after = s[i + 1]
+    end
     if closing then
         return before != " " and not (c == "_" and is_word(after))
     end
@@ -238,7 +272,9 @@ end
 # one paragraph of Markdown -> spans: **bold**, *italic*, `code`, [links](target), ![images](x),
 # <http://autolinks>, <br> line breaks and \escapes
 func md_spans(s)
-    if not has_markup(s) then return [[s, "n", ""]] end
+    if not has_markup(s) then
+        return [[s, "n", ""]]
+    end
     let spans = []
     let buf = ""
     let bold = false
@@ -248,7 +284,9 @@ func md_spans(s)
     while i < n do
         let c = s[i]
         let after = ""
-        if i + 1 < n then after = s[i + 1] end
+        if i + 1 < n then
+            after = s[i + 1]
+        end
         if c == "\\" and after != "" then
             buf = buf + after
             i = i + 2
@@ -270,10 +308,14 @@ func md_spans(s)
             i = i + 1
         elif c == "[" or (c == "!" and after == "[") then
             let first = i
-            if c == "!" then first = i + 1 end
+            if c == "!" then
+                first = i + 1
+            end
             let middle = find_from(s, "](", first)
             let close = -1
-            if middle > 0 then close = find_from(s, ")", middle + 2) end
+            if middle > 0 then
+                close = find_from(s, ")", middle + 2)
+            end
             if close > 0 then
                 add_span(spans, buf, bold, italic)
                 buf = ""
@@ -318,23 +360,33 @@ end
 # "## Title" -> 2, 0 if it isn't a heading ("#hashtag" isn't)
 func heading_level(t)
     let n = 0
-    while n < len(t) and t[n] == "#" do n = n + 1 end
-    if n > 6 then return 0 end
-    if n < len(t) and t[n] != " " then return 0 end
+    while n < len(t) and t[n] == "#" do
+        n = n + 1
+    end
+    if n > 6 then
+        return 0
+    end
+    if n < len(t) and t[n] != " " then
+        return 0
+    end
     return n
 end
 
 # "Title ##" -> "Title"
 func strip_hashes(t)
     let s = trim(t)
-    while ends_with(s, "#") do s = sub(s, 0, len(s) - 1) end
+    while ends_with(s, "#") do
+        s = sub(s, 0, len(s) - 1)
+    end
     return trim(s)
 end
 
 # ---, *** or ___ (spaces allowed between): a line across the page
 func is_rule(t)
     let c = t[0]
-    if c != "-" and c != "*" and c != "_" then return false end
+    if c != "-" and c != "*" and c != "_" then
+        return false
+    end
     let count = 0
     for k = 0 to len(t) - 1 do
         if t[k] == c then
@@ -349,38 +401,58 @@ end
 # ==== or ---- under a line of text makes it a heading
 func is_underline(t)
     let c = t[0]
-    if c != "=" and c != "-" then return false end
+    if c != "=" and c != "-" then
+        return false
+    end
     for k = 0 to len(t) - 1 do
-        if t[k] != c then return false end
+        if t[k] != c then
+            return false
+        end
     end
     return len(t) >= 2
 end
 
 # how many characters a list marker takes ("- " is 2, "12. " is 4), 0 if t isn't a list item
 func list_marker(t)
-    if len(t) >= 2 and find("-*+", t[0]) >= 0 and t[1] == " " then return 2 end
+    if len(t) >= 2 and find("-*+", t[0]) >= 0 and t[1] == " " then
+        return 2
+    end
     let i = 0
-    while i < len(t) and find("0123456789", t[i]) >= 0 do i = i + 1 end
-    if i > 0 and i + 1 < len(t) and (t[i] == "." or t[i] == ")") and t[i + 1] == " " then return i + 2 end
+    while i < len(t) and find("0123456789", t[i]) >= 0 do
+        i = i + 1
+    end
+    if i > 0 and i + 1 < len(t) and (t[i] == "." or t[i] == ")") and t[i + 1] == " " then
+        return i + 2
+    end
     return 0
 end
 
 # "| a | b |" -> ["a", "b"]
 func table_cells(t)
     let s = trim(t)
-    if starts_with(s, "|") then s = sub(s, 1) end
-    if ends_with(s, "|") then s = sub(s, 0, len(s) - 1) end
+    if starts_with(s, "|") then
+        s = sub(s, 1)
+    end
+    if ends_with(s, "|") then
+        s = sub(s, 0, len(s) - 1)
+    end
     let cells = []
-    for cell in split(s, "|") do push(cells, trim(cell)) end
+    for cell in split(s, "|") do
+        push(cells, trim(cell))
+    end
     return cells
 end
 
 # the "| --- | :---: |" row under a table's header
 func is_separator(cells)
     for cell in cells do
-        if cell == "" then return false end
+        if cell == "" then
+            return false
+        end
         for k = 0 to len(cell) - 1 do
-            if find("-:", cell[k]) < 0 then return false end
+            if find("-:", cell[k]) < 0 then
+                return false
+            end
         end
     end
     return true
@@ -388,11 +460,15 @@ end
 
 func md_table(rows)
     let header = len(rows) > 1 and is_separator(rows[1])
-    if header then remove(rows, 1) end
+    if header then
+        remove(rows, 1)
+    end
     let table = []
     for row in rows do
         let cells = []
-        for cell in row do push(cells, md_spans(cell)) end
+        for cell in row do
+            push(cells, md_spans(cell))
+        end
         push(table, cells)
     end
     push(BLOCKS, ["table", [], header, table])
@@ -438,7 +514,9 @@ func md_blocks(src)
             push(BLOCKS, ["h", md_spans(strip_hashes(sub(t, level))), level, nil])
         elif PENDING != nil and PENDING[0] == "p" and is_underline(t) then
             let level = 2
-            if t[0] == "=" then level = 1 end
+            if t[0] == "=" then
+                level = 1
+            end
             push(BLOCKS, ["h", md_spans(PENDING[1]), level, nil])
             PENDING = nil
         elif is_rule(t) then
@@ -464,7 +542,9 @@ func md_blocks(src)
             md_end()
             let m = list_marker(t)
             let marker = BULLET
-            if find("-*+", t[0]) < 0 then marker = sub(t, 0, m - 1) end
+            if find("-*+", t[0]) < 0 then
+                marker = sub(t, 0, m - 1)
+            end
             PENDING = ["li", sub(t, m), min(indent_of(raw) / 2, 4), marker]
         elif PENDING != nil then
             PENDING[1] = PENDING[1] + " " + t
@@ -473,7 +553,9 @@ func md_blocks(src)
         end
     end
     md_end()
-    if fence then push(BLOCKS, ["code", [], 0, code]) end
+    if fence then
+        push(BLOCKS, ["code", [], 0, code])
+    end
     return BLOCKS
 end
 
@@ -489,41 +571,61 @@ let BREAKING = " p /p div /div section /section article /article header /header 
 func tag_name(tag)
     let t = trim(tag)
     let closing = starts_with(t, "/")
-    if closing then t = sub(t, 1) end
+    if closing then
+        t = sub(t, 1)
+    end
     let j = 0
-    while j < len(t) and t[j] != " " and t[j] != "/" and t[j] != "\n" and t[j] != "\t" do j = j + 1 end
+    while j < len(t) and t[j] != " " and t[j] != "/" and t[j] != "\n" and t[j] != "\t" do
+        j = j + 1
+    end
     let name = lower(sub(t, 0, j))
-    if closing then return "/" + name end
+    if closing then
+        return "/" + name
+    end
     return name
 end
 
 # the value of attr="..." in a tag, "" if it isn't there
 func get_attr(tag, attr)
     let pos = find(lower(tag), attr + "=")
-    if pos < 0 then return "" end
+    if pos < 0 then
+        return ""
+    end
     let p = pos + len(attr) + 1
-    if p >= len(tag) then return "" end
+    if p >= len(tag) then
+        return ""
+    end
     let quote = tag[p]
     if quote == "\"" or quote == "'" then
         let close = find_from(tag, quote, p + 1)
-        if close < 0 then return "" end
+        if close < 0 then
+            return ""
+        end
         return sub(tag, p + 1, close - p - 1)
     end
     let q = p
-    while q < len(tag) and tag[q] != " " do q = q + 1 end
+    while q < len(tag) and tag[q] != " " do
+        q = q + 1
+    end
     return sub(tag, p, q - p)
 end
 
 # &lt; &amp; &#39; and friends
 func decode(s)
-    if find(s, "&") < 0 then return s end
+    if find(s, "&") < 0 then
+        return s
+    end
     let pos = find(s, "&#")
     while pos >= 0 do
         let semi = find_from(s, ";", pos)
-        if semi < 0 then break end
+        if semi < 0 then
+            break
+        end
         let code = int(sub(s, pos + 2, semi - pos - 2))
         let ch = "?"
-        if code != nil and code > 31 and code < 127 then ch = chr(code) end
+        if code != nil and code > 31 and code < 127 then
+            ch = chr(code)
+        end
         s = sub(s, 0, pos) + ch + sub(s, semi + 1)
         pos = find_from(s, "&#", pos + 1)
     end
@@ -542,13 +644,17 @@ end
 
 # where text goes: the table cell being read, or the block being built
 func target_spans()
-    if H_CELL != nil then return H_CELL end
+    if H_CELL != nil then
+        return H_CELL
+    end
     return H_SPANS
 end
 
 func html_start(kind)
     H_KIND = kind
-    if kind == "p" and H_QUOTE then H_KIND = "quote" end
+    if kind == "p" and H_QUOTE then
+        H_KIND = "quote"
+    end
     H_SPANS = []
     H_LEVEL = 0
     H_EXTRA = nil
@@ -558,8 +664,12 @@ end
 func html_close()
     if H_KIND == "code" then
         let code = H_EXTRA
-        if len(code) > 0 and trim(code[0]) == "" then remove(code, 0) end
-        if len(code) > 0 and trim(code[len(code) - 1]) == "" then pop(code) end
+        if len(code) > 0 and trim(code[0]) == "" then
+            remove(code, 0)
+        end
+        if len(code) > 0 and trim(code[len(code) - 1]) == "" then
+            pop(code)
+        end
         push(BLOCKS, ["code", [], 0, code])
     elif H_KIND != "" and len(H_SPANS) > 0 then
         push(BLOCKS, [H_KIND, H_SPANS, H_LEVEL, H_EXTRA])
@@ -575,15 +685,21 @@ func html_text(raw)
         # inside <pre> the lines stay exactly as they are
         let parts = split(replace(s, CR, ""), "\n")
         for k = 0 to len(parts) - 1 do
-            if k > 0 then push(H_EXTRA, "") end
+            if k > 0 then
+                push(H_EXTRA, "")
+            end
             H_EXTRA[len(H_EXTRA) - 1] = H_EXTRA[len(H_EXTRA) - 1] + expand_tabs(parts[k])
         end
         return
     end
     # everywhere else a line break is just a space (the wrapping squeezes runs of spaces)
     s = replace(replace(replace(s, CR, ""), "\n", " "), "\t", " ")
-    if trim(s) == "" and len(target_spans()) == 0 then return end
-    if H_KIND == "" and H_CELL == nil then html_start("p") end
+    if trim(s) == "" and len(target_spans()) == 0 then
+        return
+    end
+    if H_KIND == "" and H_CELL == nil then
+        html_start("p")
+    end
     let style = "n"
     if H_LINK != "" then
         style = "l"
@@ -619,13 +735,21 @@ func html_tag(name, tag)
         push(BLOCKS, ["hr", [], 0, nil])
     elif name == "ul" or name == "ol" then
         html_close()
-        if name == "ul" then push(H_LISTS, -1) else push(H_LISTS, 0) end
+        if name == "ul" then
+            push(H_LISTS, -1)
+        else
+            push(H_LISTS, 0)
+        end
     elif name == "/ul" or name == "/ol" then
         html_close()
-        if len(H_LISTS) > 0 then pop(H_LISTS) end
+        if len(H_LISTS) > 0 then
+            pop(H_LISTS)
+        end
     elif name == "li" then
         html_close()
-        if len(H_LISTS) == 0 then push(H_LISTS, -1) end
+        if len(H_LISTS) == 0 then
+            push(H_LISTS, -1)
+        end
         let depth = len(H_LISTS)
         html_start("li")
         H_LEVEL = min(depth - 1, 4)
@@ -676,15 +800,23 @@ func html_tag(name, tag)
         H_ROW = []
     elif name == "td" or name == "th" then
         H_CELL = []
-        if name == "th" and H_TABLE != nil and len(H_TABLE) == 0 then H_HEADER = true end
+        if name == "th" and H_TABLE != nil and len(H_TABLE) == 0 then
+            H_HEADER = true
+        end
     elif name == "/td" or name == "/th" then
-        if H_ROW != nil and H_CELL != nil then push(H_ROW, H_CELL) end
+        if H_ROW != nil and H_CELL != nil then
+            push(H_ROW, H_CELL)
+        end
         H_CELL = nil
     elif name == "/tr" then
-        if H_TABLE != nil and H_ROW != nil then push(H_TABLE, H_ROW) end
+        if H_TABLE != nil and H_ROW != nil then
+            push(H_TABLE, H_ROW)
+        end
         H_ROW = nil
     elif name == "/table" then
-        if H_TABLE != nil then push(BLOCKS, ["table", [], H_HEADER, H_TABLE]) end
+        if H_TABLE != nil then
+            push(BLOCKS, ["table", [], H_HEADER, H_TABLE])
+        end
         H_TABLE = nil
     end
 end
@@ -707,23 +839,35 @@ func html_blocks(src)
     let n = len(src)
     while i < n do
         let lt = find_from(src, "<", i)
-        if lt < 0 then lt = n end
-        if lt > i then html_text(sub(src, i, lt - i)) end
-        if lt >= n then break end
+        if lt < 0 then
+            lt = n
+        end
+        if lt > i then
+            html_text(sub(src, i, lt - i))
+        end
+        if lt >= n then
+            break
+        end
         if sub(src, lt, 4) == "<!--" then
             let close = find_from(src, "-->", lt)
-            if close < 0 then break end
+            if close < 0 then
+                break
+            end
             i = close + 3
         else
             let gt = find_from(src, ">", lt)
-            if gt < 0 then break end
+            if gt < 0 then
+                break
+            end
             let tag = sub(src, lt + 1, gt - lt - 1)
             let name = tag_name(tag)
             i = gt + 1
             if name == "script" or name == "style" or name == "title" then
                 # skip everything up to the closing tag
                 let close = find_from(lower(src), "</" + name, i)
-                if close < 0 then break end
+                if close < 0 then
+                    break
+                end
                 i = close
             else
                 html_tag(name, tag)
@@ -747,28 +891,42 @@ end
 # ---- 2. layout ------------------------------------------------------------------------------
 
 func style_colour(style, base)
-    if style == "c" then return C_CODE end
-    if style == "l" then return C_LINK end
-    if style == "i" then return C_ITALIC end
-    if style == "b" and base == C_TEXT then return C_BOLD end
+    if style == "c" then
+        return C_CODE
+    end
+    if style == "l" then
+        return C_LINK
+    end
+    if style == "i" then
+        return C_ITALIC
+    end
+    if style == "b" and base == C_TEXT then
+        return C_BOLD
+    end
     return base
 end
 
 func copy_segments(segments)
     let out = []
-    for s in segments do push(out, [s[0], s[1], s[2]]) end
+    for s in segments do
+        push(out, [s[0], s[1], s[2]])
+    end
     return out
 end
 
 func segments_width(segments)
     let w = 0
-    for s in segments do w = w + len(s[0]) end
+    for s in segments do
+        w = w + len(s[0])
+    end
     return w
 end
 
 # add to the line being built, joining onto the last segment if it looks the same
 func add_segment(piece, colour, link)
-    if link >= 0 and LINKS[link][1] < 0 then LINKS[link][1] = len(LINES) end
+    if link >= 0 and LINKS[link][1] < 0 then
+        LINKS[link][1] = len(LINES)
+    end
     if len(W_CUR) > 0 then
         let last = W_CUR[len(W_CUR) - 1]
         if last[1] == colour and last[2] == link then
@@ -836,8 +994,12 @@ func wrap(spans, first, rest, base)
         else
             let words = split(span[0], " ")
             for k = 0 to len(words) - 1 do
-                if k > 0 then W_SPACE = true end
-                if words[k] != "" then place(words[k], colour, link, base) end
+                if k > 0 then
+                    W_SPACE = true
+                end
+                if words[k] != "" then
+                    place(words[k], colour, link, base)
+                end
             end
         end
     end
@@ -846,7 +1008,9 @@ end
 
 # an empty line, but never two in a row and never at the top
 func blank()
-    if len(LINES) > 0 and len(LINES[len(LINES) - 1]) > 0 then push(LINES, []) end
+    if len(LINES) > 0 and len(LINES[len(LINES) - 1]) > 0 then
+        push(LINES, [])
+    end
 end
 
 func is_code_cell(spans)
@@ -856,28 +1020,40 @@ end
 # columns as wide as their widest cell, shrunk (widest first) if the table is wider than the page
 func table_layout(rows, header)
     let cols = 0
-    for row in rows do cols = max(cols, len(row)) end
-    if cols == 0 then return end
+    for row in rows do
+        cols = max(cols, len(row))
+    end
+    if cols == 0 then
+        return
+    end
     let widths = list(cols, 0)
     let cells = []
     for row in rows do
         let texts = []
         for c = 0 to cols - 1 do
             let t = ""
-            if c < len(row) then t = plain(row[c]) end
+            if c < len(row) then
+                t = plain(row[c])
+            end
             push(texts, t)
             widths[c] = max(widths[c], len(t))
         end
         push(cells, texts)
     end
     let total = 3 * (cols - 1)
-    for w in widths do total = total + w end
+    for w in widths do
+        total = total + w
+    end
     while total > WIDTH do
         let widest = 0
         for c = 1 to cols - 1 do
-            if widths[c] > widths[widest] then widest = c end
+            if widths[c] > widths[widest] then
+                widest = c
+            end
         end
-        if widths[widest] <= 3 then break end
+        if widths[widest] <= 3 then
+            break
+        end
         widths[widest] = widths[widest] - 1
         total = total - 1
     end
@@ -887,9 +1063,13 @@ func table_layout(rows, header)
         let head = header and r == 0
         let segments = []
         for c = 0 to cols - 1 do
-            if c > 0 then push(segments, [sep, C_DIM, -1]) end
+            if c > 0 then
+                push(segments, [sep, C_DIM, -1])
+            end
             let cell = cells[r][c]
-            if len(cell) > widths[c] then cell = sub(cell, 0, widths[c] - 1) + "~" end
+            if len(cell) > widths[c] then
+                cell = sub(cell, 0, widths[c] - 1) + "~"
+            end
             let colour = C_TEXT
             if head then
                 colour = C_BOLD
@@ -902,7 +1082,9 @@ func table_layout(rows, header)
         if head then
             let rule = ""
             for c = 0 to cols - 1 do
-                if c > 0 then rule = rule + RULE + CROSS + RULE end
+                if c > 0 then
+                    rule = rule + RULE + CROSS + RULE
+                end
                 rule = rule + repeat(RULE, widths[c])
             end
             push(LINES, [[rule, C_DIM, -1]])
@@ -918,7 +1100,9 @@ func layout(blocks)
         let block = blocks[b]
         let kind = block[0]
         let next_kind = ""
-        if b + 1 < len(blocks) then next_kind = blocks[b + 1][0] end
+        if b + 1 < len(blocks) then
+            next_kind = blocks[b + 1][0]
+        end
 
         if kind == "h" then
             blank()
@@ -930,7 +1114,9 @@ func layout(blocks)
             if level <= 2 then
                 # underline the two biggest headings, = for the title and - for sections
                 let w = 0
-                for r = before to len(LINES) - 1 do w = max(w, segments_width(LINES[r])) end
+                for r = before to len(LINES) - 1 do
+                    w = max(w, segments_width(LINES[r]))
+                end
                 push(LINES, [[repeat(level == 1 and DOUBLE_RULE or RULE, w), colour, -1]])
             end
             blank()
@@ -943,11 +1129,15 @@ func layout(blocks)
             let first = [[lead, C_TEXT, -1], [marker + " ", C_BULLET, -1]]
             let rest = [[lead + repeat(" ", len(marker) + 1), C_TEXT, -1]]
             wrap(block[1], first, rest, C_TEXT)
-            if next_kind != "li" then blank() end
+            if next_kind != "li" then
+                blank()
+            end
         elif kind == "quote" then
             let bar = [[BAR + " ", C_DIM, -1]]
             wrap(block[1], bar, bar, C_TEXT)
-            if next_kind != "quote" then blank() end
+            if next_kind != "quote" then
+                blank()
+            end
         elif kind == "code" then
             for row in block[3] do
                 push(LINES, [["  " + sub(row, 0, WIDTH - 2), C_CODE, -1]])
@@ -961,14 +1151,18 @@ func layout(blocks)
             blank()
         elif kind == "text" then
             let s = block[3]
-            if s == "" then push(LINES, []) end
+            if s == "" then
+                push(LINES, [])
+            end
             while len(s) > 0 do
                 push(LINES, [[sub(s, 0, WIDTH), C_TEXT, -1]])
                 s = sub(s, WIDTH)
             end
         end
     end
-    while len(LINES) > 0 and len(LINES[len(LINES) - 1]) == 0 do pop(LINES) end
+    while len(LINES) > 0 and len(LINES[len(LINES) - 1]) == 0 do
+        pop(LINES)
+    end
 end
 
 # ---- 3. view --------------------------------------------------------------------------------
@@ -983,7 +1177,9 @@ end
 
 func set_top(row)
     TOP = max(0, min(row, max_top()))
-    if SELECTED >= 0 and not on_screen(LINKS[SELECTED][1]) then SELECTED = -1 end
+    if SELECTED >= 0 and not on_screen(LINKS[SELECTED][1]) then
+        SELECTED = -1
+    end
 end
 
 func status(s)
@@ -1050,18 +1246,24 @@ func next_link(dir)
     elif dir > 0 then
         # the first link on screen or below it
         pick = 0
-        while pick < len(LINKS) and LINKS[pick][1] < TOP do pick = pick + 1 end
+        while pick < len(LINKS) and LINKS[pick][1] < TOP do
+            pick = pick + 1
+        end
     else
         # the last link on screen or above it
         pick = len(LINKS) - 1
-        while pick >= 0 and LINKS[pick][1] >= TOP + ROWS do pick = pick - 1 end
+        while pick >= 0 and LINKS[pick][1] >= TOP + ROWS do
+            pick = pick - 1
+        end
     end
     if pick < 0 or pick >= len(LINKS) then
         MESSAGE = "No more links that way"
         return
     end
     SELECTED = pick
-    if not on_screen(LINKS[pick][1]) then set_top(LINKS[pick][1] - ROWS / 2) end
+    if not on_screen(LINKS[pick][1]) then
+        set_top(LINKS[pick][1] - ROWS / 2)
+    end
 end
 
 # Enter: open the picked link. Other files are opened relative to this one's folder, and
@@ -1088,9 +1290,13 @@ func follow()
         return
     end
     let path = target
-    if not starts_with(target, "/") then path = dir_of(CURRENT) + target end
+    if not starts_with(target, "/") then
+        path = dir_of(CURRENT) + target
+    end
     if open_file(path, 0) then
-        if anchor != "" then jump_to(anchor) end
+        if anchor != "" then
+            jump_to(anchor)
+        end
     else
         pop(HISTORY)
     end
@@ -1138,7 +1344,9 @@ func draw()
             end
         end
         color(C_TEXT, BLACK)
-        if used < 80 then write(sub(SPACES, 0, 80 - used)) end
+        if used < 80 then
+            write(sub(SPACES, 0, 80 - used))
+        end
     end
 
     # the help bar (79 characters: writing in the very last cell would scroll the screen)
@@ -1187,7 +1395,9 @@ end
 # ---- start ----------------------------------------------------------------------------------
 
 let start_path = "/docs/index.md"
-if len(args) > 0 then start_path = args[0] end
+if len(args) > 0 then
+    start_path = args[0]
+end
 if open_file(start_path, 0) then
     view()
     color(BRIGHT, BLACK)

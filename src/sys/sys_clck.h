@@ -85,7 +85,7 @@ void rtc_read(rtc_time_t* t);
 
 // format the current date & time as "DD-MM-YY--HH:MM:SS"
 // out needs room for at least 19 bytes (18 characters + the terminator), a smaller buffer is
-// truncated safely. Returns out, so the call can be passed straight to printf
+// truncated safely. Returns out, so the call can be passed straight to prtf
 char* rtc_datetime(char* out, size_t size);
 
 #endif /* SYS_CLOCK_H */

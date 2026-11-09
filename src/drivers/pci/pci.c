@@ -38,30 +38,54 @@ static void pci_write (const pci_device_t* dev, uint8_t offset, uint32_t value) 
     outl(PCI_DATA, value);
 }
 
-bool pci_find_class (uint8_t class_code, uint8_t subclass, pci_device_t* out) {
+// visit every device on every bus, until fn returns true. Returns true if fn stopped it early
+bool pci_each (bool (*fn)(const pci_device_t* dev, void* ctx), void* ctx) {
     for (int bus = 0; bus < 256; bus++) {
         for (int slot = 0; slot < 32; slot++) {
             for (int function = 0; function < 8; function++) {
                 uint32_t id = pci_read(bus, slot, function, 0x00);
                 if ((id & 0xFFFF) == 0xFFFF) {
-                    if (function == 0) break; // no device in this slot at all
+                    if (function == 0) {
+                        break; // no device in this slot at all
+                    }
                     continue;
                 }
                 uint32_t class_word = pci_read(bus, slot, function, 0x08);
-                if ((class_word >> 24) == class_code && ((class_word >> 16) & 0xFF) == subclass) {
-                    out->bus = (uint8_t)bus;
-                    out->slot = (uint8_t)slot;
-                    out->function = (uint8_t)function;
-                    out->vendor = (uint16_t)id;
-                    out->device = (uint16_t)(id >> 16);
+                pci_device_t dev = {
+                    (uint8_t)bus, (uint8_t)slot, (uint8_t)function, (uint16_t)id, (uint16_t)(id >> 16),
+                    (uint8_t)(class_word >> 24), (uint8_t)(class_word >> 16)
+                };
+                if (fn(&dev, ctx)) {
                     return true;
                 }
                 // a single function device only answers as function 0
-                if (function == 0 && !(pci_read(bus, slot, 0, 0x0C) & 0x00800000)) break;
+                if (function == 0 && !(pci_read(bus, slot, 0, 0x0C) & 0x00800000)) {
+                    break;
+                }
             }
         }
     }
     return false;
+}
+
+// pci_find_class: stop at the first device whose class matches
+typedef struct {
+    uint8_t class_code, subclass;
+    pci_device_t* out;
+} find_class_t;
+
+static bool match_class (const pci_device_t* dev, void* ctx) {
+    find_class_t* want = ctx;
+    if (dev->class_code != want->class_code || dev->subclass != want->subclass) {
+        return false;
+    }
+    *want->out = *dev;
+    return true;
+}
+
+bool pci_find_class (uint8_t class_code, uint8_t subclass, pci_device_t* out) {
+    find_class_t want = { class_code, subclass, out };
+    return pci_each(match_class, &want);
 }
 
 uint16_t pci_io_bar (const pci_device_t* dev, int bar) {

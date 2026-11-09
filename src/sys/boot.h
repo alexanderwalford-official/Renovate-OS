@@ -16,6 +16,9 @@
 #include <stdbool.h>
 #include "../drivers/video/VGA_linear.h"
 
+// the version, shown by the terminal banner and the sysinfo app
+#define AEROS_VERSION "0.01 ALPHA"
+
 // boot options, chosen from the boot options menu (press X on the splash screen)
 #define BOOT_OPT_NORMAL 0 // look for a AEROS disk (VFS if there isn't one) and show the boot log for a moment
 #define BOOT_OPT_FAST   1 // skip the boot log delay

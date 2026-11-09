@@ -81,11 +81,11 @@ print(area(3, 4))               # 12
 `input_secret(prompt)` (shows `*`), `cls()`, `color(fg, bg)`, `at(x, y)`, `key()` (waits,
 gives the key's code), `haskey()`.
 
-Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGHT`,
-`DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`, `LIGHT_CYAN`, `LIGHT_RED`, `LIGHT_PURPLE`,
-`YELLOW`, `WHITE`. Keys: `KEY_UP`, `KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`,
-`KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`, `KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`,
-`KEY_ESCAPE`.
+Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `ORANGE` (the logo
+orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`,
+`LIGHT_CYAN`, `LIGHT_RED`, `LIGHT_PURPLE`, `YELLOW`, `WHITE`. Keys: `KEY_UP`,
+`KEY_DOWN`, `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`,
+`KEY_DELETE`, `KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`, `KEY_ESCAPE`.
 
 **Text:** `len(x)`, `str(x)`, `int("42")` (nil if not a number), `chr(65)`, `ord("A")`,
 `sub(s, start, count)`, `find(s, part)` (-1 if missing), `upper(s)`, `lower(s)`,
@@ -103,12 +103,41 @@ Colours: `BLACK`, `DARK_BLUE`, `GREEN`, `CYAN`, `RED`, `PURPLE`, `BROWN`, `BRIGH
 
 **System:** `sleep(ms)`, `time()` (ms since start), `random(n)` (0 to n - 1), `beep(hz)`,
 `play(path)`, `exit()`. `args` is the list of words typed after the program's name.
+`system_info()` gives everything AerOS knows about the computer as a list of
+`[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
+`queue("hello.aer")` adds a program (with its arguments) to the queue that `go` runs, and
+gives back how many are queued.
+
+**Animation:** `progress(x, y, width, done, total, colour)` draws a bar like
+`[#####.....]  50%`, `spinner(x, y, style, colour)` draws a spinner as it should look right
+now (styles 0 to 4: line, arrows, pulse, dots, bounce), and `frame(fps)` waits for the next
+frame, so a loop runs at a steady speed. The colour can be left out.
+
+**Big text:** `big_text(x, y, text, colour, background)` writes text in big letters like the
+splash screen's "aerOS": each letter is 8 columns wide and 7 rows tall, so 10 fit across the
+screen. It gives back how many columns wide it is, handy for centring:
+
+```
+let title = "Hello"
+big_text((80 - len(title) * 8) / 2, 2, title, ORANGE)
+```
+
+```
+let done = 0
+while done <= 100 do
+    progress(2, 10, 40, done, 100)
+    spinner(2, 12, 4)
+    done = done + 1
+    frame(20)                   # 20 frames a second
+end
+```
 
 **Graphics:** `gfx_open()` takes over the screen and `gfx_close()` gives it back.
 Colours are numbers like `0xFF7F00` or `rgb(255, 127, 0)`.
 `gfx_width()`, `gfx_height()`, `gfx_clear(c)`, `pixel(x, y, c)`, `rect(x, y, w, h, c)`,
 `line(x1, y1, x2, y2, c)`, `text(x, y, s, c, size)`, `image(bytes, x, y, w, h)` (a BMP
-picture), `image_size(bytes)`.
+picture), `image_size(bytes)`. `w` x `h` can be bigger than the screen and `x`, `y`
+negative: only the part on the screen is drawn, which is how the viewer zooms in.
 
 ```
 gfx_open()
@@ -125,3 +154,5 @@ key()
 | `/bin/guess.aer` | random numbers and a game loop |
 | `/bin/viewer.aer` | graphics, pictures and a menu |
 | `/bin/read.aer` | this reader: text handling, a whole app |
+| `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
+| `/bin/anim.aer` | spinners, progress bars and moving text |

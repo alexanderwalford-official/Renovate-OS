@@ -50,5 +50,9 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] File encryption. (ENCRYPT / DECRYPT, AES-256 with an HMAC tag)
 - [x] Audio. (AC'97 sound card, PLAY for WAV and MP3 files using minimp3, and a startup sound in /sys/startup.wav that you can replace)
 - [x] A manual inside the OS. (DOCS opens /docs/ in a Markdown / HTML / text reader written in AerLang)
+- [x] System information. (SYSINFO shows the processor, memory, screen, disks, sound card and every PCI device)
+- [x] Animations. (progress bars and spinners for long jobs like DEL, ENCRYPT and PLAY, and progress / spinner / frame in AerLang)
+- [x] A program queue. (QUEUE lines programs up on the process stack and GO runs them one after another)
+- [x] Scrollback. (Page Up / Page Down in the terminal look back through the last 400 lines of output)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

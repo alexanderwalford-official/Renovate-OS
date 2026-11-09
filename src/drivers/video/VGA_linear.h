@@ -19,7 +19,7 @@
 // The file offers two layers:
 // - positional drawing (putc / puts / clear) for full screen layouts that place text exactly
 // - a console that remembers a cursor, wraps, scrolls and mirrors everything to the serial port,
-//   which is what printf and the terminal use
+//   which is what prtf and the terminal use
 
 #ifndef VGA_LINEAR_H
 #define VGA_LINEAR_H
@@ -36,7 +36,9 @@ enum color {
     CYAN = 3,
     RED = 4,
     PURPLE = 5,    // magenta in most VGA documentation
-    BROWN = 6,     // really dark yellow, CGA monitors bent it to brown on purpose
+    ORANGE = 6,    // #FF7F00, the orange of the AerOS logo. Standard VGA has a brown here, which
+                   // vga_init() repaints to this orange
+    BROWN = 6,     // the old name for ORANGE, kept so programs that use it still work
     BRIGHT = 7,    // light grey, the classic default text colour
     DARK_GRAY = 8,
     LIGHT_BLUE = 9,
@@ -144,6 +146,21 @@ void puts(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* s);
 // also moves the console cursor home and bumps vga_clear_count
 void clear(enum color bg);
 
+// BIG TEXT, like the "aerOS" on the splash screen: every pixel of the normal 8x16 font becomes
+// half a character cell, so each letter is BIG_TEXT_COLS columns wide and BIG_TEXT_ROWS rows tall.
+// The top left corner of the first letter goes at COLUMN x, ROW y, and anything that would go
+// off the screen is left out (10 letters fill the 80 columns). Returns how many columns wide it
+// is, so it can be centred:
+//
+//     int width = (int)strlen(title) * BIG_TEXT_COLS;
+//     big_text((uint8_t)((COLS - width) / 2), 1, ORANGE, BLACK, title);
+//
+// It draws in place like putc, without moving the console cursor: after it, move the cursor
+// below it (console_set_cursor(0, y + BIG_TEXT_ROWS)) before printing more
+#define BIG_TEXT_COLS 8
+#define BIG_TEXT_ROWS 7
+int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text);
+
 // console: a scrolling terminal that keeps track of the cursor (and mirrors to the serial port)
 
 // change the colours used for everything the console writes from now on (existing text keeps its colour)
@@ -173,5 +190,21 @@ void console_write(const char* s);
 
 // erase the character before the cursor (used by the line editor)
 void console_backspace(void);
+
+// scrollback: every line that scrolls off the top of the console is kept (the last
+// CONSOLE_SCROLLBACK of them), and the view can be moved back through them, e.g.
+//
+//     console_view_scroll(24)    look 24 lines further back (Page Up in the line editor)
+//     console_view_scroll(-24)   24 lines forward again (Page Down)
+//     console_view_live()        straight back to the live screen
+//
+// While looking back the live screen is set aside, untouched. Anything drawn (a character, a
+// clear, putc...) first brings the live screen back, so output always lands where it should.
+#define CONSOLE_SCROLLBACK 400
+void console_view_scroll(int lines);
+void console_view_live(void);
+
+// forget every scrolled off line (on logout, so the next user can't read them)
+void console_forget_scrollback(void);
 
 #endif /* VGA_LINEAR_H */

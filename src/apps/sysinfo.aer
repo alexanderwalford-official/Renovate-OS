@@ -1,0 +1,204 @@
+# sysinfo.aer - everything AerOS knows about this computer, on one screen
+#
+#     sysinfo
+#
+# Keys: Up / Down and PgUp / PgDn (or Space) scroll, R reads everything again, Q or Esc quits.
+#
+# The kernel gathers the facts (sys/sysinfo.c) and system_info() hands them over as a list of
+# [group, name, value] rows, e.g. ["Processor", "Speed", "about 2400 MHz"]. This app only lays
+# them out: a heading for each group, the names in one column and the values in the next, and
+# a bar under any value that ends in a percentage, like "(37%)".
+
+let ROWS = 23           # screen rows between the title bar and the help bar
+let NAME_WIDTH = 18     # the names column
+let VALUE_WIDTH = 56    # the values column (80 minus the margin, indent and names)
+let BAR_WIDTH = 30
+
+let C_HEADING = YELLOW
+let C_NAME = LIGHT_CYAN
+let C_VALUE = BRIGHT
+let C_DIM = DARK_GRAY
+
+let SPACES = "                                                                                "
+let HELP = "Up/Down PgUp/PgDn scroll   R read it again   Q quit"
+
+let LINES = []          # the laid out screen lines, each a list of [text, colour] pieces
+let TOP = 0             # the line at the top of the screen
+let VERSION = ""
+
+func min(a, b)
+    if a < b then
+        return a
+    end
+    return b
+end
+
+func max(a, b)
+    if a > b then
+        return a
+    end
+    return b
+end
+
+func repeat(s, n)
+    let out = ""
+    for i = 1 to n do
+        out = out + s
+    end
+    return out
+end
+
+func pad(s, n)
+    if len(s) >= n then
+        return s
+    end
+    return s + sub(SPACES, 0, n - len(s))
+end
+
+func ends_with(s, part)
+    return len(s) >= len(part) and sub(s, len(s) - len(part)) == part
+end
+
+# "1 MB used of 250 MB (37%)" -> 37, -1 if the value doesn't end in a percentage
+func percent_of(value)
+    if not ends_with(value, "%)") then
+        return -1
+    end
+    let i = len(value) - 1
+    while i >= 0 and value[i] != "(" do
+        i = i - 1
+    end
+    if i < 0 then
+        return -1
+    end
+    let n = int(sub(value, i + 1, len(value) - i - 3))
+    if n == nil then
+        return -1
+    end
+    return max(0, min(n, 100))
+end
+
+# split a value into lines no wider than the values column, between words
+func wrap_value(value)
+    let out = []
+    let current = ""
+    for word in split(value, " ") do
+        if current == "" then
+            current = word
+        elif len(current) + 1 + len(word) <= VALUE_WIDTH then
+            current = current + " " + word
+        else
+            push(out, current)
+            current = word
+        end
+    end
+    push(out, current)
+    return out
+end
+
+# a bar like  [##########..........] 50%  in green, yellow or red depending on how full it is
+func bar_line(percent)
+    let filled = percent * BAR_WIDTH / 100
+    let colour = LIGHT_GREEN
+    if percent >= 90 then
+        colour = LIGHT_RED
+    elif percent >= 70 then
+        colour = YELLOW
+    end
+    let lead = repeat(" ", 3 + NAME_WIDTH + 2)
+    return [[lead, C_VALUE], [repeat(chr(219), filled), colour], [repeat(chr(176), BAR_WIDTH - filled), C_DIM]]
+end
+
+# ask the kernel and lay everything out into LINES
+func gather()
+    at(0, ROWS + 1)
+    color(YELLOW, BLACK)
+    write(pad("Reading the hardware...", 79))
+    LINES = []
+    let group = ""
+    for row in system_info() do
+        if row[0] != group then
+            group = row[0]
+            if len(LINES) > 0 then
+                push(LINES, [])
+            end
+            push(LINES, [[group, C_HEADING]])
+            push(LINES, [[repeat(chr(196), len(group)), C_HEADING]])
+        end
+        if group == "AerOS" and row[1] == "Version" then
+            VERSION = row[2]
+        end
+        let pieces = wrap_value(row[2])
+        for k = 0 to len(pieces) - 1 do
+            let name = ""
+            if k == 0 then
+                name = row[1]
+            end
+            push(LINES, [["   " + pad(name, NAME_WIDTH) + "  ", C_NAME], [pieces[k], C_VALUE]])
+        end
+        let percent = percent_of(row[2])
+        if percent >= 0 then
+            push(LINES, bar_line(percent))
+        end
+    end
+    TOP = max(0, min(TOP, len(LINES) - ROWS))
+end
+
+func draw()
+    at(0, 0)
+    color(BLACK, BRIGHT)
+    let right = "AerOS " + VERSION + " "
+    write(pad(" System information", 80 - len(right)) + right)
+    for r = 0 to ROWS - 1 do
+        at(0, r + 1)
+        color(C_VALUE, BLACK)
+        write(" ")
+        let used = 1
+        if TOP + r < len(LINES) then
+            for piece in LINES[TOP + r] do
+                color(piece[1], BLACK)
+                let s = sub(piece[0], 0, 80 - used)
+                write(s)
+                used = used + len(s)
+            end
+        end
+        color(C_VALUE, BLACK)
+        if used < 80 then
+            write(sub(SPACES, 0, 80 - used))
+        end
+    end
+    # the help bar is 79 characters, writing the very last cell would scroll the screen
+    at(0, ROWS + 1)
+    color(C_DIM, BLACK)
+    write(pad(HELP, 79))
+end
+
+func scroll(n)
+    TOP = max(0, min(TOP + n, len(LINES) - ROWS))
+end
+
+cls()
+gather()
+while true do
+    draw()
+    let k = key()
+    if k == KEY_DOWN then
+        scroll(1)
+    elif k == KEY_UP then
+        scroll(-1)
+    elif k == KEY_PGDN or k == 32 then
+        scroll(ROWS - 1)
+    elif k == KEY_PGUP then
+        scroll(-(ROWS - 1))
+    elif k == KEY_HOME then
+        TOP = 0
+    elif k == KEY_END then
+        scroll(len(LINES))
+    elif k == ord("r") or k == ord("R") then
+        gather()
+    elif k == ord("q") or k == ord("Q") or k == KEY_ESCAPE or k == 0 then
+        break
+    end
+end
+color(BRIGHT, BLACK)
+cls()

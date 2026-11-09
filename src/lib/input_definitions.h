@@ -75,7 +75,7 @@
 #endif
  
 // IO type definitions
-int     _EXFUN(printf, (const char *, ...));
+int     _EXFUN(prtf, (const char *, ...));
 int     _EXFUN(scanf, (const char *, ...));
 int     _EXFUN(sscanf, (const char *, const char *, ...));
 int     _EXFUN(fgetc, (file *));

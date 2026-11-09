@@ -98,7 +98,7 @@ one side is a string: `"Score: " + 10`.
 `write(...)` the same without the new line ·
 `input(prompt)` read a line · `input_secret(prompt)` the same, showing `*` (for passwords) ·
 `cls()` clear the screen ·
-`color(fg, bg)` text colours (`BLACK` ... `WHITE`) ·
+`color(fg, bg)` text colours (`BLACK` ... `WHITE`, and `ORANGE`, the logo orange) ·
 `at(x, y)` move the cursor ·
 `key()` wait for a key and return its code: a character code, or one of `KEY_UP`, `KEY_DOWN`,
 `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`,
@@ -125,9 +125,37 @@ one side is a string: `"Score: " + 10`.
 
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
-`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()`
+`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()` ·
+`queue(line)` add a program to the queue the `GO` command runs, e.g. `queue("hello.aer a b")`
+or `queue("s:some text")`; returns how many are queued (-1 if the process stack is full) ·
+`system_info()` everything AerOS knows about the computer, as a list of `[group, name, value]`
+rows, e.g. `["Processor", "Speed", "about 2400 MHz"]` (`/bin/sysinfo.aer` shows them)
 
 `args` is the list of words typed after the program's name.
+
+**Animation** (the same bars and spinners AerOS itself uses, see `src/sys/ui.h`)
+`progress(x, y, width, done, total, colour)` a bar like `[#####.....]  50%` (the bar is
+`width` cells, plus 8 for the brackets and the percentage) ·
+`spinner(x, y, style, colour)` the spinner's frame for this moment, style 0 to 4 (line, arrows,
+pulse, dots, bounce); returns how many cells it took ·
+`frame(fps)` wait until it's time for the next frame, so a loop runs at a steady speed however
+long the drawing took. The colours can be left out.
+
+`big_text(x, y, text, colour, background)` text in big letters, like the splash screen's
+"aerOS": each letter is 8 columns wide and 7 rows tall (10 fit across the screen), drawn with
+half block characters, so it works on any screen. The colour (WHITE) and background (BLACK)
+can be left out; returns how many columns wide it is, e.g. to centre it:
+`big_text((80 - len(title) * 8) / 2, 2, title, ORANGE)`
+
+```
+while not haskey() do
+    progress(2, 10, 40, time() / 50 % 101, 100)
+    spinner(2, 12, 4, LIGHT_CYAN)
+    frame(20)
+end
+```
+
+`/bin/anim.aer` shows them all.
 
 **Graphics**
 Call `gfx_open()` to take over the screen (it returns false if there is no graphics screen) and
@@ -137,7 +165,8 @@ Colours are numbers like `0xFF7F00`, or `rgb(255, 127, 0)`. Drawing off the edge
 `gfx_width()` · `gfx_height()` · `gfx_clear(colour)` · `pixel(x, y, colour)` ·
 `rect(x, y, w, h, colour)` filled · `line(x1, y1, x2, y2, colour)` ·
 `text(x, y, text, colour, size)` (size 1 is 8 x 16 pixels per character) ·
-`image(bytes, x, y, w, h)` draw a BMP picture (8, 24 or 32 bit), scaled to fit `w` x `h` if given ·
+`image(bytes, x, y, w, h)` draw a BMP picture (8, 24 or 32 bit), scaled to fit `w` x `h` if given
+(up to 16384 x 16384, so it can be far bigger than the screen; only the part on screen is drawn) ·
 `image_size(bytes)` its `[width, height]`, or nil if it isn't a BMP
 
 ```
@@ -148,6 +177,7 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
-`/bin/viewer.aer` is a complete app built from these: a picture picker and viewer.
+`/bin/viewer.aer` is a complete app built from these: a picture picker and viewer that zooms
+(`+` / `-`, `0` to fit) by drawing the picture bigger than the screen and moving it around.
 `/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOCS` command, with its
 own parsers, word wrapping and link navigation, all in AerLang.

@@ -20,6 +20,7 @@
 
 #include "crypto.h"
 #include "aer_string.h"
+#include "busy.h"
 
 // ---- small helpers ----------------------------------------------------------------------------
 
@@ -116,7 +117,9 @@ void sha256_update (sha256_t* s, const void* data, size_t length) {
     s->length += length;
     while (length > 0) {
         uint32_t take = 64 - s->used;
-        if (take > length) take = (uint32_t)length;
+        if (take > length) {
+            take = (uint32_t)length;
+        }
         memcpy(s->block + s->used, p, take);
         s->used += take;
         p += take;
@@ -245,6 +248,9 @@ void pbkdf2_sha256 (const void* password, size_t password_length, const void* sa
         hmac_run(&h, salt, salt_length, number, sizeof(number), u); // U1
         memcpy(t, u, sizeof(t));
         for (uint32_t i = 1; i < iterations; i++) {
+            if ((i & 1023) == 0) {
+                busy(); // this is the slow part: let a spinner turn
+            }
             hmac_run(&h, u, sizeof(u), 0, 0, u); // U(i+1) from Ui
             for (int k = 0; k < SHA256_SIZE; k++) t[k] ^= u[k];
         }
@@ -306,7 +312,9 @@ static void aes_build_sbox (void) {
         q ^= (uint8_t)(q << 1);
         q ^= (uint8_t)(q << 2);
         q ^= (uint8_t)(q << 4);
-        if (q & 0x80) q ^= 0x09;
+        if (q & 0x80) {
+            q ^= 0x09;
+        }
         sbox[p] = (uint8_t)(q ^ rotl8(q, 1) ^ rotl8(q, 2) ^ rotl8(q, 3) ^ rotl8(q, 4) ^ 0x63);
     } while (p != 1);
     sbox[0] = 0x63; // 0 has no inverse, the standard defines its entry as 0x63
@@ -325,7 +333,9 @@ static uint32_t sub_word (uint32_t w) {
 //     every 8th word: rotate one byte left, SubBytes, xor the round constant (1, 2, 4, 8...)
 //     the 4th word in between: SubBytes only
 void aes256_init (aes256_t* aes, const uint8_t key[32]) {
-    if (!sbox_ready) aes_build_sbox();
+    if (!sbox_ready) {
+        aes_build_sbox();
+    }
     uint32_t* w = aes->round_keys;
     for (int i = 0; i < 8; i++) {
         w[i] = load_be32(key + i * 4);
@@ -466,11 +476,15 @@ static bool hardware_random (uint32_t* value) {
         cpuid(1, &a, &b, &c, &d);
         available = (c >> 30) & 1;
     }
-    if (!available) return false;
+    if (!available) {
+        return false;
+    }
     for (int tries = 0; tries < 10; tries++) {
         uint8_t ok;
         __asm__ volatile ("rdrand %0; setc %1" : "=r"(*value), "=qm"(ok));
-        if (ok) return true;
+        if (ok) {
+            return true;
+        }
     }
     return false;
 }
@@ -488,7 +502,9 @@ void crypto_random (void* buffer, size_t length) {
         sha256_update(&s, &pool_counter, sizeof(pool_counter));
         sha256_update(&s, &tsc, sizeof(tsc));
         sha256_update(&s, &stir, sizeof(stir));
-        if (hardware_random(&hw)) sha256_update(&s, &hw, sizeof(hw));
+        if (hardware_random(&hw)) {
+            sha256_update(&s, &hw, sizeof(hw));
+        }
         sha256_final(&s, digest);
         pool_counter++;
 
@@ -519,7 +535,9 @@ void crypto_wipe (void* buffer, size_t length) {
     // volatile, so the compiler can't decide the writes are pointless (the buffer is about to
     // go out of scope) and leave them out
     volatile uint8_t* p = buffer;
-    while (length--) *p++ = 0;
+    while (length--) {
+        *p++ = 0;
+    }
 }
 
 void crypto_to_hex (const uint8_t* bytes, size_t length, char* out) {
@@ -532,9 +550,15 @@ void crypto_to_hex (const uint8_t* bytes, size_t length, char* out) {
 }
 
 static int hex_digit (char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
     return -1;
 }
 
@@ -542,7 +566,9 @@ bool crypto_from_hex (const char* hex, uint8_t* out, size_t length) {
     for (size_t i = 0; i < length; i++) {
         int hi = hex_digit(hex[i * 2]);
         int lo = hi < 0 ? -1 : hex_digit(hex[i * 2 + 1]); // stops at a '\0' instead of reading past it
-        if (lo < 0) return false;
+        if (lo < 0) {
+            return false;
+        }
         out[i] = (uint8_t)(hi * 16 + lo);
     }
     return true;

@@ -96,8 +96,12 @@ static void boot_add_memory (const multiboot_info_t* info) {
         // only the part above the kernel and below 4GB (no paging, so nothing higher can be reached)
         uint64_t start = e->base;
         uint64_t stop = e->base + e->length;
-        if (start < (uintptr_t)end) start = (uintptr_t)end;
-        if (stop > 0x100000000ULL) stop = 0x100000000ULL;
+        if (start < (uintptr_t)end) {
+            start = (uintptr_t)end;
+        }
+        if (stop > 0x100000000ULL) {
+            stop = 0x100000000ULL;
+        }
         if (stop > start && stop - start > best_end - best_start) {
             best_start = start;
             best_end = stop;
@@ -172,41 +176,41 @@ int init_boot (void) {
     console_set_color(BLACK, BRIGHT);
     console_clear();
 
-    printf("[E:b1f1] AerOS boot sequence started\n\n");
+    prtf("[E:b1f1] AerOS boot sequence started\n\n");
 
     // each driver sets its *_ready flag at the end of its init function in kernel.c, so a [FAIL]
     // here means that step never ran (handy if someone reorders or removes a line in main())
     if (vga_framebuffer_active()) {
-        printf("[ OK ] Screen: %ux%u framebuffer, %u bits per pixel\n", boot_framebuffer.width,
+        prtf("[ OK ] Screen: %ux%u framebuffer, %u bits per pixel\n", boot_framebuffer.width,
                boot_framebuffer.height, (unsigned int)boot_framebuffer.bpp);
     } else {
-        printf("[ OK ] Screen: VGA text mode\n");
+        prtf("[ OK ] Screen: VGA text mode\n");
     }
-    printf("%s Descriptor tables & interrupts (GDT / IDT / PIC)\n", interrupts_ready ? "[ OK ]" : "[FAIL]");
+    prtf("%s Descriptor tables & interrupts (GDT / IDT / PIC)\n", interrupts_ready ? "[ OK ]" : "[FAIL]");
     if (clck_ready) {
-        printf("[ OK ] System timer at %u Hz\n", (unsigned int)PIT_HZ);
+        prtf("[ OK ] System timer at %u Hz\n", (unsigned int)PIT_HZ);
     } else {
-        printf("[WARN] System timer is not ticking, using busy waits instead\n");
+        prtf("[WARN] System timer is not ticking, using busy waits instead\n");
     }
-    printf("%s PS/2 keyboard\n", keyboard_ready ? "[ OK ]" : "[FAIL]");
+    prtf("%s PS/2 keyboard\n", keyboard_ready ? "[ OK ]" : "[FAIL]");
     // only a warning, nothing needs the memory size yet (the heap is a fixed size array)
     if (boot_multiboot_valid) {
-        printf("[ OK ] Memory: %u KB lower, %u KB upper\n", sys_mem_lower_kb, sys_mem_upper_kb);
+        prtf("[ OK ] Memory: %u KB lower, %u KB upper\n", sys_mem_lower_kb, sys_mem_upper_kb);
     } else {
-        printf("[WARN] No memory information from the bootloader\n");
+        prtf("[WARN] No memory information from the bootloader\n");
     }
-    printf("[ OK ] Kernel heap: %u KB\n", (unsigned int)(heap_total() / 1024));
+    prtf("[ OK ] Kernel heap: %u KB\n", (unsigned int)(heap_total() / 1024));
 
-    // rtc_datetime() fills in now and returns it, so it can go straight into printf
+    // rtc_datetime() fills in now and returns it, so it can go straight into prtf
     char now[FS_DATETIME_MAX];
-    printf("[ OK ] Real time clock: %s\n", rtc_datetime(now, sizeof(now)));
+    prtf("[ OK ] Real time clock: %s\n", rtc_datetime(now, sizeof(now)));
     // check SHA-256, HMAC, PBKDF2 and AES against published test vectors before trusting them with passwords
-    printf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
+    prtf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
     // a missing sound card isn't a problem, only PLAY needs one
     if (ac97_init()) {
-        printf("[ OK ] Sound: %s\n\n", ac97_name());
+        prtf("[ OK ] Sound: %s\n\n", ac97_name());
     } else {
-        printf("[WARN] No sound card found (AerOS supports AC'97), PLAY won't work\n\n");
+        prtf("[WARN] No sound card found (AerOS supports AC'97), PLAY won't work\n\n");
     }
 
     // initialise the file system (the disk, or the temporary one if there is no disk)
@@ -217,14 +221,14 @@ int init_boot (void) {
     // the apps that come with AerOS, copied into /bin/ unless they are already there
     int installed = apps_install();
     if (installed > 0) {
-        printf("< APPS .. > %d built-in file(s) added or updated\n", installed);
+        prtf("< APPS .. > %d built-in file(s) added or updated\n", installed);
     }
 
     // beep once
     //beep(0);
 
     // the file system is up (on disk or in memory), the terminal can use it from here on
-    printf("\n[VFS:UP]\n");
+    prtf("\n[VFS:UP]\n");
 
     // give the user time to read the log, unless fast boot was chosen
     if (boot_option != BOOT_OPT_FAST) {

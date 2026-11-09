@@ -90,11 +90,17 @@ static pci_device_t card;          // where the card is on the PCI bus, for ac97
 static descriptor_t list[DESCRIPTORS] __attribute__((aligned(8)));
 
 bool ac97_init (void) {
-    if (ac97_ready) return true; // already set up (resetting now would cut off a sound that's playing)
-    if (!pci_find_class(PCI_CLASS_MULTIMEDIA, PCI_SUBCLASS_AUDIO, &card)) return false;
+    if (ac97_ready) {
+        return true; // already set up (resetting now would cut off a sound that's playing)
+    }
+    if (!pci_find_class(PCI_CLASS_MULTIMEDIA, PCI_SUBCLASS_AUDIO, &card)) {
+        return false;
+    }
     nam = pci_io_bar(&card, 0);
     nabm = pci_io_bar(&card, 1);
-    if (nam == 0 || nabm == 0) return false;
+    if (nam == 0 || nabm == 0) {
+        return false;
+    }
     pci_enable_io_and_dma(&card);
 
     // take the codec out of reset and wait (up to 100ms) for it to say it's ready
@@ -126,8 +132,12 @@ const char* ac97_name (void) {
 
 uint32_t ac97_set_rate (uint32_t hz) {
     // codecs handle 8000 to 48000 Hz, anything else has to be converted to 48000 by the caller
-    if (hz < 8000 || hz > 48000) hz = 48000;
-    if (!variable_rate) return 48000;
+    if (hz < 8000 || hz > 48000) {
+        hz = 48000;
+    }
+    if (!variable_rate) {
+        return 48000;
+    }
     // always written, even for 48000, so the rate a previous sound used doesn't stick
     outw(nam + NAM_FRONT_RATE, (uint16_t)hz);
     return inw(nam + NAM_FRONT_RATE); // the codec may round it to a rate it can do
@@ -153,7 +163,9 @@ static void fill (int slot, const int16_t* frames, uint32_t count, uint32_t chun
 // start playing and return straight away, the card carries on by itself
 // every descriptor gets as much as it can hold, so the whole list covers AC97_START_MAX frames
 uint32_t ac97_start (const int16_t* frames, uint32_t count) {
-    if (!ac97_ready || count == 0) return 0;
+    if (!ac97_ready || count == 0) {
+        return 0;
+    }
     reset_channel();
     uint32_t queued = 0, slots = 0;
     while (queued < count && slots < DESCRIPTORS) {
@@ -172,12 +184,16 @@ uint32_t ac97_start (const int16_t* frames, uint32_t count) {
 }
 
 void ac97_stop (void) {
-    if (ac97_ready) reset_channel();
+    if (ac97_ready) {
+        reset_channel();
+    }
 }
 
 // play the whole sound, refilling the ring as the card moves along it (see the top of the file)
 bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)) {
-    if (!ac97_ready || count == 0) return ac97_ready;
+    if (!ac97_ready || count == 0) {
+        return ac97_ready;
+    }
     uint32_t chunks = (count + CHUNK_FRAMES - 1) / CHUNK_FRAMES;
 
     // queue up the first pieces (all of them if the sound is short)
@@ -207,7 +223,9 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
             done = (uint8_t)((done + 1) % DESCRIPTORS);
             last_progress = clck_uptime_ms();
         }
-        if (should_stop && should_stop()) break;
+        if (should_stop && should_stop()) {
+            break;
+        }
         if (clck_uptime_ms() - last_progress > STALL_MS) {
             ok = false;
             break;

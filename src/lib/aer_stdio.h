@@ -2,7 +2,7 @@
     aer_stdio.h
     Formatted output (freestanding replacement for the output half of <stdio.h>).
 
-    printf / putchar write to the console (scrolling terminal at the cursor position).
+    prtf / putchar write to the console (scrolling terminal at the cursor position).
     sprintf / snprintf / vsnprintf write into a buffer.
 
     Supported: %d %i %u %x %X %o %b %c %s %p %%
@@ -53,10 +53,13 @@
 
 // let gcc check the format strings of every call (-Wformat)
 // format(printf, 1, 2) reads as "argument 1 is a printf style format string, and the values it
-// describes start at argument 2". GCC then warns at compile time about things like printf("%s", 42).
+// describes start at argument 2". GCC then warns at compile time about things like prtf("%s", 42).
 
-// print to the console, returns the number of characters printed
-int printf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
+// print to the console, returns the number of characters printed.
+// prtf is AerOS's name for the standard C printf: it works exactly the same way. (The
+// format(printf, ...) after it must keep saying printf: that is the name GCC knows the
+// format checking by, not the name of this function)
+int prtf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 // print into buf, returns the length written (excluding the '\0')
 // gotcha: there's no size limit, so buf must be big enough. Prefer snprintf.
 int sprintf(char* buf, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
@@ -65,10 +68,10 @@ int sprintf(char* buf, const char* fmt, ...) __attribute__((format(printf, 2, 3)
 int snprintf(char* buf, size_t size, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
 
 // the "v" versions take a va_list instead of "...", so you can write your own printf style functions:
-//     void debug_print(const char* fmt, ...) { va_list ap; va_start(ap, fmt); vprintf(fmt, ap); va_end(ap); }
+//     void debug_print(const char* fmt, ...) { va_list ap; va_start(ap, fmt); vprtf(fmt, ap); va_end(ap); }
 
-// printf with a va_list
-int vprintf(const char* fmt, va_list ap);
+// prtf with a va_list
+int vprtf(const char* fmt, va_list ap);
 // sprintf with a va_list (same "no size limit" gotcha)
 int vsprintf(char* buf, const char* fmt, va_list ap);
 // returns the length the full string would have had (like the standard), output is always terminated

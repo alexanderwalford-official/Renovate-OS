@@ -7,13 +7,16 @@
 | `/acc/` | the accounts file, `users` |
 | `/bin/` | the apps: `hello.aer`, `read.aer`, pictures... |
 | `/docs/` | this manual |
-| `/sys/` | system files, like `startup.wav` |
+| `/home/<name>/` | each user's own folder, where the prompt starts |
+| `/sys/` | system files, like `startup.wav` and `apps.lst` |
 | `/sys/cache/`, `/sys/tmp/` | room for the system to work in |
 | `/conf.aer` | settings (not used much yet) |
 
 The apps and this manual are built into AerOS and copied onto the disk when it starts, so
-they are there even with no disk at all. If you change an app in `/bin/` your version is
-kept. The manual is always refreshed.
+they are there even with no disk at all. A newer AerOS updates its apps for you, but if you
+change an app in `/bin/` your version is kept: `/sys/apps.lst` remembers which version
+AerOS installed, so it can tell yours apart. To get the built-in copy back, delete your
+version and restart. The manual is always refreshed.
 
 ## Paths
 

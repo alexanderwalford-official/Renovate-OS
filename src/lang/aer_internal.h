@@ -75,22 +75,62 @@ typedef enum {
     N_BREAK, N_CONTINUE
 } node_type_t;
 
-// one node of the syntax tree, the meaning of a / b / c / d depends on the type:
-//   N_INDEX a[b]   N_CALL a(items)   N_UNARY op a   N_BINARY / N_AND / N_OR  a op b
-//   N_LET name = b   N_ASSIGN a = b   N_EXPR a   N_IF if a then b else c (c is an N_IF for elif)
-//   N_WHILE while a do b   N_FOR name = a to c step d do b   N_FOR_IN name in a do b
-//   N_FUNC name(params) b   N_RETURN a
+// One node of the syntax tree: a piece of the program, like "x + 1" or a whole while loop.
+//
+// A node has up to four child nodes. Which ones it uses, and what they mean, depends on its
+// type, so each child slot goes by several names: one for each kind of node that uses it.
+// They are "anonymous unions": all the names inside one union are the SAME slot, just called
+// something that makes sense where it is used. A while loop reads n->condition and n->body;
+// "a + b" reads n->left and n->right. (A node only ever uses one name per slot.)
+//
+//     N_BINARY, N_AND, N_OR   left op right                 "a + b", "a and b"
+//     N_UNARY                 op operand                    "-x", "not done"
+//     N_INDEX                 container[index]              "list[2]"
+//     N_CALL                  callee(items)                 "print(x)"
+//     N_LET                   let name = new_value
+//     N_ASSIGN                target = new_value            target is an N_NAME or an N_INDEX
+//     N_EXPR                  expression                    a call on its own, like print(x)
+//     N_RETURN                return expression             (expression may be NULL)
+//     N_IF                    if condition then then_block else else_block
+//                             (for "elif", else_block is another N_IF)
+//     N_WHILE                 while condition do body
+//     N_FOR                   for name = from to to step step do body   (step may be NULL)
+//     N_FOR_IN                for name in collection do body
+//     N_FUNC                  func name(params) body
 typedef struct aer_node {
     node_type_t type;
     int line;
-    token_type_t op;
-    int32_t number;
-    const char* name;
+    token_type_t op;          // N_BINARY / N_UNARY: which operator (T_PLUS, T_MINUS...)
+    int32_t number;           // N_NUMBER: its value
+    const char* name;         // N_NAME, N_LET, N_FOR, N_FOR_IN, N_FUNC: the variable or function
     value_t value;            // N_STRING: the string, made once when the program is parsed
-    struct aer_node* a;
-    struct aer_node* b;
-    struct aer_node* c;
-    struct aer_node* d;
+
+    union {                   // the first child
+        struct aer_node* left;
+        struct aer_node* operand;
+        struct aer_node* container;
+        struct aer_node* callee;
+        struct aer_node* target;
+        struct aer_node* expression;
+        struct aer_node* condition;
+        struct aer_node* from;
+        struct aer_node* collection;
+    };
+    union {                   // the second child
+        struct aer_node* right;
+        struct aer_node* index;
+        struct aer_node* new_value;
+        struct aer_node* then_block;
+        struct aer_node* body;
+    };
+    union {                   // the third child
+        struct aer_node* else_block;
+        struct aer_node* to;
+    };
+    union {                   // the fourth child
+        struct aer_node* step;
+    };
+
     struct aer_node** items;  // N_BLOCK statements, N_LIST elements, N_CALL arguments
     const char** params;      // N_FUNC parameter names
     int count;                // how many items / params
@@ -129,6 +169,9 @@ const char* aer_intern (const char* text, size_t length);
 
 // errors: print "error in <file> on line <n>: ..." and abandon the program
 __attribute__((noreturn, format(printf, 2, 3))) void aer_error (int line, const char* format, ...);
+
+// Ctrl+C was pressed: say so, remember it (aer_take_stopped) and abandon the program
+__attribute__((noreturn)) void aer_stop (int line);
 
 // lexer and parser
 token_t* aer_lex (const char* source, int* count);

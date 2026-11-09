@@ -67,6 +67,22 @@ static unsigned int cursor_index = 0; // the cell the cursor is in
 // every cell on screen, the framebuffer is drawn from this
 static uint16_t cells[COLS * ROWS];
 
+// scrollback: the lines that scrolled off the top, in a ring of CONSOLE_SCROLLBACK lines.
+// scrollback_next is the slot the next line goes into, and once the ring is full each new line
+// replaces the oldest (count stays at CONSOLE_SCROLLBACK). About 64KB.
+static uint16_t scrollback[CONSOLE_SCROLLBACK][COLS];
+static unsigned int scrollback_count = 0;
+static unsigned int scrollback_next = 0;
+
+// looking back: view_back lines back from the live screen (0 = showing the live screen).
+// The live screen waits in live[] meanwhile, along with whether the cursor was showing
+static unsigned int view_back = 0;
+static uint16_t live[COLS * ROWS];
+static bool live_cursor = false;
+
+// anything about to draw calls this first, so it never draws over the scrollback view
+#define LIVE_SCREEN() do { if (view_back) console_view_live(); } while (0)
+
 // the framebuffer, when there is one
 static bool fb_mode = false;
 static struct {
@@ -82,10 +98,12 @@ static struct {
 static int border_color = BLACK; // the colour of the margin around the grid
 static vga_framebuffer_t fb_info; // what GRUB told us, handed on to the graphics module
 
-// the 16 colours as red, green, blue: the standard VGA colours until the palette is changed
+// the 16 colours as red, green, blue: the standard VGA colours, except that colour 6 (brown)
+// is the logo's orange, ORANGE. The palette can still be changed later with vga_set_palette()
+#define ORANGE_RGB 0xFF, 0x7F, 0x00
 static uint8_t palette[16][3] = {
     { 0x00, 0x00, 0x00 }, { 0x00, 0x00, 0xAA }, { 0x00, 0xAA, 0x00 }, { 0x00, 0xAA, 0xAA },
-    { 0xAA, 0x00, 0x00 }, { 0xAA, 0x00, 0xAA }, { 0xAA, 0x55, 0x00 }, { 0xAA, 0xAA, 0xAA },
+    { 0xAA, 0x00, 0x00 }, { 0xAA, 0x00, 0xAA }, { ORANGE_RGB },       { 0xAA, 0xAA, 0xAA },
     { 0x55, 0x55, 0x55 }, { 0x55, 0x55, 0xFF }, { 0x55, 0xFF, 0x55 }, { 0x55, 0xFF, 0xFF },
     { 0xFF, 0x55, 0x55 }, { 0xFF, 0x55, 0xFF }, { 0xFF, 0xFF, 0x55 }, { 0xFF, 0xFF, 0xFF },
 };
@@ -344,6 +362,7 @@ void putc(uint8_t x, uint8_t y, enum color fg, enum color bg, char c) {
     if (x >= COLS || y >= ROWS) {
         return;
     }
+    LIVE_SCREEN();
     cell_set(y * COLS + x, VGA_ENTRY(c, fg, bg));
 }
 
@@ -353,6 +372,7 @@ void putc(uint8_t x, uint8_t y, enum color fg, enum color bg, char c) {
 void puts(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* s) {
     unsigned int cx = x;
     unsigned int cy = y;
+    LIVE_SCREEN();
     for (; *s; s++) {
         // '\n' = start a new row lined up under the first character, handy for drawing boxes and menus
         if (*s == '\n') {
@@ -374,9 +394,70 @@ void puts(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* s) {
     }
 }
 
+// ---- big text -----------------------------------------------------------------------------------
+//
+// Each pixel of a letter in the 8x16 font becomes half a character cell. One cell holds two
+// pixels, one above the other, using the "upper half block" character (0xDF, ▀) and the
+// "lower half block" (0xDC, ▄):
+//
+//     top pixel  bottom pixel   the cell
+//     on         on             a space with the background set to the text colour (solid)
+//     on         off            ▀ in the text colour
+//     off        on             ▄ in the text colour
+//     off        off            a space (just the background)
+//
+// So a letter is 8 cells wide (one per pixel across) and 8 cells tall (16 pixel rows, two per
+// cell). The top and bottom rows of the font are blank for every printable character, so they
+// are left out: font rows 1 to 14 make the BIG_TEXT_ROWS = 7 rows of cells.
+// This is the same trick the splash screen uses to draw its logo in text mode.
+
+#define BIG_TEXT_FIRST_FONT_ROW 1
+
+// one cell of big text, from the two pixels it shows
+static void big_text_cell(uint8_t x, uint8_t y, enum color fg, enum color bg, bool top, bool bottom) {
+    if (top && bottom) {
+        putc(x, y, fg, fg, ' ');
+    } else if (top) {
+        putc(x, y, fg, bg, (char)0xDF);
+    } else if (bottom) {
+        putc(x, y, fg, bg, (char)0xDC);
+    } else {
+        putc(x, y, fg, bg, ' ');
+    }
+}
+
+int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text) {
+    int width = 0;
+
+    for (const char* c = text; *c != '\0'; c++) {
+        const uint8_t* glyph = font8x16[(uint8_t)*c];
+        int letter_x = x + width;
+
+        for (int row = 0; row < BIG_TEXT_ROWS; row++) {
+            // the two font rows this row of cells shows
+            uint8_t top_row = glyph[BIG_TEXT_FIRST_FONT_ROW + row * 2];
+            uint8_t bottom_row = glyph[BIG_TEXT_FIRST_FONT_ROW + row * 2 + 1];
+
+            for (int column = 0; column < BIG_TEXT_COLS; column++) {
+                int cell_x = letter_x + column;
+                if (cell_x >= COLS) {
+                    break; // off the right edge (putc would skip it anyway)
+                }
+                uint8_t pixel = (uint8_t)(0x80 >> column); // bit 7 is the leftmost pixel
+                bool top = (top_row & pixel) != 0;
+                bool bottom = (bottom_row & pixel) != 0;
+                big_text_cell((uint8_t)cell_x, (uint8_t)(y + row), fg, bg, top, bottom);
+            }
+        }
+        width += BIG_TEXT_COLS;
+    }
+    return width;
+}
+
 // fill the whole screen with colour bg (spaces drawn in bg on bg) and hand the screen over to
 // positional drawing
 void clear(enum color bg) {
+    LIVE_SCREEN();
     // full screen layouts (splash, error screens) draw with puts, so hide the console cursor
     vga_disable_cursor();
     vga_fill(VGA_ENTRY(' ', bg, bg));
@@ -399,6 +480,7 @@ void console_set_color(enum color fg, enum color bg) {
 // put the blinking cursor where the console cursor is
 // if clear() hid it, it is first switched back on as an underline (scanlines 14-15)
 void console_update_cursor(void) {
+    LIVE_SCREEN();
     vga_move_cursor(console_x, console_y);
     if (!vga_cursor_visible) {
         vga_enable_cursor(14, 15);
@@ -421,6 +503,7 @@ void console_get_cursor(uint8_t* x, uint8_t* y) {
 // blank the screen in the console colours and send the cursor to the top left corner
 // unlike clear() this keeps the cursor visible and doesn't count as a full screen takeover
 void console_clear(void) {
+    LIVE_SCREEN();
     vga_fill(VGA_ENTRY(' ', console_fg, console_bg));
     if (fb_mode) {
         fb_fill_border(console_bg);
@@ -431,10 +514,16 @@ void console_clear(void) {
 }
 
 // move every line up by one and blank the bottom line
-// the copy runs forwards: each cell is copied from one row further down, which has not been
-// overwritten yet, so the overlapping source and destination are safe. The top line is lost for
-// good, there is no scrollback.
+// the top line goes into the scrollback first. The copy runs forwards: each cell is copied from
+// one row further down, which has not been overwritten yet, so the overlap is safe
 static void console_scroll(void) {
+    for (unsigned int x = 0; x < COLS; x++) {
+        scrollback[scrollback_next][x] = cells[x];
+    }
+    scrollback_next = (scrollback_next + 1) % CONSOLE_SCROLLBACK;
+    if (scrollback_count < CONSOLE_SCROLLBACK) {
+        scrollback_count++;
+    }
     for (unsigned int i = 0; i < COLS * (ROWS - 1); i++) {
         cell_set(i, cells[i + COLS]);
     }
@@ -447,6 +536,7 @@ static void console_scroll(void) {
 // of a line, scroll at the bottom of the screen and copy the character to the serial port
 // it deliberately does not move the hardware cursor (4 slow port writes), callers do that once
 void console_putchar_raw(char c) {
+    LIVE_SCREEN();
     switch (c) {
         // newline: back to column 0 of the next row (scrolling is handled below)
         case '\n':
@@ -527,6 +617,106 @@ void console_backspace(void) {
     console_update_cursor();
 }
 
+// ---- scrollback ---------------------------------------------------------------------------------
+//
+// Looking back draws the old lines over the screen, so the live screen is copied to live[] first
+// and copied back afterwards. Nothing else can draw meanwhile: AerOS runs one thing at a time and
+// the line editor is waiting for a key, and whatever draws next calls LIVE_SCREEN() first anyway.
+//
+// The view is a window of ROWS lines over the scrollback followed by the live screen:
+//
+//     scrollback[oldest] ... scrollback[newest]  live row 0 ... live row 24
+//                     |<------- ROWS lines ------->|      view_back = 24 lines back
+//
+// so screen row r shows line (scrollback_count - view_back + r) of that list.
+
+// scrolled off line i, 0 being the oldest kept
+static const uint16_t* scrollback_line(unsigned int i) {
+    return scrollback[(scrollback_next + CONSOLE_SCROLLBACK - scrollback_count + i) % CONSOLE_SCROLLBACK];
+}
+
+// draw the view, with a tag in the top right corner saying how far back it is
+static void view_draw(void) {
+    for (unsigned int r = 0; r < ROWS; r++) {
+        unsigned int line = scrollback_count - view_back + r;
+        const uint16_t* source = line < scrollback_count ? scrollback_line(line)
+                                                         : &live[(line - scrollback_count) * COLS];
+        for (unsigned int x = 0; x < COLS; x++) {
+            cell_set(r * COLS + x, source[x]);
+        }
+    }
+
+    // " 48 lines back  PgUp / PgDn " (the number written out by hand: no prtf down here)
+    char tag[40];
+    char digits[8];
+    unsigned int n = view_back, d = 0, t = 0;
+    do {
+        digits[d++] = (char)('0' + n % 10);
+        n /= 10;
+    } while (n > 0);
+    tag[t++] = ' ';
+    while (d > 0) {
+        tag[t++] = digits[--d];
+    }
+    for (const char* s = view_back == 1 ? " line back  PgUp / PgDn " : " lines back  PgUp / PgDn "; *s; s++) {
+        tag[t++] = *s;
+    }
+    for (unsigned int i = 0; i < t; i++) {
+        cell_set(COLS - t + i, VGA_ENTRY(tag[i], BLACK, YELLOW));
+    }
+}
+
+void console_view_scroll(int lines) {
+    int back = (int)view_back + lines;
+    if (back < 0) {
+        back = 0;
+    }
+    if (back > (int)scrollback_count) {
+        back = (int)scrollback_count;
+    }
+    if ((unsigned int)back == view_back) {
+        return;
+    }
+    if (back == 0) {
+        console_view_live();
+        return;
+    }
+    if (view_back == 0) {
+        // leaving the live screen: set it aside, and hide the cursor (it belongs to the live screen)
+        for (unsigned int i = 0; i < COLS * ROWS; i++) {
+            live[i] = cells[i];
+        }
+        live_cursor = vga_cursor_visible;
+        vga_disable_cursor();
+    }
+    view_back = (unsigned int)back;
+    view_draw();
+}
+
+void console_view_live(void) {
+    if (view_back == 0) {
+        return;
+    }
+    view_back = 0; // first, so the drawing below doesn't come back here
+    for (unsigned int i = 0; i < COLS * ROWS; i++) {
+        cell_set(i, live[i]);
+    }
+    if (live_cursor) {
+        vga_enable_cursor(14, 15);
+    }
+}
+
+void console_forget_scrollback(void) {
+    console_view_live();
+    for (unsigned int i = 0; i < CONSOLE_SCROLLBACK; i++) {
+        for (unsigned int x = 0; x < COLS; x++) {
+            scrollback[i][x] = 0;
+        }
+    }
+    scrollback_count = 0;
+    scrollback_next = 0;
+}
+
 // one-time screen setup, called first thing during boot
 // In text mode we switch blinking off. The blink setting lives in the attribute controller, which
 // is awkward: port 0x3C0 is both its index and its data port, and an internal flip-flop decides
@@ -556,6 +746,11 @@ void vga_init(const vga_framebuffer_t* framebuffer) {
         outb(0x3C0, 0x30);         // select the mode control register (bit 5 keeps the screen on)
         uint8_t mode = inb(0x3C1);
         outb(0x3C0, mode & ~0x08); // clear the blink bit
+
+        // In text mode the graphics card draws the colours itself, from its own palette, so
+        // brown has to be repainted to orange there. (On a framebuffer AerOS draws every pixel
+        // itself, from the palette table above, which already has the orange)
+        vga_set_palette(ORANGE, ORANGE_RGB);
     }
     vga_set_glyph((uint8_t)VGA_COPYRIGHT[0], copyright);
 
