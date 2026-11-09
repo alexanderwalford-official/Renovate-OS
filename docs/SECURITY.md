@@ -9,7 +9,7 @@ here is in four files:
 | [`src/lib/crypto.c`](../src/lib/crypto.c) | the algorithms: SHA-256, HMAC, PBKDF2, AES-256, CTR mode, random numbers |
 | [`src/sys/accounts/auth.c`](../src/sys/accounts/auth.c) | user accounts and the login screen |
 | [`src/sys/fcrypt.c`](../src/sys/fcrypt.c) | password protected files |
-| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENCRYPT`, `DECRYPT`, `RD`, `PASS`, `NEWUSER`... commands |
+| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENC`, `DEC`, `RD`, `PW`, `MKU`... commands |
 
 The crypto library is about 600 lines of C, most of it comments, written from the published
 standards. Nothing is
@@ -203,14 +203,14 @@ flowchart TD
 | Protection | How |
 | --- | --- |
 | No password on disk | only the salted PBKDF2 hash is saved |
-| Same password, different hash | a fresh random salt per user, and again on every `PASS` |
+| Same password, different hash | a fresh random salt per user, and again on every `PW` |
 | Unknown names cost as much as real ones | `auth_check` runs a full PBKDF2 even when the name doesn't exist, so timing doesn't reveal valid names |
 | Few hints | "Wrong user name or password" either way, though real accounts also get the wrong-password warning (see section 4) |
 | Slow guessing at the keyboard | a 1 second pause after every wrong login |
 | Guessing costs the account's files | the home folder is wiped on every 3rd wrong password in a row |
 | Knowing someone tried | after a good login the banner reports the wrong passwords since the last one |
 | Comparing hashes | `crypto_equal` looks at every byte, so timing doesn't reveal how much matched |
-| Passwords in memory | password buffers are wiped with `crypto_wipe` as soon as they've been used |
+| Passwords in memory | password buffers are wiped with `wipe` as soon as they've been used |
 | Passwords on screen | typed as `*`, never added to the up-arrow history |
 | History between users | `OUT` (log out) clears the command history and the scrollback, and leaves the home folder |
 | Damaged file | a line that doesn't parse is skipped, so one bad line can't lock everyone out |
@@ -219,18 +219,18 @@ flowchart TD
 
 | Command | Does |
 | --- | --- |
-| `WHOAMI` | prints who is logged in |
-| `USERS` | lists the accounts |
-| `NEWUSER <name>` | new account and its home folder, password asked twice |
-| `DELUSER <name>` | deletes an account after asking for *your own* password (you can't delete yourself) |
-| `PASS` | your current password, then the new one twice |
+| `ME` | prints who is logged in |
+| `USRS` | lists the accounts |
+| `MKU <name>` | new account and its home folder, password asked twice |
+| `DELU <name>` | deletes an account after asking for *your own* password (you can't delete yourself) |
+| `PW` | your current password, then the new one twice |
 | `OUT` | log out, back to the login screen |
 
 ---
 
 ## 3. Encrypted files
 
-`ENCRYPT notes.txt` locks a file with a password. It keeps its name, and only its contents
+`ENC notes.txt` locks a file with a password. It keeps its name, and only its contents
 change.
 
 ### The file format
@@ -293,7 +293,7 @@ flowchart TD
     D --> E{tag matches? constant-time compare}
     E -- no --> Z["wrong password, or the file has been changed"]
     E -- yes --> F[AES-256-CTR decrypt]
-    F --> G[RD: show it  /  DECRYPT: write it back]
+    F --> G[RD: show it  /  DEC: write it back]
 ```
 
 The tag is checked **before** anything is decrypted ("encrypt-then-MAC"). A wrong password
@@ -310,7 +310,7 @@ hours.
 | --- | --- |
 | Original contents removed from the disk | after encrypting, the old FAT clusters are overwritten with zeros, not just marked free (`fat_replace_file(..., wipe_old = true)`) |
 | Crash while saving | the new contents are written to fresh clusters before the directory entry is switched over, so a crash leaves either the old file or the new one, never a mix |
-| Accidental damage | `WR` and `EDIT` refuse encrypted files, because changing a byte would break the tag |
+| Accidental damage | `WR` and `EDT` refuse encrypted files, because changing a byte would break the tag |
 | Reading without unlocking | `RD` on an encrypted file asks for the password and shows it without changing the file |
 | Keys in memory | the master key, both derived keys, AES round keys and decrypted copies are wiped after use |
 
@@ -318,11 +318,11 @@ hours.
 
 | Terminal | AerLang | Does |
 | --- | --- | --- |
-| `ENCRYPT <file>` | `encrypt_file(path, password)` | lock a file |
-| `DECRYPT <file>` | `decrypt_file(path, password)` | unlock it again |
-| `RD <file>` | `read_encrypted(path, password)` | read it without unlocking (nil if the password is wrong) |
-|  | `is_encrypted(path)` | true for an encrypted file |
-|  | `input_secret(prompt)` | read a password, showing `*` |
+| `ENC <file>` | `enc(path, password)` | lock a file |
+| `DEC <file>` | `dec(path, password)` | unlock it again |
+| `RD <file>` | `rdenc(path, password)` | read it without unlocking (nil if the password is wrong) |
+|  | `isenc(path)` | true for an encrypted file |
+|  | `inpw(prompt)` | read a password, showing `*` |
 
 ### Checking the format yourself
 
@@ -362,7 +362,7 @@ Being clear about the limits is part of good security:
   which means anyone who can log in, or who can write to the disk, can take the computer over.
   Encrypted files stay safe, because their keys come from their own passwords, not from the
   accounts.
-* **There are no administrator accounts.** Every user can `NEWUSER` and `DELUSER`. `DELUSER`
+* **There are no administrator accounts.** Every user can `MKU` and `DELU`. `DELU`
   asks for your own password, so it protects against someone walking up to an unlocked
   terminal, not against another user. Deleting an account leaves its home folder behind.
 * **Anyone at the keyboard can wipe a home folder.** Three wrong passwords for a name is all

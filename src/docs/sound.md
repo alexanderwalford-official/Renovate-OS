@@ -10,8 +10,8 @@ most PCs from about 1997 to 2006. The boot log says whether one was found:
 ## Playing files
 
 ```
-play song.mp3
-play /sys/startup.wav
+ply song.mp3
+ply /sys/startup.wav
 ```
 
 Esc or Ctrl+C stops it. In AerLang, `play("song.mp3")` plays a file and waits until it

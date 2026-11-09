@@ -1,6 +1,6 @@
 # The editor
 
-`edit <file>` opens any text file. If the file doesn't exist yet it is made when you first
+`edt <file>` opens any text file. If the file doesn't exist yet it is made when you first
 save.
 
 ```
@@ -29,7 +29,7 @@ The top bar shows the file (a `*` means there are unsaved changes) and where the
 AerLang files (`.aer`) are coloured in: keywords, strings, numbers and comments each get
 their own colour.
 
-Encrypted files can't be edited, because changing them would break their seal. `decrypt`
+Encrypted files can't be edited, because changing them would break their seal. `dec`
 them first.
 
 To read a file without risking any changes, use the [reader](reader.md) instead.

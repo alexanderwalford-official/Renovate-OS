@@ -79,7 +79,7 @@ static void aeros_rows (out_t* out) {
                      : "VFS (no AEROS disk, files are kept in memory)";
     row(out, "Mode", "%s", mode);
     row(out, "User", "%s", auth_user);
-    uint32_t seconds = clck_uptime_ms() / 1000;
+    uint32_t seconds = clkuptms() / 1000;
     row(out, "Running for", "%u:%02u:%02u", seconds / 3600, seconds / 60 % 60, seconds % 60);
     row(out, "Kernel", "%u KB file, %u KB in memory",
         (uint32_t)((uintptr_t)sbss - KERNEL_START) / 1024, (uint32_t)((uintptr_t)end - KERNEL_START) / 1024);
@@ -103,7 +103,7 @@ static const char* hypervisor_name (const char* id) {
         { "Microsoft Hv", "Hyper-V" }, { "XenVMMXenVMM", "Xen" }, { " lrpepyh  vr", "Parallels" },
     };
     for (unsigned int i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
-        if (strncmp(id, known[i].id, strlen(known[i].id)) == 0) {
+        if (strncmp(id, known[i].id, slen(known[i].id)) == 0) {
             return known[i].name;
         }
     }
@@ -125,7 +125,7 @@ static void processor_rows (out_t* out) {
             memcpy(name + i * 16, &part, 16);
         }
         name[48] = '\0';
-        row(out, "Name", "%s", StrTrim(name));
+        row(out, "Name", "%s", trim(name));
     }
     row(out, "Made by", "%s", vendor);
 
@@ -159,7 +159,7 @@ static void processor_rows (out_t* out) {
     char feature_list[64] = "";
     for (unsigned int i = 0; i < sizeof(features) / sizeof(features[0]); i++) {
         if (features[i].present) {
-            strlcat(feature_list, features[i].name, sizeof(feature_list));
+            scat(feature_list, features[i].name, sizeof(feature_list));
         }
     }
     row(out, "Features", "%s", feature_list);
@@ -239,9 +239,9 @@ static void storage_rows (out_t* out) {
         bool mounted = fs_mode == FS_MODE_DISK && fat_vol.bus == bus && fat_vol.slave == slave;
         char size[24] = "";
         if (sectors) {
-            snprintf(size, sizeof(size), ", %u MB", sectors / 2048);
+            sfmt(size, sizeof(size), ", %u MB", sectors / 2048);
         }
-        const char* name = StrTrim(model);
+        const char* name = trim(model);
         row(out, positions[i], "%s%s%s", name[0] ? name : drive_type_name(type), size,
             mounted ? ", the AEROS disk" : "");
     }
@@ -328,7 +328,7 @@ static const char* class_name (uint8_t class_code, uint8_t subclass) {
 static bool pci_row (const pci_device_t* dev, void* ctx) {
     out_t* out = ctx;
     char where[12];
-    snprintf(where, sizeof(where), "%02x:%02x.%u", dev->bus, dev->slot, dev->function);
+    sfmt(where, sizeof(where), "%02x:%02x.%u", dev->bus, dev->slot, dev->function);
     const char* vendor = vendor_name(dev->vendor);
     row(out, where, "%s%s%s (%04x:%04x)", vendor, vendor[0] ? " " : "",
         class_name(dev->class_code, dev->subclass), dev->vendor, dev->device);

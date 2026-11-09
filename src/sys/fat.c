@@ -526,12 +526,12 @@ static bool fat_make_83 (const char* name, uint8_t* out, uint8_t* nt_case) {
     // split "notes.txt" at the dot into the name ("notes") and the extension ("txt")
     const char* dot = strchr(name, '.');
     const char* extension = "";
-    size_t name_length = strlen(name);
+    size_t name_length = slen(name);
     size_t extension_length = 0;
     if (dot != NULL) {
         extension = dot + 1;
         name_length = (size_t)(dot - name);
-        extension_length = strlen(extension);
+        extension_length = slen(extension);
     }
 
     bool name_fits = name_length >= 1 && name_length <= 8;
@@ -575,7 +575,7 @@ static void fat_stamp (fat_dirent_t* d, bool created) {
 // "DD-MM-YY--HH:MM:SS", the same format as the temporary file system
 // (unpacks the bit fields fat_stamp() describes, seconds are stored halved so they are doubled again)
 static void fat_format_datetime (uint16_t date, uint16_t time, char* out, size_t size) {
-    snprintf(out, size, "%02u-%02u-%02u--%02u:%02u:%02u",
+    sfmt(out, size, "%02u-%02u-%02u--%02u:%02u:%02u",
              date & 0x1F, (date >> 5) & 0x0F, ((date >> 9) + 1980) % 100,
              time >> 11, (time >> 5) & 0x3F, (time & 0x1F) * 2);
 }
@@ -669,22 +669,22 @@ static bool fat_walk_dir (uint32_t dir, fat_visit_t visit, void* ctx) {
                 continue;
             }
             if (d->attr == FAT_ATTR_LFN) {
-                int seq = raw[0] & 0x1F; // which part this is, 1 is the start of the name
+                int part = raw[0] & 0x1F; // which part this is, 1 is the start of the name
                 if (raw[0] & 0x40) {
                     // the last part of a long name is stored first
                     // so this starts a new name: remember its checksum and where it began
-                    lfn_valid = (seq >= 1 && seq <= FAT_LFN_PARTS);
-                    lfn_expect = seq;
+                    lfn_valid = (part >= 1 && part <= FAT_LFN_PARTS);
+                    lfn_expect = part;
                     lfn_sum = raw[13];
                     lfn_pos = pos;
                     lfn_slot = slot;
                     memset(lfn, 0, sizeof(lfn));
-                } else if (!lfn_valid || seq != lfn_expect || raw[13] != lfn_sum) {
+                } else if (!lfn_valid || part != lfn_expect || raw[13] != lfn_sum) {
                     // a part out of order or from another name: the whole long name is unusable
                     lfn_valid = false;
                 }
                 if (lfn_valid) {
-                    // part `seq` holds characters (seq - 1) * 13 to (seq - 1) * 13 + 12 of the name
+                    // part `part` holds characters (part - 1) * 13 to (part - 1) * 13 + 12 of the name
                     for (int i = 0; i < 13; i++) {
                         const uint8_t* bytes = raw + lfn_char_offsets[i];
                         uint16_t c = (uint16_t)(bytes[0] | (bytes[1] << 8)); // one UTF-16 character
@@ -699,9 +699,9 @@ static bool fat_walk_dir (uint32_t dir, fat_visit_t visit, void* ctx) {
                         } else {
                             shown = '?';
                         }
-                        lfn[(seq - 1) * 13 + i] = shown;
+                        lfn[(part - 1) * 13 + i] = shown;
                     }
-                    lfn_expect = seq - 1; // the parts count down towards 1
+                    lfn_expect = part - 1; // the parts count down towards 1
                 }
                 continue;
             }
@@ -724,7 +724,7 @@ static bool fat_walk_dir (uint32_t dir, fat_visit_t visit, void* ctx) {
             e.slot = slot;
             fat_short_to_name(d->name, d->nt_case, e.short_name, false);
             if (has_lfn) {
-                strlcpy(e.name, lfn, sizeof(e.name));
+                scpy(e.name, lfn, sizeof(e.name));
                 e.lfn_pos = lfn_pos;
                 e.lfn_slot = lfn_slot;
             } else {
@@ -933,7 +933,7 @@ static int fat_write_chain (const char* data, uint32_t length, uint32_t* first) 
 // read a file's contents into a new buffer (with a '\0' added), NULL on error
 // cluster = the first cluster, size = the size from its directory entry.
 // if the chain ends early (a damaged disk) we return what we got, so the string can be shorter than size.
-// gotcha: files are treated as text, a file with '\0' bytes in it will look cut short to strlen()
+// gotcha: files are treated as text, a file with '\0' bytes in it will look cut short to slen()
 static char* fat_read_chain (uint32_t cluster, uint32_t size) {
     fat_sector_t sector;
     char* buffer = malloc(size + 1);
@@ -1070,7 +1070,7 @@ int fat_create_file (const char* f_path, const char* name, const char* contents,
 // appending is done the simple way: read the old file, join the new text on, write it all out
 int fat_write_file (const char* f_path, const char* name, const char* text, bool append) {
     if (!append) {
-        return fat_replace_file(f_path, name, text, (uint32_t)strlen(text), false);
+        return fat_replace_file(f_path, name, text, (uint32_t)slen(text), false);
     }
     fat_entry_t e;
     if (!fat_find_file(f_path, name, &e)) {
@@ -1080,15 +1080,15 @@ int fat_write_file (const char* f_path, const char* name, const char* text, bool
     if (old == NULL) {
         return FS_ERR_IO;
     }
-    // strlen rather than entry.size, in case the chain was shorter than the entry claimed
-    size_t old_len = strlen(old);
-    char* joined = realloc(old, old_len + strlen(text) + 1);
+    // slen rather than entry.size, in case the chain was shorter than the entry claimed
+    size_t old_len = slen(old);
+    char* joined = realloc(old, old_len + slen(text) + 1);
     if (joined == NULL) {
         free(old); // realloc failed, the old buffer is still ours to free
         return FS_ERR_NO_MEMORY;
     }
     strcpy(joined + old_len, text);
-    int result = fat_replace_file(f_path, name, joined, (uint32_t)strlen(joined), false);
+    int result = fat_replace_file(f_path, name, joined, (uint32_t)slen(joined), false);
     free(joined);
     return result;
 }
@@ -1154,14 +1154,14 @@ int fat_delete_file (const char* f_path, const char* name) {
 // how: copy it, drop the trailing '/' ("/a/b"), the last '/' left separates the parent from the name.
 // false for "/" (the root has no parent) or a path too long for the buffers
 static bool fat_split_dir (const char* d_path, char* parent, char* name) {
-    size_t len = strlen(d_path);
+    size_t len = slen(d_path);
     if (len < 2 || len > FAT_NAME_MAX) {
         return false;
     }
-    strlcpy(parent, d_path, FAT_NAME_MAX + 1);
+    scpy(parent, d_path, FAT_NAME_MAX + 1);
     parent[len - 1] = '\0';
     char* slash = strrchr(parent, '/');
-    strlcpy(name, slash + 1, FAT_NAME_MAX + 1);
+    scpy(name, slash + 1, FAT_NAME_MAX + 1);
     slash[1] = '\0';
     return true;
 }
@@ -1174,7 +1174,7 @@ static void fat_make_dot (fat_dirent_t* out, const fat_dirent_t* dir, const char
     *out = *dir;
     out->nt_case = 0; // don't inherit the lower case flags of the directory's name
     memset(out->name, ' ', sizeof(out->name));
-    memcpy(out->name, name, strlen(name));
+    memcpy(out->name, name, slen(name));
     fat_set_entry_cluster(out, cluster);
 }
 
@@ -1473,7 +1473,7 @@ static int fat_mount (int bus, int slave) {
     // (fat_vol has enough filled in by now for the directory functions to work)
     char root_label[12];
     if (fat_root_label(root_label)) {
-        strlcpy(fat_vol.label, root_label, sizeof(fat_vol.label));
+        scpy(fat_vol.label, root_label, sizeof(fat_vol.label));
     }
     // the safety check: never use a FAT volume that isn't ours
     if (strcasecmp(fat_vol.label, FAT_VOLUME_LABEL) != 0) {
@@ -1501,23 +1501,23 @@ bool fat_mount_auto (char* status, size_t size) {
             int result = fat_mount(bus, slave);
             if (result == FS_OK) {
                 // 2048 sectors of 512 bytes = 1 MB
-                snprintf(status, size, "FAT%d volume %s on %s %s (%u MB)", fat_vol.type, fat_vol.label,
+                sfmt(status, size, "FAT%d volume %s on %s %s (%u MB)", fat_vol.type, fat_vol.label,
                          bus_names[bus], slave ? "slave" : "master", fat_vol.total_sectors / 2048);
                 return true;
             }
             // remember the first FAT volume that wasn't labelled AEROS, so we can tell the user
             if (result == FS_ERR_BAD_NAME && !unlabelled) {
                 unlabelled = true;
-                snprintf(unlabelled_where, sizeof(unlabelled_where), "%s %s", bus_names[bus], slave ? "slave" : "master");
+                sfmt(unlabelled_where, sizeof(unlabelled_where), "%s %s", bus_names[bus], slave ? "slave" : "master");
             }
         }
     }
     // nothing mounted: wipe whatever the last attempt left in fat_vol (mounted = false)
     memset(&fat_vol, 0, sizeof(fat_vol));
     if (unlabelled) {
-        snprintf(status, size, "%s is not labelled %s", unlabelled_where, FAT_VOLUME_LABEL);
+        sfmt(status, size, "%s is not labelled %s", unlabelled_where, FAT_VOLUME_LABEL);
     } else {
-        snprintf(status, size, "no %s disk found", FAT_VOLUME_LABEL);
+        sfmt(status, size, "no %s disk found", FAT_VOLUME_LABEL);
     }
     return false;
 }

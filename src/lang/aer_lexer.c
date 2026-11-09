@@ -171,7 +171,7 @@ token_t* aer_lex (const char* src, int* count) {
             size_t length = (size_t)(p - start);
             token_type_t type = T_NAME;
             for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
-                if (strlen(keywords[k].word) == length && strncmp(keywords[k].word, start, length) == 0) {
+                if (slen(keywords[k].word) == length && strncmp(keywords[k].word, start, length) == 0) {
                     type = keywords[k].type;
                     break;
                 }

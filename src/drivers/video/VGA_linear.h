@@ -69,7 +69,7 @@ extern volatile uint16_t* const video;
 // counts full screen clears, the terminal uses it to notice when a program took over the screen
 extern volatile unsigned int vga_clear_count;
 
-// the colours the console draws new text with (set them with console_set_color)
+// the colours the console draws new text with (set them with colour)
 extern enum color console_fg;
 extern enum color console_bg;
 
@@ -152,7 +152,7 @@ void clear(enum color bg);
 // off the screen is left out (10 letters fill the 80 columns). Returns how many columns wide it
 // is, so it can be centred:
 //
-//     int width = (int)strlen(title) * BIG_TEXT_COLS;
+//     int width = (int)slen(title) * BIG_TEXT_COLS;
 //     big_text((uint8_t)((COLS - width) / 2), 1, ORANGE, BLACK, title);
 //
 // It draws in place like putc, without moving the console cursor: after it, move the cursor
@@ -164,7 +164,7 @@ int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* tex
 // console: a scrolling terminal that keeps track of the cursor (and mirrors to the serial port)
 
 // change the colours used for everything the console writes from now on (existing text keeps its colour)
-void console_set_color(enum color fg, enum color bg);
+void colour(enum color fg, enum color bg);
 
 // move the console cursor, positions past the edge are clamped to the last column / row
 void console_set_cursor(uint8_t x, uint8_t y);

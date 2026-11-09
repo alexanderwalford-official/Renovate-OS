@@ -59,11 +59,11 @@ static bool on_disk (void) {
 // printable characters. (On a disk the FAT driver is stricter still: the name has to fit the
 // 8.3 format, which fat_make_83() checks)
 bool fs_valid_name (const char* name) {
-    if (name == NULL || name[0] == '\0' || strlen(name) >= FS_NAME_MAX) {
+    if (name == NULL || name[0] == '\0' || slen(name) >= FS_NAME_MAX) {
         return false;
     }
     // "." and ".." mean "here" and "the folder above" in a path, so they can't be names
-    if (StrCompare(name, ".") || StrCompare(name, "..")) {
+    if (seq(name, ".") || seq(name, "..")) {
         return false;
     }
     for (const char* c = name; *c != '\0'; c++) {
@@ -80,7 +80,7 @@ bool fs_valid_name (const char* name) {
 // How: drop the '/' at the end ("/sys/cache"), find the last '/' that is left (the one in
 // front of "cache"), and end the string just after it
 static void go_up_one_folder (char* path) {
-    size_t length = strlen(path);
+    size_t length = slen(path);
     if (length <= 1) {
         return; // "/" already
     }
@@ -107,9 +107,9 @@ bool fs_resolve_dir (const char* input, char* out, size_t out_size) {
     // start from the top, anything else starts from the current folder
     char path[FS_PATH_MAX];
     if (input[0] == '/') {
-        strlcpy(path, "/", sizeof(path));
+        scpy(path, "/", sizeof(path));
     } else {
-        strlcpy(path, cd, sizeof(path));
+        scpy(path, cd, sizeof(path));
     }
 
     // go through the input one part at a time ("sys", "..", "cache"...)
@@ -140,7 +140,7 @@ bool fs_resolve_dir (const char* input, char* out, size_t out_size) {
         }
 
         // an ordinary name: add "name/" on the end. That needs the name, the '/' and the '\0'
-        size_t path_length = strlen(path);
+        size_t path_length = slen(path);
         bool name_too_long = part_length >= FS_NAME_MAX;
         bool path_too_long = path_length + part_length + 2 > sizeof(path);
         if (name_too_long || path_too_long) {
@@ -151,8 +151,8 @@ bool fs_resolve_dir (const char* input, char* out, size_t out_size) {
         path[path_length + part_length + 1] = '\0';
     }
 
-    // strlcpy returns how long the string is; if that doesn't fit, `out` was too small
-    return strlcpy(out, path, out_size) < out_size;
+    // scpy returns how long the string is; if that doesn't fit, `out` was too small
+    return scpy(out, path, out_size) < out_size;
 }
 
 // Split a file path as someone typed it ("notes.txt", "/sys/conf.aer", "../a.txt") into the
@@ -168,8 +168,8 @@ bool fs_split_path (const char* input, char* dir_out, size_t dir_size, char* nam
     const char* last_slash = strrchr(input, '/');
     if (last_slash == NULL) {
         // just a name, e.g. "notes.txt"
-        strlcpy(dir_out, cd, dir_size);
-        strlcpy(name_out, input, name_size);
+        scpy(dir_out, cd, dir_size);
+        scpy(name_out, input, name_size);
     } else {
         // copy out the folder part, e.g. "../sys/" from "../sys/a.txt", and clean it up
         char folder[FS_PATH_MAX];
@@ -182,7 +182,7 @@ bool fs_split_path (const char* input, char* dir_out, size_t dir_size, char* nam
         if (!fs_resolve_dir(folder, dir_out, dir_size)) {
             return false;
         }
-        strlcpy(name_out, last_slash + 1, name_size);
+        scpy(name_out, last_slash + 1, name_size);
     }
     return fs_valid_name(name_out);
 }
@@ -190,7 +190,7 @@ bool fs_split_path (const char* input, char* dir_out, size_t dir_size, char* nam
 // the folder above a folder: "/sys/cache/" -> "/sys/" ("/" is its own parent).
 // d_path must already be a clean absolute path ending in '/'
 void fs_parent_path (const char* d_path, char* out, size_t out_size) {
-    strlcpy(out, d_path, out_size);
+    scpy(out, d_path, out_size);
     go_up_one_folder(out);
 }
 
@@ -199,8 +199,8 @@ void fs_parent_path (const char* d_path, char* out, size_t out_size) {
 //     "/sys/cache/old/"   no, that's inside a folder inside it
 //     "/sys/"             no, that's the parent itself
 static bool is_directly_inside (const char* parent, const char* path) {
-    size_t parent_length = strlen(parent);
-    size_t path_length = strlen(path);
+    size_t parent_length = slen(parent);
+    size_t path_length = slen(path);
 
     // it has to be longer than the parent, and start with the parent's path
     if (path_length <= parent_length || strncmp(path, parent, parent_length) != 0) {
@@ -223,7 +223,7 @@ static bool is_directly_inside (const char* parent, const char* path) {
 // where the folder with exactly this path is in directories[], or -1 if there is none
 static int mem_find_folder (const char* path) {
     for (int i = 0; i < FS_MAX_DIRS; i++) {
-        if (directories[i].d_used && StrCompare(directories[i].d_path, path)) {
+        if (directories[i].d_used && seq(directories[i].d_path, path)) {
             return i;
         }
     }
@@ -234,7 +234,7 @@ static int mem_find_folder (const char* path) {
 // (In the VFS names care about upper and lower case, unlike on a FAT disk)
 static int mem_find_file (const char* folder, const char* name) {
     for (int i = 0; i < FS_MAX_FILES; i++) {
-        if (files[i].f_used && StrCompare(files[i].f_path, folder) && StrCompare(files[i].f_name, name)) {
+        if (files[i].f_used && seq(files[i].f_path, folder) && seq(files[i].f_name, name)) {
             return i;
         }
     }
@@ -244,8 +244,8 @@ static int mem_find_file (const char* folder, const char* name) {
 // the name of a folder from its path, without the '/' on the end, written into `name`.
 // `parent` is the path of the folder it is in: "/sys/cache/" in "/sys/" gives "cache"
 static void folder_name (const char* path, const char* parent, char* name, size_t size) {
-    strlcpy(name, path + strlen(parent), size);
-    size_t length = strlen(name);
+    scpy(name, path + slen(parent), size);
+    size_t length = slen(name);
     if (length > 0 && name[length - 1] == '/') {
         name[length - 1] = '\0';
     }
@@ -260,7 +260,7 @@ static int mem_create_folder (const char* path, const char* description) {
     }
     char parent[FS_PATH_MAX];
     fs_parent_path(path, parent, sizeof(parent));
-    bool is_top = StrCompare(path, "/");
+    bool is_top = seq(path, "/");
     if (!is_top && mem_find_folder(parent) < 0) {
         return FS_ERR_NOT_FOUND;
     }
@@ -275,8 +275,8 @@ static int mem_create_folder (const char* path, const char* description) {
         folder->d_used = true;
         folder->d_id = next_folder_id;
         next_folder_id++;
-        strlcpy(folder->d_path, path, sizeof(folder->d_path));
-        strlcpy(folder->d_name, description != NULL ? description : "", sizeof(folder->d_name));
+        scpy(folder->d_path, path, sizeof(folder->d_path));
+        scpy(folder->d_name, description != NULL ? description : "", sizeof(folder->d_name));
         d_c++;
         return FS_OK;
     }
@@ -312,8 +312,8 @@ static int mem_create_file (const char* folder, const char* name, const char* co
         file->f_id = next_file_id;
         next_file_id++;
         rtc_datetime(file->f_datetime, sizeof(file->f_datetime)); // "DD-MM-YY--HH:MM:SS"
-        strlcpy(file->f_name, name, sizeof(file->f_name));
-        strlcpy(file->f_path, folder, sizeof(file->f_path));
+        scpy(file->f_name, name, sizeof(file->f_name));
+        scpy(file->f_path, folder, sizeof(file->f_path));
         file->f_cont = copy;
         file->f_size = (int)length;
         f_c++;
@@ -334,9 +334,9 @@ static int mem_write_file (const char* folder, const char* name, const char* tex
     // appending keeps the old text and writes after it, replacing writes from the start
     size_t keep_length = 0;
     if (append) {
-        keep_length = strlen(file->f_cont);
+        keep_length = slen(file->f_cont);
     }
-    size_t add_length = strlen(text);
+    size_t add_length = slen(text);
 
     // grow (or shrink) the buffer. If realloc fails, the old buffer is still there, untouched
     char* contents = realloc(file->f_cont, keep_length + add_length + 1);
@@ -399,7 +399,7 @@ static int mem_delete_folder (const char* path) {
         }
     }
     for (int i = 0; i < FS_MAX_FILES; i++) {
-        if (files[i].f_used && StrCompare(files[i].f_path, path)) {
+        if (files[i].f_used && seq(files[i].f_path, path)) {
             return FS_ERR_NOT_EMPTY; // a file inside it
         }
     }
@@ -424,7 +424,7 @@ static int mem_list (const char* path, fs_list_fn fn, void* context) {
         }
     }
     for (int i = 0; i < FS_MAX_FILES; i++) {
-        if (files[i].f_used && StrCompare(files[i].f_path, path)) {
+        if (files[i].f_used && seq(files[i].f_path, path)) {
             fn(files[i].f_name, false, (uint32_t)files[i].f_size, context);
             count++;
         }
@@ -440,13 +440,13 @@ static int mem_print (const char* path) {
         if (directories[i].d_used && is_directly_inside(path, directories[i].d_path)) {
             // the name is what comes after the parent's path, '/' and all: "cache/" from "/sys/cache/"
             char name[FS_NAME_MAX + 1];
-            strlcpy(name, directories[i].d_path + strlen(path), sizeof(name));
+            scpy(name, directories[i].d_path + slen(path), sizeof(name));
             prtf("  <DIR>   %-22s %s\n", name, directories[i].d_name);
             shown++;
         }
     }
     for (int i = 0; i < FS_MAX_FILES; i++) {
-        if (files[i].f_used && StrCompare(files[i].f_path, path)) {
+        if (files[i].f_used && seq(files[i].f_path, path)) {
             prtf("  <FILE>  %-22s %6d bytes  %s\n", files[i].f_name, files[i].f_size, files[i].f_datetime);
             shown++;
         }
@@ -491,7 +491,7 @@ int fs_create_d (const char* d_path, const char* d_name) {
     if (d_path == NULL || !fs_resolve_dir(d_path, path, sizeof(path))) {
         return FS_ERR_BAD_NAME;
     }
-    if (StrCompare(path, "/")) {
+    if (seq(path, "/")) {
         return FS_ERR_EXISTS;
     }
     if (on_disk()) {
@@ -505,7 +505,7 @@ int fs_create_f (const char* f_path, const char* f_name, const char* f_cont) {
     if (f_cont == NULL) {
         f_cont = "";
     }
-    return fs_create_bytes(f_path, f_name, f_cont, (uint32_t)strlen(f_cont));
+    return fs_create_bytes(f_path, f_name, f_cont, (uint32_t)slen(f_cont));
 }
 
 // make a file from `length` bytes of data (which may contain '\0', e.g. a picture)
@@ -614,13 +614,13 @@ int fs_delete_f (const char* f_path, const char* f_name) {
 // delete an empty folder. Not "/", and not the current folder or one it is inside
 int fs_delete_d (const char* d_path) {
     char path[FS_PATH_MAX];
-    if (!fs_resolve_dir(d_path, path, sizeof(path)) || StrCompare(path, "/")) {
+    if (!fs_resolve_dir(d_path, path, sizeof(path)) || seq(path, "/")) {
         return FS_ERR_NOT_FOUND;
     }
     // If the current folder starts with this path, it IS this folder or is somewhere inside it.
     // The '/' on the end of every path stops look-alikes matching: "/system/" doesn't start
     // with "/sys/"
-    if (strncmp(cd, path, strlen(path)) == 0) {
+    if (strncmp(cd, path, slen(path)) == 0) {
         return FS_ERR_BUSY;
     }
     if (on_disk()) {
@@ -654,7 +654,7 @@ static void count_entry (const char* name, bool is_dir, uint32_t size, void* con
         return;
     }
     char inner_folder[FS_PATH_MAX];
-    snprintf(inner_folder, sizeof(inner_folder), "%s%s/", count->folder, name);
+    sfmt(inner_folder, sizeof(inner_folder), "%s%s/", count->folder, name);
     int inside = fs_count_files(inner_folder);
     if (inside > 0) {
         count->files += inside;
@@ -697,7 +697,7 @@ static void collect_entry (const char* name, bool is_dir, uint32_t size, void* c
     if (batch->count == BATCH_SIZE) {
         return; // full: the rest wait for the next round
     }
-    strlcpy(batch->names[batch->count], name, FS_NAME_MAX);
+    scpy(batch->names[batch->count], name, FS_NAME_MAX);
     batch->is_folder[batch->count] = is_dir;
     batch->count++;
 }
@@ -725,7 +725,7 @@ int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, vo
             if (is_folder[i]) {
                 // a folder has to be empty before it can be deleted: empty it first
                 char inner_folder[FS_PATH_MAX];
-                snprintf(inner_folder, sizeof(inner_folder), "%s%s/", path, names[i]);
+                sfmt(inner_folder, sizeof(inner_folder), "%s%s/", path, names[i]);
                 int inside = fs_empty_dir(inner_folder, zero_first, on_file, ctx);
                 if (inside > 0) {
                     files_deleted += inside;
@@ -772,7 +772,7 @@ int fs_set_cd (const char* input) {
     if (!fs_resolve_dir(input, path, sizeof(path)) || !fs_dir_exists(path)) {
         return FS_ERR_NOT_FOUND;
     }
-    strlcpy(cd, path, sizeof(cd));
+    scpy(cd, path, sizeof(cd));
     return FS_OK;
 }
 
@@ -851,10 +851,10 @@ static void make_base_folders (void) {
 //     "p"  just print the current folder
 // Always returns 0
 int fs_init (const char* arg) {
-    bool demo = StrCompare(arg, "d");
-    bool normal = StrCompare(arg, "n");
+    bool demo = seq(arg, "d");
+    bool normal = seq(arg, "n");
 
-    if (StrCompare(arg, "p")) {
+    if (seq(arg, "p")) {
         fs_print();
         return 0;
     }

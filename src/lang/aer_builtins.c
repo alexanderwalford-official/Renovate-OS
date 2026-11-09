@@ -93,8 +93,8 @@ static value_t bi_input (int argc, value_t* argv, int line) {
         aer_print_value(argv[0]);
     }
     (void)line;
-    GetString(buffer, sizeof(buffer));
-    return aer_string(buffer, (uint32_t)strlen(buffer));
+    getln(buffer, sizeof(buffer));
+    return aer_string(buffer, (uint32_t)slen(buffer));
 }
 
 // like input(), but shows * for each character (for passwords)
@@ -105,8 +105,8 @@ static value_t bi_input_secret (int argc, value_t* argv, int line) {
     }
     (void)line;
     GetSecret(buffer, sizeof(buffer));
-    value_t s = aer_string(buffer, (uint32_t)strlen(buffer));
-    crypto_wipe(buffer, sizeof(buffer));
+    value_t s = aer_string(buffer, (uint32_t)slen(buffer));
+    wipe(buffer, sizeof(buffer));
     return s;
 }
 
@@ -119,7 +119,7 @@ static value_t bi_cls (int argc, value_t* argv, int line) {
 static value_t bi_color (int argc, value_t* argv, int line) {
     int32_t fg = int_arg(argv, 0, line, "color");
     int32_t bg = argc > 1 ? int_arg(argv, 1, line, "color") : (int32_t)console_bg;
-    console_set_color((enum color)(fg & 15), (enum color)(bg & 15));
+    colour((enum color)(fg & 15), (enum color)(bg & 15));
     return aer_nil();
 }
 
@@ -131,7 +131,7 @@ static value_t bi_at (int argc, value_t* argv, int line) {
 
 static value_t bi_key (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return aer_int(GetChar());
+    return aer_int(getk());
 }
 
 static value_t bi_haskey (int argc, value_t* argv, int line) {
@@ -241,7 +241,7 @@ static value_t bi_lower (int argc, value_t* argv, int line) {
 static value_t bi_split (int argc, value_t* argv, int line) {
     aer_object_t* s = str_arg(argv, 0, line, "split");
     const char* sep = argc > 1 ? str_arg(argv, 1, line, "split")->data.chars : 0;
-    size_t sep_length = sep ? strlen(sep) : 0;
+    size_t sep_length = sep ? slen(sep) : 0;
     if (sep && sep_length == 0) {
         aer_error(line, "split() needs a separator that isn't empty");
     }
@@ -278,7 +278,7 @@ static value_t bi_split (int argc, value_t* argv, int line) {
 static value_t bi_join (int argc, value_t* argv, int line) {
     aer_object_t* list = list_arg(argv, 0, line, "join");
     const char* sep = argc > 1 ? str_arg(argv, 1, line, "join")->data.chars : "";
-    uint32_t sep_length = (uint32_t)strlen(sep);
+    uint32_t sep_length = (uint32_t)slen(sep);
 
     // turn every item into a string first, so the total length is known
     value_t* pieces = aer_alloc((list->length ? list->length : 1) * sizeof(value_t));
@@ -379,14 +379,14 @@ static value_t bi_bytes (int argc, value_t* argv, int line) {
 static value_t bi_read_file (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
-    if (!file_arg(argv, 0, line, "read_file", dir, name)) {
+    if (!file_arg(argv, 0, line, "rdf", dir, name)) {
         return aer_nil();
     }
     char* text = fs_read_f(dir, name);
     if (text == 0) {
         return aer_nil();
     }
-    value_t s = aer_string(text, (uint32_t)strlen(text));
+    value_t s = aer_string(text, (uint32_t)slen(text));
     free(text);
     return s;
 }
@@ -395,7 +395,7 @@ static value_t bi_read_bytes (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
     (void)argc;
-    if (!file_arg(argv, 0, line, "read_bytes", dir, name)) {
+    if (!file_arg(argv, 0, line, "rdb", dir, name)) {
         return aer_nil();
     }
     char* data = fs_read_bytes(dir, name, &size);
@@ -426,18 +426,18 @@ static value_t save_file (value_t* argv, int line, const char* fn, bool append) 
 
 static value_t bi_write_file (int argc, value_t* argv, int line) {
     (void)argc;
-    return save_file(argv, line, "write_file", false);
+    return save_file(argv, line, "wrf", false);
 }
 
 static value_t bi_append_file (int argc, value_t* argv, int line) {
     (void)argc;
-    return save_file(argv, line, "append_file", true);
+    return save_file(argv, line, "apf", true);
 }
 
 static value_t bi_file_exists (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
-    if (!file_arg(argv, 0, line, "file_exists", dir, name)) {
+    if (!file_arg(argv, 0, line, "isf", dir, name)) {
         return aer_bool(false);
     }
     return aer_bool(fs_file_exists(dir, name));
@@ -446,7 +446,7 @@ static value_t bi_file_exists (int argc, value_t* argv, int line) {
 static value_t bi_delete_file (int argc, value_t* argv, int line) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     (void)argc;
-    if (!file_arg(argv, 0, line, "delete_file", dir, name)) {
+    if (!file_arg(argv, 0, line, "delf", dir, name)) {
         return aer_bool(false);
     }
     return aer_bool(fs_delete_f(dir, name) == FS_OK);
@@ -456,21 +456,21 @@ static value_t bi_delete_file (int argc, value_t* argv, int line) {
 static void list_one (const char* name, bool is_dir, uint32_t size, void* ctx) {
     (void)size;
     char entry[FS_NAME_MAX + 2];
-    strlcpy(entry, name, sizeof(entry));
+    scpy(entry, name, sizeof(entry));
     if (is_dir) {
-        strlcat(entry, "/", sizeof(entry));
+        scat(entry, "/", sizeof(entry));
     }
-    aer_list_push((aer_object_t*)ctx, aer_string(entry, (uint32_t)strlen(entry)));
+    aer_list_push((aer_object_t*)ctx, aer_string(entry, (uint32_t)slen(entry)));
 }
 
 // the current directory, e.g. "/bin/"
 static value_t bi_cwd (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return aer_string(cd, (uint32_t)strlen(cd));
+    return aer_string(cd, (uint32_t)slen(cd));
 }
 
 static value_t bi_list_files (int argc, value_t* argv, int line) {
-    const char* dir = argc > 0 ? str_arg(argv, 0, line, "list_files")->data.chars : ".";
+    const char* dir = argc > 0 ? str_arg(argv, 0, line, "la")->data.chars : ".";
     value_t list = aer_list(8);
     if (fs_list(dir, list_one, list.as.obj) < 0) {
         aer_release(list);
@@ -483,35 +483,35 @@ static value_t bi_list_files (int argc, value_t* argv, int line) {
 
 static value_t bi_encrypt_file (int argc, value_t* argv, int line) {
     (void)argc;
-    const char* path = str_arg(argv, 0, line, "encrypt_file")->data.chars;
-    const char* password = str_arg(argv, 1, line, "encrypt_file")->data.chars;
+    const char* path = str_arg(argv, 0, line, "enc")->data.chars;
+    const char* password = str_arg(argv, 1, line, "enc")->data.chars;
     return aer_bool(fcrypt_encrypt_file(path, password) == FCRYPT_OK);
 }
 
 static value_t bi_decrypt_file (int argc, value_t* argv, int line) {
     (void)argc;
-    const char* path = str_arg(argv, 0, line, "decrypt_file")->data.chars;
-    const char* password = str_arg(argv, 1, line, "decrypt_file")->data.chars;
+    const char* path = str_arg(argv, 0, line, "dec")->data.chars;
+    const char* password = str_arg(argv, 1, line, "dec")->data.chars;
     return aer_bool(fcrypt_decrypt_file(path, password) == FCRYPT_OK);
 }
 
 static value_t bi_is_encrypted (int argc, value_t* argv, int line) {
     (void)argc;
-    return aer_bool(fcrypt_file_is_encrypted(str_arg(argv, 0, line, "is_encrypted")->data.chars));
+    return aer_bool(fcrypt_file_is_encrypted(str_arg(argv, 0, line, "isenc")->data.chars));
 }
 
 // the contents of an encrypted file as a string, without changing the file (nil if it can't be read)
 static value_t bi_read_encrypted (int argc, value_t* argv, int line) {
     (void)argc;
-    const char* path = str_arg(argv, 0, line, "read_encrypted")->data.chars;
-    const char* password = str_arg(argv, 1, line, "read_encrypted")->data.chars;
+    const char* path = str_arg(argv, 0, line, "rdenc")->data.chars;
+    const char* password = str_arg(argv, 1, line, "rdenc")->data.chars;
     uint8_t* contents;
     uint32_t length;
     if (fcrypt_read_file(path, password, &contents, &length) != FCRYPT_OK) {
         return aer_nil();
     }
     value_t s = aer_string((const char*)contents, length);
-    crypto_wipe(contents, length);
+    wipe(contents, length);
     free(contents);
     return s;
 }
@@ -566,22 +566,22 @@ static void cell_args (value_t* argv, int line, const char* fn, uint8_t* x, uint
     *y = (uint8_t)cy;
 }
 
-// big_text(x, y, text, colour, background): text in big letters, like the splash screen's
+// big(x, y, text, colour, background): text in big letters, like the splash screen's
 // "aerOS", with its top left corner at column x, row y. Each letter is 8 columns wide and 7 rows
 // tall. The colour is WHITE and the background BLACK if they are left out.
 // Returns how many columns wide it is, so it can be centred
 static value_t bi_big_text (int argc, value_t* argv, int line) {
     uint8_t x, y;
-    cell_args(argv, line, "big_text", &x, &y);
-    aer_object_t* text = str_arg(argv, 2, line, "big_text");
+    cell_args(argv, line, "big", &x, &y);
+    aer_object_t* text = str_arg(argv, 2, line, "big");
 
     enum color colour = WHITE;
     if (argc > 3) {
-        colour = (enum color)(int_arg(argv, 3, line, "big_text") & 15); // one of the 16 colours
+        colour = (enum color)(int_arg(argv, 3, line, "big") & 15); // one of the 16 colours
     }
     enum color background = BLACK;
     if (argc > 4) {
-        background = (enum color)(int_arg(argv, 4, line, "big_text") & 15);
+        background = (enum color)(int_arg(argv, 4, line, "big") & 15);
     }
     return aer_int(big_text(x, y, colour, background, text->data.chars));
 }
@@ -633,10 +633,10 @@ static value_t bi_frame (int argc, value_t* argv, int line) {
     }
     uint32_t period = 1000u / (uint32_t)fps;
     // a long gap (the first frame, or after something slow) starts the timing again
-    if (clck_uptime_ms() - last_frame_ms > period * 4) {
-        last_frame_ms = clck_uptime_ms();
+    if (clkuptms() - last_frame_ms > period * 4) {
+        last_frame_ms = clkuptms();
     }
-    while (clck_uptime_ms() - last_frame_ms < period) {
+    while (clkuptms() - last_frame_ms < period) {
         if (kb_take_break()) {
             aer_stop(line);
         }
@@ -661,9 +661,9 @@ static value_t bi_queue (int argc, value_t* argv, int line) {
 // add one row of system information to the list as [group, name, value]
 static void info_row (const char* group, const char* name, const char* value, void* ctx) {
     value_t row = aer_list(3);
-    aer_list_push(row.as.obj, aer_string(group, (uint32_t)strlen(group)));
-    aer_list_push(row.as.obj, aer_string(name, (uint32_t)strlen(name)));
-    aer_list_push(row.as.obj, aer_string(value, (uint32_t)strlen(value)));
+    aer_list_push(row.as.obj, aer_string(group, (uint32_t)slen(group)));
+    aer_list_push(row.as.obj, aer_string(name, (uint32_t)slen(name)));
+    aer_list_push(row.as.obj, aer_string(value, (uint32_t)slen(value)));
     aer_list_push((aer_object_t*)ctx, row);
 }
 
@@ -677,7 +677,7 @@ static value_t bi_system_info (int argc, value_t* argv, int line) {
 
 static value_t bi_time (int argc, value_t* argv, int line) {
     (void)argc; (void)argv; (void)line;
-    return aer_int((int32_t)clck_uptime_ms());
+    return aer_int((int32_t)clkuptms());
 }
 
 static value_t bi_random (int argc, value_t* argv, int line) {
@@ -698,7 +698,7 @@ static value_t bi_beep (int argc, value_t* argv, int line) {
 
 static void need_graphics (int line, const char* fn) {
     if (!aer->graphics) {
-        aer_error(line, "%s() needs graphics, call gfx_open() first", fn);
+        aer_error(line, "%s() needs graphics, call gopen() first", fn);
     }
 }
 
@@ -721,13 +721,13 @@ static value_t bi_gfx_close (int argc, value_t* argv, int line) {
 
 static value_t bi_gfx_width (int argc, value_t* argv, int line) {
     (void)argc; (void)argv;
-    need_graphics(line, "gfx_width");
+    need_graphics(line, "gw");
     return aer_int((int32_t)gfx_width());
 }
 
 static value_t bi_gfx_height (int argc, value_t* argv, int line) {
     (void)argc; (void)argv;
-    need_graphics(line, "gfx_height");
+    need_graphics(line, "gh");
     return aer_int((int32_t)gfx_height());
 }
 
@@ -740,8 +740,8 @@ static value_t bi_rgb (int argc, value_t* argv, int line) {
 }
 
 static value_t bi_gfx_clear (int argc, value_t* argv, int line) {
-    need_graphics(line, "gfx_clear");
-    gfx_clear(argc > 0 ? (uint32_t)int_arg(argv, 0, line, "gfx_clear") : 0);
+    need_graphics(line, "gclear");
+    gfx_clear(argc > 0 ? (uint32_t)int_arg(argv, 0, line, "gclear") : 0);
     return aer_nil();
 }
 
@@ -780,7 +780,7 @@ static value_t bi_text (int argc, value_t* argv, int line) {
 
 static aer_object_t* bytes_arg (value_t* argv, int i, int line, const char* fn) {
     if (argv[i].type != V_BYTES) {
-        aer_error(line, "%s() needs bytes (from read_bytes) for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
+        aer_error(line, "%s() needs bytes (from rdb) for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
     }
     return argv[i].as.obj;
 }
@@ -796,7 +796,7 @@ static value_t bi_image (int argc, value_t* argv, int line) {
 
 static value_t bi_image_size (int argc, value_t* argv, int line) {
     (void)argc;
-    aer_object_t* data = bytes_arg(argv, 0, line, "image_size");
+    aer_object_t* data = bytes_arg(argv, 0, line, "imgsz");
     int w, h;
     if (!gfx_image_size(data->data.bytes, data->length, &w, &h)) {
         return aer_nil();
@@ -818,7 +818,7 @@ const aer_builtin_t aer_builtins[] = {
     { "print", bi_print, 0, AER_MAX_ARGS },
     { "write", bi_write, 0, AER_MAX_ARGS },
     { "input", bi_input, 0, 1 },
-    { "input_secret", bi_input_secret, 0, 1 },
+    { "inpw", bi_input_secret, 0, 1 },
     { "cls", bi_cls, 0, 0 },
     { "color", bi_color, 1, 2 },
     { "at", bi_at, 2, 2 },
@@ -841,22 +841,22 @@ const aer_builtin_t aer_builtins[] = {
     { "insert", bi_insert, 3, 3 },
     { "remove", bi_remove, 2, 2 },
     { "bytes", bi_bytes, 1, 1 },
-    { "read_file", bi_read_file, 1, 1 },
-    { "read_bytes", bi_read_bytes, 1, 1 },
-    { "write_file", bi_write_file, 2, 2 },
-    { "append_file", bi_append_file, 2, 2 },
-    { "file_exists", bi_file_exists, 1, 1 },
-    { "delete_file", bi_delete_file, 1, 1 },
-    { "encrypt_file", bi_encrypt_file, 2, 2 },
-    { "decrypt_file", bi_decrypt_file, 2, 2 },
-    { "is_encrypted", bi_is_encrypted, 1, 1 },
-    { "read_encrypted", bi_read_encrypted, 2, 2 },
-    { "list_files", bi_list_files, 0, 1 },
+    { "rdf", bi_read_file, 1, 1 },
+    { "rdb", bi_read_bytes, 1, 1 },
+    { "wrf", bi_write_file, 2, 2 },
+    { "apf", bi_append_file, 2, 2 },
+    { "isf", bi_file_exists, 1, 1 },
+    { "delf", bi_delete_file, 1, 1 },
+    { "enc", bi_encrypt_file, 2, 2 },
+    { "dec", bi_decrypt_file, 2, 2 },
+    { "isenc", bi_is_encrypted, 1, 1 },
+    { "rdenc", bi_read_encrypted, 2, 2 },
+    { "la", bi_list_files, 0, 1 },
     { "cwd", bi_cwd, 0, 0 },
     { "sleep", bi_sleep, 1, 1 },
     { "time", bi_time, 0, 0 },
-    { "system_info", bi_system_info, 0, 0 },
-    { "big_text", bi_big_text, 3, 5 },
+    { "sysinfo", bi_system_info, 0, 0 },
+    { "big", bi_big_text, 3, 5 },
     { "progress", bi_progress, 5, 6 },
     { "spinner", bi_spinner, 2, 4 },
     { "frame", bi_frame, 1, 1 },
@@ -865,18 +865,18 @@ const aer_builtin_t aer_builtins[] = {
     { "beep", bi_beep, 0, 1 },
     { "play", bi_play, 1, 1 },
     { "exit", bi_exit, 0, 0 },
-    { "gfx_open", bi_gfx_open, 0, 0 },
-    { "gfx_close", bi_gfx_close, 0, 0 },
-    { "gfx_width", bi_gfx_width, 0, 0 },
-    { "gfx_height", bi_gfx_height, 0, 0 },
-    { "gfx_clear", bi_gfx_clear, 0, 1 },
+    { "gopen", bi_gfx_open, 0, 0 },
+    { "gclose", bi_gfx_close, 0, 0 },
+    { "gw", bi_gfx_width, 0, 0 },
+    { "gh", bi_gfx_height, 0, 0 },
+    { "gclear", bi_gfx_clear, 0, 1 },
     { "rgb", bi_rgb, 3, 3 },
     { "pixel", bi_pixel, 3, 3 },
     { "rect", bi_rect, 5, 5 },
     { "line", bi_line, 5, 5 },
     { "text", bi_text, 4, 5 },
     { "image", bi_image, 3, 5 },
-    { "image_size", bi_image_size, 1, 1 },
+    { "imgsz", bi_image_size, 1, 1 },
 };
 
 const int aer_builtin_count = sizeof(aer_builtins) / sizeof(aer_builtins[0]);
@@ -896,7 +896,7 @@ void aer_define_constants (void) {
     for (size_t i = 0; i < sizeof(constants) / sizeof(constants[0]); i++) {
         aer_define_global(constants[i].name, aer_int(constants[i].value));
     }
-    srand(clck_uptime_ms()); // a different random() sequence every run
+    srand(clkuptms()); // a different random() sequence every run
 }
 
 // a program that ends (or crashes) in graphics mode gets the terminal back automatically

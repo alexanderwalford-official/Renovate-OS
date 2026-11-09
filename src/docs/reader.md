@@ -1,8 +1,8 @@
 # The reader
 
 `read <file>` shows Markdown (`.md`), HTML (`.htm` or `.html`) and plain text files, a
-screen at a time. With no file it opens this manual, and so does the `docs` command:
-`docs sound` opens `/docs/sound.md`.
+screen at a time. With no file it opens this manual, and so does the `doc` command:
+`doc sound` opens `/docs/sound.md`.
 
 ## Keys
 
@@ -68,5 +68,5 @@ file --parse--> blocks --layout--> screen lines --view--> what you see
 2. **layout**: the blocks are word wrapped into lines of coloured pieces of text.
 3. **view**: the lines are drawn a screen at a time, and the keys move around them.
 
-Because it is a normal AerLang program, you can change it: `edit /bin/read.aer`. The
+Because it is a normal AerLang program, you can change it: `edt /bin/read.aer`. The
 colours are at the top of the file.

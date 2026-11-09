@@ -16,7 +16,7 @@
 #define __SERR  0x0040          // FND ERR
 #define __SMBF  0x0080          // BUFF FROM MEM ALLOC
 #define __SAPP  0x0100          // fdopen()ed in append mode - so must  write to end */
-#define __SSTR  0x0200          // this is an sprintf/snprintf string
+#define __SSTR  0x0200          // this is an sprintf/sfmt string
 #define __SOPT  0x0400          // do fseek() optimisation */
 #define __SNPT  0x0800          // do not do fseek() optimisation
 #define __SOFF  0x1000          // set iff _offset is in fact correct

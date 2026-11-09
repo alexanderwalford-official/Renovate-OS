@@ -21,7 +21,7 @@ func ends_with(s, tail)
 end
 
 func find_pictures(folder, found)
-    let names = list_files(folder)
+    let names = la(folder)
     if names == nil then
         return found
     end
@@ -92,7 +92,7 @@ end
 
 func diagnostics(path, d)
 
-    gfx_clear(rgb(20, 20, 25))
+    gclear(rgb(20, 20, 25))
 
     text(20, 20, "IMAGE DIAGNOSTICS", rgb(255, 200, 80), 2)
     text(20, 55, "File: " + path, rgb(230, 230, 230), 1)
@@ -127,7 +127,7 @@ func diagnostics(path, d)
     text(20, 260, "Compression: " + str(compression), rgb(230, 230, 230), 1)
     text(20, 285, "Pixel offset: " + str(offset), rgb(230, 230, 230), 1)
 
-    let native = image_size(d)
+    let native = imgsz(d)
 
     if native == nil then
         text(20, 320, "Native loader: REJECTED", rgb(255, 100, 100), 1)
@@ -479,7 +479,7 @@ end
 
 func load_picture(path)
 
-    let data = read_bytes(path)
+    let data = rdb(path)
 
     if data == nil then
         conversion_error(path, nil, "Unable to read file.")
@@ -487,7 +487,7 @@ func load_picture(path)
     end
 
     # Attempt native loading first.
-    let size = image_size(data)
+    let size = imgsz(data)
 
     if size != nil then
         return data
@@ -509,7 +509,7 @@ func load_picture(path)
     end
 
     # Validate output.
-    let converted_size = image_size(converted)
+    let converted_size = imgsz(converted)
 
     if converted_size == nil then
         conversion_error(path, data, "AerOS rejected converted BMP.")
@@ -676,21 +676,21 @@ end
 # Returns the key that left: LEFT, RIGHT or ESC.
 func view(path)
 
-    let w = gfx_width()
-    let h = gfx_height()
+    let w = gw()
+    let h = gh()
     let room = h - BAR
 
-    gfx_clear(BACKGROUND)
+    gclear(BACKGROUND)
 
     let data = load_picture(path)
     let size = nil
 
     if data != nil then
-        size = image_size(data)
+        size = imgsz(data)
     end
 
     if size == nil then
-        gfx_clear(BACKGROUND)
+        gclear(BACKGROUND)
         text(20, 20, "Can't show " + path, rgb(255, 90, 90), 1)
         text(w - 300, h - 40, "LEFT / RIGHT   ESC = back", rgb(255, 127, 0), 1)
         return wait_to_leave()
@@ -711,7 +711,7 @@ func view(path)
             # gaps around the picture need clearing, a picture covering
             # the whole view doesn't (and doesn't flicker)
             if pw < w or ph < room then
-                gfx_clear(BACKGROUND)
+                gclear(BACKGROUND)
             end
 
             image(data, x, y, pw, ph)
@@ -818,7 +818,7 @@ end
 
 while current >= 0 do
 
-    if not gfx_open() then
+    if not gopen() then
         print("The viewer needs a graphics screen, and this one is text only.")
         exit()
     end
@@ -835,7 +835,7 @@ while current >= 0 do
 
     else
 
-        gfx_close()
+        gclose()
 
         if len(args) > 0 then
             exit()

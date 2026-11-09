@@ -11,13 +11,13 @@ speakers, and how to change or extend it.
 | [`src/sys/sound.c`](../src/sys/sound.c) | reads WAV files, calls the MP3 decoder, converts sample rates, the startup sound |
 | [`src/lib/mp3.c`](../src/lib/mp3.c) | a small wrapper around minimp3 |
 | [`src/lib/minimp3/`](../src/lib/minimp3/) | minimp3, unchanged (public domain, CC0) |
-| [`src/drivers/audio/tone.c`](../src/drivers/audio/tone.c) | the old PC speaker beeper (`BEEP`), separate from all of the above |
+| [`src/drivers/audio/tone.c`](../src/drivers/audio/tone.c) | the old PC speaker beeper (`BP`), separate from all of the above |
 
 ## Using it
 
 | Where | How |
 | --- | --- |
-| terminal | `PLAY song.mp3`, `PLAY /sys/startup.wav` (Esc or Ctrl+C stops it) |
+| terminal | `PLY song.mp3`, `PLY /sys/startup.wav` (Esc or Ctrl+C stops it) |
 | AerLang | `play("song.mp3")` waits until it finishes, false if it can't be played |
 | boot | `/sys/startup.wav` plays while the splash screen is up |
 | QEMU | `make run` adds an AC'97 card played through PulseAudio. Use `make run AUDIO=none` if that isn't available |
@@ -42,7 +42,7 @@ flowchart TD
     R -- no --> S[resample to 48000 Hz]
     R -- yes --> A
     S --> A{who asked?}
-    A -- "PLAY / play()" --> B["ac97_play: waits, refilling the card's buffer list"]
+    A -- "PLY / play()" --> B["ac97_play: waits, refilling the card's buffer list"]
     A -- startup sound --> C["ac97_start: returns at once, the card plays on its own"]
 ```
 
@@ -105,7 +105,7 @@ and halts. Nothing is copied: the descriptors point straight into the decoded so
 
 **`ac97_start`**, used for the startup sound, gives each descriptor the most it can hold (32 767
 frames) and returns at once. Up to about 21 seconds then plays with no help from the CPU while
-AerOS carries on booting. Any later `PLAY` stops it first.
+AerOS carries on booting. Any later `PLY` stops it first.
 
 If the card stops moving for 2 seconds, `ac97_play` gives up with "the sound card stopped
 responding", so a broken card can't hang the OS.

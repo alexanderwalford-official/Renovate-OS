@@ -17,8 +17,8 @@
       them to us through port 0x60 and raises IRQ1 for each byte.
     - The IRQ1 handler in IO.c turns scancodes into characters (tracking shift, ctrl and caps lock)
       and puts them in a ring buffer.
-    - GetChar() takes keys back out of that buffer, and GetString() builds a whole line editor
-      with backspace and command history on top of it. The terminal uses GetString for its prompt.
+    - getk() takes keys back out of that buffer, and getln() builds a whole line editor
+      with backspace and command history on top of it. The terminal uses getln for its prompt.
 */
 
 #ifndef IO_H
@@ -26,7 +26,7 @@
 
 #include <stdbool.h>
 
-// special (non-ASCII) keys returned by GetChar()
+// special (non-ASCII) keys returned by getk()
 // they start at 0x80 so they can never be confused with a normal 7 bit ASCII character
 #define KEY_ESCAPE 27
 #define KEY_UP     0x80
@@ -39,7 +39,7 @@
 #define KEY_PGUP   0x87
 #define KEY_PGDN   0x88
 
-// true once init_keyboard() has run, GetChar() refuses to wait for keys before that
+// true once init_keyboard() has run, getk() refuses to wait for keys before that
 extern bool keyboard_ready;
 
 // function to initialize the keyboard (requires idt_init() first)
@@ -57,7 +57,7 @@ bool kb_take_break(void);
 // returns the next pressed key, waiting for one if the buffer is empty
 // (ASCII characters, or one of the KEY_ special values), 0 if there is no keyboard
 // "no keyboard" also covers interrupts being disabled, since then no key could ever arrive
-int GetChar(void);
+int getk(void);
 
 // standard style getchar(), waits for the next printable / control character
 // the special KEY_ values (arrows etc.) are skipped, EOF is returned if there is no keyboard
@@ -67,15 +67,15 @@ int getchar(void);
 // echoing it to the console. Supports backspace and the up / down arrows for previous lines.
 // returns in. The finished line (without the newline) is added to the history unless it is empty.
 // size must be at least 1
-char* GetString(char* in, int size);
+char* getln(char* in, int size);
 
 // what Tab does in GetLine. It is given the line typed so far (length characters, in a buffer of
 // size bytes), adds to it in place, prints whatever it added (or a list of choices followed by
 // the prompt and the line again), and returns the line's new length
 typedef int (*tab_complete_fn)(char* line, int length, int size);
 
-// GetString, with Tab handed to complete (the terminal's command line uses it to fill in
-// commands and file names). complete may be NULL, which is exactly GetString
+// getln, with Tab handed to complete (the terminal's command line uses it to fill in
+// commands and file names). complete may be NULL, which is exactly getln
 char* GetLine(char* in, int size, tab_complete_fn complete);
 
 // forget the up / down arrow history (done on logout)
@@ -89,7 +89,7 @@ char* GetSecret(char* in, int size);
 void InputBufferChangeState(int state);
 
 // throw away every key press that has not been read yet
-// (and anything that arrives before the next GetString starts reading)
+// (and anything that arrives before the next getln starts reading)
 void ClearInputbuffer(void);
 
 #endif /* IO_H */

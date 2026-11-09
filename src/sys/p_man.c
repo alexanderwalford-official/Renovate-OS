@@ -34,16 +34,16 @@ static bool p_valid (int p_id) {
 //   "d" = p_destroy, "f" = p_freeze for 1ms, "e" = p_exec, "p" = stack_print (p_id is ignored)
 // returns 0 if the action was recognised, -1 if not
 int p_id_handler (const char* action, int p_id) {
-    if (StrCompare(action, "d")) {
+    if (seq(action, "d")) {
         p_destroy(p_id);
     }
-    else if (StrCompare(action, "f")) {
+    else if (seq(action, "f")) {
         p_freeze(p_id, 1);
     }
-    else if (StrCompare(action, "e")) {
+    else if (seq(action, "e")) {
         p_exec(p_id);
     }
-    else if (StrCompare(action, "p")) {
+    else if (seq(action, "p")) {
         stack_print();
     }
     else return -1;
@@ -68,10 +68,10 @@ int p_create (const char* c_p_inst) {
         memset(p, 0, sizeof(*p));
         p->p_used = true;
         p->p_id = (unsigned int)id;
-        // strlcpy always '\0' terminates, code longer than P_INST_MAX - 1 characters is cut short
-        strlcpy(p->p_inst, c_p_inst, sizeof(p->p_inst));
+        // scpy always '\0' terminates, code longer than P_INST_MAX - 1 characters is cut short
+        scpy(p->p_inst, c_p_inst, sizeof(p->p_inst));
         // the execution time is measured from the copy, so cut short code gets a matching (shorter) time
-        p->p_et = (unsigned int)strlen(p->p_inst) * 10; // 0.01 seconds per character
+        p->p_et = (unsigned int)slen(p->p_inst) * 10; // 0.01 seconds per character
         p->p_rs = P_DEAD;
         p_cnt++;
         return id;
@@ -136,7 +136,7 @@ void p_exec (int p_id) {
 
 // sort helper: shortest execution time first, then lowest ID
 // qsort hands us pointers to two entries of the order[] array in p_stack_update(), and each entry
-// is a slot index, so look the processes up in p_stack. Returns <0, 0 or >0 like strcmp.
+// is a slot index, so look the processes up in p_stack. Returns <0, 0 or >0 like scmp.
 // the ID tie-break makes the order predictable when two processes have the same length of code
 static int p_compare_et (const void* a, const void* b) {
     const struct process* pa = &p_stack[*(const int*)a];
@@ -232,7 +232,7 @@ static const char* p_state_name (int state) {
 
 // print the process stack
 // one row per used slot: ID, run state, execution time left, ticket and the code itself
-// e.g. from the terminal, PMAN shows the terminal process as RUNNING, and "run print_stack" shows
+// e.g. from the terminal, PM shows the terminal process as RUNNING, and "run print_stack" shows
 // both the terminal and the print_stack process, each RUNNING
 void stack_print (void) {
     prtf("Process Stack: %d process(es)\n", p_cnt);

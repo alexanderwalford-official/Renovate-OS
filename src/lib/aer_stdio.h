@@ -3,7 +3,7 @@
     Formatted output (freestanding replacement for the output half of <stdio.h>).
 
     prtf / putchar write to the console (scrolling terminal at the cursor position).
-    sprintf / snprintf / vsnprintf write into a buffer.
+    sprintf / sfmt / vsnprintf write into a buffer.
 
     Supported: %d %i %u %x %X %o %b %c %s %p %%
                flags - 0 + space #, width, .precision (both may be *),
@@ -61,11 +61,11 @@
 // format checking by, not the name of this function)
 int prtf(const char* fmt, ...) __attribute__((format(printf, 1, 2)));
 // print into buf, returns the length written (excluding the '\0')
-// gotcha: there's no size limit, so buf must be big enough. Prefer snprintf.
+// gotcha: there's no size limit, so buf must be big enough. Prefer sfmt.
 int sprintf(char* buf, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 // print into buf, which is size bytes long; never writes past the end and always terminates
 // (when size is at least 1). Returns the length the full result needed, so ">= size" means it was cut short.
-int snprintf(char* buf, size_t size, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
+int sfmt(char* buf, size_t size, const char* fmt, ...) __attribute__((format(printf, 3, 4)));
 
 // the "v" versions take a va_list instead of "...", so you can write your own printf style functions:
 //     void debug_print(const char* fmt, ...) { va_list ap; va_start(ap, fmt); vprtf(fmt, ap); va_end(ap); }

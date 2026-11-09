@@ -43,8 +43,8 @@
     all). p_queue_run() then runs the WAITING ones in the order they were added, each through
     p_exec(), and destroys each when it is done:
 
-        QUEUE hello      ->  [ hello.aer  WAITING #1 ]
-        QUEUE guess      ->  [ hello.aer  WAITING #1 ] [ guess.aer  WAITING #2 ]
+        QUE hello        ->  [ hello.aer  WAITING #1 ]
+        QUE guess        ->  [ hello.aer  WAITING #1 ] [ guess.aer  WAITING #2 ]
         GO               ->  hello.aer runs to the end, then guess.aer
 */
 
@@ -99,7 +99,7 @@ void p_stack_runtime (void);
 // run one process right now: RUNNING while its code is compiled, DEAD afterwards
 void p_stack_exec (int p_id);
 
-// print a table of every process on the stack (used by PMAN and "print_stack")
+// print a table of every process on the stack (used by PM and "print_stack")
 void stack_print (void);
 
 // add code to the end of the queue (WAITING), returns how many are now queued, -1 if the stack is full

@@ -1,5 +1,5 @@
 /*
-    editor.c - the AerOS text editor (EDIT <file>)
+    editor.c - the AerOS text editor (EDT <file>)
 
     WHAT IS ON THE SCREEN
 
@@ -155,7 +155,7 @@ static void load (void) {
     char* text = fs_read_f(folder, file_name);
     if (text == NULL) {
         insert_line(0, "", 0);
-        snprintf(message, sizeof(message), "New file");
+        sfmt(message, sizeof(message), "New file");
         return;
     }
 
@@ -166,7 +166,7 @@ static void load (void) {
         if (newline != NULL) {
             length = (int)(newline - line_start);
         } else {
-            length = (int)strlen(line_start); // the last line, with no '\n' after it
+            length = (int)slen(line_start); // the last line, with no '\n' after it
         }
 
         // files written on Windows end their lines with "\r\n": leave the '\r' out
@@ -194,7 +194,7 @@ static void save (void) {
 
     char* text = malloc((size_t)total + 1);
     if (text == NULL) {
-        snprintf(message, sizeof(message), "Can't save: out of memory");
+        sfmt(message, sizeof(message), "Can't save: out of memory");
         return;
     }
 
@@ -219,9 +219,9 @@ static void save (void) {
 
     if (result >= 0) {
         modified = false;
-        snprintf(message, sizeof(message), "Saved %d bytes", size);
+        sfmt(message, sizeof(message), "Saved %d bytes", size);
     } else {
-        snprintf(message, sizeof(message), "Can't save: %s", fs_strerror(result));
+        sfmt(message, sizeof(message), "Can't save: %s", fs_strerror(result));
     }
     free(text);
 }
@@ -348,7 +348,7 @@ static bool is_keyword (const char* word, int length) {
     int keyword_count = (int)(sizeof(keywords) / sizeof(keywords[0]));
 
     for (int i = 0; i < keyword_count; i++) {
-        bool same_length = (int)strlen(keywords[i]) == length;
+        bool same_length = (int)slen(keywords[i]) == length;
         if (same_length && strncmp(keywords[i], word, (size_t)length) == 0) {
             return true;
         }
@@ -448,14 +448,14 @@ static void scroll_to_cursor (void) {
 // the title bar: the file's name (with * if it has unsaved changes) and where the cursor is
 static void draw_title_bar (void) {
     char title[COLS + 1];
-    snprintf(title, sizeof(title), " %s%s%s", folder, file_name, modified ? " *" : "");
+    sfmt(title, sizeof(title), " %s%s%s", folder, file_name, modified ? " *" : "");
 
     char position[24];
-    snprintf(position, sizeof(position), "Line %d, Col %d ", cursor_line + 1, cursor_column + 1);
+    sfmt(position, sizeof(position), "Line %d, Col %d ", cursor_line + 1, cursor_column + 1);
 
     blank_row(TITLE_ROW, BLACK, BRIGHT);
     puts(0, TITLE_ROW, BLACK, BRIGHT, title);
-    puts((uint8_t)(COLS - strlen(position)), TITLE_ROW, BLACK, BRIGHT, position); // right aligned
+    puts((uint8_t)(COLS - slen(position)), TITLE_ROW, BLACK, BRIGHT, position); // right aligned
 }
 
 // the text: one screen row for each line in view
@@ -510,7 +510,7 @@ static void draw_help_bar (void) {
         puts(0, HELP_ROW, BLACK, BRIGHT, keys);
     } else {
         puts(0, HELP_ROW, BLACK, BRIGHT, message);
-        puts((uint8_t)(COLS - strlen(keys) - 1), HELP_ROW, BLACK, BRIGHT, keys); // keys on the right
+        puts((uint8_t)(COLS - slen(keys) - 1), HELP_ROW, BLACK, BRIGHT, keys); // keys on the right
     }
 }
 
@@ -521,7 +521,7 @@ static void draw (void) {
     draw_text();
     draw_help_bar();
 
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     uint8_t screen_x = (uint8_t)(cursor_column - first_column);
     uint8_t screen_y = (uint8_t)(TEXT_TOP + cursor_line - first_line);
     console_set_cursor(screen_x, screen_y);
@@ -540,15 +540,15 @@ static void run_program (void) {
     }
 
     char path[FS_PATH_MAX + FS_NAME_MAX];
-    snprintf(path, sizeof(path), "%s%s", folder, file_name);
+    sfmt(path, sizeof(path), "%s%s", folder, file_name);
 
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     console_clear();
     aer_run_file(path, "");
 
-    console_set_color(DARK_GRAY, BLACK);
+    colour(DARK_GRAY, BLACK);
     prtf("\n-- press any key to go back to the editor --");
-    GetChar();
+    getk();
 
     vga_invalidate(); // the program may have drawn graphics: redraw every cell next time
     clear(BLACK);
@@ -658,7 +658,7 @@ void editor_open (const char* path) {
         return;
     }
 
-    is_aerlang = aer_is_program_name(file_name, strlen(file_name));
+    is_aerlang = aer_is_program_name(file_name, slen(file_name));
     cursor_line = 0;
     cursor_column = 0;
     first_line = 0;
@@ -675,7 +675,7 @@ void editor_open (const char* path) {
 
     for (;;) {
         draw();
-        int key = GetChar();
+        int key = getk();
         if (key == 0) {
             break; // no keyboard
         }
@@ -683,7 +683,7 @@ void editor_open (const char* path) {
 
         if (key == CTRL('Q')) {
             if (modified && !warned_about_quitting) {
-                snprintf(message, sizeof(message), "Unsaved changes! Ctrl+Q again to quit without saving");
+                sfmt(message, sizeof(message), "Unsaved changes! Ctrl+Q again to quit without saving");
                 warned_about_quitting = true;
                 continue;
             }

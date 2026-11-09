@@ -87,7 +87,7 @@ bool auth_required (void) {
 // a name is 1 to `longest` characters of a-z, 0-9, _ and -
 // (so it is safe to use in folder names, in the prompt and in the accounts file)
 static bool valid_name (const char* name, size_t longest) {
-    size_t length = strlen(name);
+    size_t length = slen(name);
     if (length == 0 || length > longest) {
         return false;
     }
@@ -106,7 +106,7 @@ static bool valid_name (const char* name, size_t longest) {
 // read one line of the accounts file into an account. False if the line doesn't make sense
 static bool parse_account_line (char* line, account_t* account) {
     char* fields[5]; // name, rounds, salt, hash, wrong passwords
-    int field_count = split(StrTrim(line), ':', fields, 5);
+    int field_count = split(trim(line), ':', fields, 5);
     if (field_count < 4) {
         return false;
     }
@@ -117,11 +117,11 @@ static bool parse_account_line (char* line, account_t* account) {
     if (!valid_name(name, AUTH_NAME_MAX)) {
         return false;
     }
-    if (strlen(salt_hex) != SALT_SIZE * 2 || strlen(hash_hex) != SHA256_SIZE * 2) {
+    if (slen(salt_hex) != SALT_SIZE * 2 || slen(hash_hex) != SHA256_SIZE * 2) {
         return false; // each byte is two hex digits
     }
 
-    strlcpy(account->name, name, sizeof(account->name));
+    scpy(account->name, name, sizeof(account->name));
     account->rounds = (uint32_t)strtoul(fields[1], NULL, 10);
     if (field_count == 5) {
         account->wrong_passwords = (uint32_t)strtoul(fields[4], NULL, 10);
@@ -178,7 +178,7 @@ static int save (void) {
         crypto_to_hex(account->hash, SHA256_SIZE, hash_hex);
 
         char line[ACCOUNT_LINE_MAX];
-        snprintf(line, sizeof(line), "%s:%u:%s:%s:%u\n",
+        sfmt(line, sizeof(line), "%s:%u:%s:%s:%u\n",
                  account->name, account->rounds, salt_hex, hash_hex, account->wrong_passwords);
         strcat(text, line);
     }
@@ -200,7 +200,7 @@ static int save (void) {
 // where a user is in accounts[], or -1 if there is no such user
 static int find (const char* name) {
     for (int i = 0; i < account_count; i++) {
-        if (StrCompare(accounts[i].name, name)) {
+        if (seq(accounts[i].name, name)) {
             return i;
         }
     }
@@ -212,7 +212,7 @@ static int find (const char* name) {
 static void set_password (account_t* account, const char* password) {
     account->rounds = PBKDF2_ROUNDS;
     crypto_random(account->salt, SALT_SIZE);
-    pbkdf2_sha256(password, strlen(password), account->salt, SALT_SIZE,
+    pbkdf2_sha256(password, slen(password), account->salt, SALT_SIZE,
                   account->rounds, account->hash, SHA256_SIZE);
 }
 
@@ -223,10 +223,10 @@ bool auth_home (const char* name, char* out, size_t size) {
     // A folder name on the disk has to fit the 8.3 format, so only names of up to 8 characters
     // get a home folder. New names can't be longer; only accounts made before home folders
     // existed can be
-    if (strlen(name) > AUTH_HOME_NAME_MAX) {
+    if (slen(name) > AUTH_HOME_NAME_MAX) {
         return false;
     }
-    snprintf(out, size, HOMES_FOLDER "%s/", name);
+    sfmt(out, size, HOMES_FOLDER "%s/", name);
     return true;
 }
 
@@ -250,7 +250,7 @@ static void enter_home (const char* name) {
 
     char home[FS_PATH_MAX];
     if (auth_home(name, home, sizeof(home)) && fs_dir_exists(home)) {
-        strlcpy(cd, home, sizeof(cd));
+        scpy(cd, home, sizeof(cd));
     }
 }
 
@@ -276,7 +276,7 @@ int auth_add (const char* name, const char* password) {
     account_t* account = &accounts[account_count];
     account_count++;
     memset(account, 0, sizeof(*account));
-    strlcpy(account->name, name, sizeof(account->name));
+    scpy(account->name, name, sizeof(account->name));
     set_password(account, password);
 
     int result = save();
@@ -331,11 +331,11 @@ bool auth_check (const char* name, const char* password) {
     }
 
     uint8_t hash[SHA256_SIZE];
-    pbkdf2_sha256(password, strlen(password), salt, SALT_SIZE, rounds, hash, SHA256_SIZE);
+    pbkdf2_sha256(password, slen(password), salt, SALT_SIZE, rounds, hash, SHA256_SIZE);
 
     // crypto_equal takes the same time however many bytes match, which a plain memcmp doesn't
     bool right = account != NULL && crypto_equal(hash, account->hash, SHA256_SIZE);
-    crypto_wipe(hash, sizeof(hash));
+    wipe(hash, sizeof(hash));
     return right;
 }
 
@@ -430,7 +430,7 @@ static void after_wrong_password (const char* name, uint32_t wrong_passwords) {
     uint32_t in_this_run = wrong_passwords % AUTH_MAX_FAILURES;
 
     if (in_this_run != 0) {
-        console_set_color(YELLOW, BLACK);
+        colour(YELLOW, BLACK);
         prtf("  Warning: that is %u of %u wrong passwords in a row for %s.\n",
                in_this_run, AUTH_MAX_FAILURES, name);
         if (has_home) {
@@ -439,14 +439,14 @@ static void after_wrong_password (const char* name, uint32_t wrong_passwords) {
         return;
     }
 
-    console_set_color(LIGHT_RED, BLACK);
+    colour(LIGHT_RED, BLACK);
     prtf("  %u wrong passwords in a row for %s.\n", AUTH_MAX_FAILURES, name);
     if (has_home) {
         int wiped = wipe_home(home);
         if (wiped < 0) {
             wiped = 0;
         }
-        console_set_color(LIGHT_RED, BLACK);
+        colour(LIGHT_RED, BLACK);
         prtf("  The %d file(s) in %s have been securely deleted.\n", wiped, home);
     }
 }
@@ -481,7 +481,7 @@ static void type_title (uint8_t x, uint8_t y) {
     }
 
     // the cursor after the last letter for a moment, then take it away
-    uint8_t end_x = (uint8_t)(x + strlen(title) * BIG_TEXT_COLS);
+    uint8_t end_x = (uint8_t)(x + slen(title) * BIG_TEXT_COLS);
     big_text(end_x, y, TITLE_COLOUR, BLACK, "_");
     sleep_ms(TYPING_DELAY_MS * 3);
     big_text(end_x, y, TITLE_COLOUR, BLACK, " ");
@@ -489,7 +489,7 @@ static void type_title (uint8_t x, uint8_t y) {
 
 // clear the screen and draw the big title, with a line under it
 static void heading (const char* subtitle) {
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     console_clear();
 
     // the title in big letters from row 1 (big_text is in drivers/video/VGA_linear.h)
@@ -503,13 +503,13 @@ static void heading (const char* subtitle) {
 
 // print a question and read the answer. A secret answer (a password) shows as *
 static void ask (const char* question, char* answer, int size, bool secret) {
-    console_set_color(WHITE, BLACK);
+    colour(WHITE, BLACK);
     prtf("  %s", question);
-    console_set_color(BRIGHT, BLACK);
+    colour(BRIGHT, BLACK);
     if (secret) {
         GetSecret(answer, size);
     } else {
-        GetString(answer, size);
+        getln(answer, size);
     }
 }
 
@@ -520,7 +520,7 @@ static void create_first_account (void) {
     for (;;) {
         char name[64];
         ask("User name: ", name, sizeof(name), false);
-        char* user = strlwr(StrTrim(name)); // names are kept in lower case
+        char* user = strlwr(trim(name)); // names are kept in lower case
         if (!valid_name(user, AUTH_HOME_NAME_MAX)) {
             prtf("  Names are 1 to 8 of a-z, 0-9, _ and -\n\n");
             continue;
@@ -535,7 +535,7 @@ static void create_first_account (void) {
             prtf("  The passwords can't be empty, try again.\n\n");
             continue;
         }
-        if (strcmp(password, again) != 0) {
+        if (scmp(password, again) != 0) {
             prtf("  The passwords don't match, try again.\n\n");
             continue;
         }
@@ -543,15 +543,15 @@ static void create_first_account (void) {
         ui_busy_begin("Saving the account"); // hashing the password takes a moment
         int result = auth_add(user, password);
         ui_busy_end();
-        crypto_wipe(password, sizeof(password));
-        crypto_wipe(again, sizeof(again));
+        wipe(password, sizeof(password));
+        wipe(again, sizeof(again));
 
         if (result != AUTH_OK) {
             prtf("  Couldn't create the account: %s\n\n", auth_strerror(result));
             continue;
         }
 
-        strlcpy(auth_user, user, sizeof(auth_user));
+        scpy(auth_user, user, sizeof(auth_user));
         enter_home(user);
         return;
     }
@@ -562,7 +562,7 @@ void auth_login (void) {
 
     // no disk: nowhere to keep accounts, so everyone is guest
     if (!auth_required()) {
-        strlcpy(auth_user, "guest", sizeof(auth_user));
+        scpy(auth_user, "guest", sizeof(auth_user));
         return;
     }
 
@@ -579,16 +579,16 @@ void auth_login (void) {
         char password[PASSWORD_MAX];
         ask("Username: ", name, sizeof(name), false);
         ask("Password: ", password, sizeof(password), true);
-        char* user = strlwr(StrTrim(name));
+        char* user = strlwr(trim(name));
 
         ui_busy_begin("Checking the password");
         bool right = auth_check(user, password);
         ui_busy_end();
-        crypto_wipe(password, sizeof(password));
+        wipe(password, sizeof(password));
 
         if (right) {
             auth_failures_seen = forget_wrong_passwords(user); // the terminal banner reports them
-            strlcpy(auth_user, user, sizeof(auth_user));
+            scpy(auth_user, user, sizeof(auth_user));
             enter_home(user);
             return;
         }
@@ -597,7 +597,7 @@ void auth_login (void) {
         // the name or the password that was wrong, so it gives nothing away
         sleep_ms(WRONG_PASSWORD_DELAY_MS);
         uint32_t wrong_passwords = count_wrong_password(user);
-        console_set_color(LIGHT_RED, BLACK);
+        colour(LIGHT_RED, BLACK);
         prtf("  Wrong user name or password.\n");
         if (wrong_passwords > 0) {
             after_wrong_password(user, wrong_passwords);

@@ -173,7 +173,7 @@ void boot_parse_multiboot (uint32_t magic, uint32_t info_addr) {
 // BOOT_LOG_DELAY ms so it can be read (skipped on fast boot). Returns 0
 int init_boot (void) {
     // black text on a light grey screen, same as the splash screen
-    console_set_color(BLACK, BRIGHT);
+    colour(BLACK, BRIGHT);
     console_clear();
 
     prtf("[E:b1f1] AerOS boot sequence started\n\n");
@@ -206,11 +206,11 @@ int init_boot (void) {
     prtf("[ OK ] Real time clock: %s\n", rtc_datetime(now, sizeof(now)));
     // check SHA-256, HMAC, PBKDF2 and AES against published test vectors before trusting them with passwords
     prtf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
-    // a missing sound card isn't a problem, only PLAY needs one
+    // a missing sound card isn't a problem, only PLY needs one
     if (ac97_init()) {
         prtf("[ OK ] Sound: %s\n\n", ac97_name());
     } else {
-        prtf("[WARN] No sound card found (AerOS supports AC'97), PLAY won't work\n\n");
+        prtf("[WARN] No sound card found (AerOS supports AC'97), PLY won't work\n\n");
     }
 
     // initialise the file system (the disk, or the temporary one if there is no disk)

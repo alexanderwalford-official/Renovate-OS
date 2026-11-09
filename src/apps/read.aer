@@ -1,7 +1,7 @@
 # read.aer - the AerOS reader, for Markdown (.md), HTML (.htm) and plain text files
 #
 #     read <file>       open a file
-#     read              open the AerOS documentation (/docs/index.md), the same as DOCS
+#     read              open the AerOS documentation (/docs/index.md), the same as DOC
 #
 # Keys: Up / Down scroll, PgUp / PgDn (or Space) move a page, Home / End, Tab or Right picks
 # the next link and Left the one before, Enter opens it, Backspace goes back, Q or Esc quits.
@@ -1190,21 +1190,21 @@ end
 
 # read, parse and lay out a file, false (with MESSAGE set) if it can't be shown
 func open_file(path, top)
-    if not file_exists(path) then
+    if not isf(path) then
         MESSAGE = "Can't find " + path
         return false
     end
     let src = nil
-    if is_encrypted(path) then
+    if isenc(path) then
         status("")
         at(0, ROWS + 1)
-        src = read_encrypted(path, input_secret(path + " is encrypted, password: "))
+        src = rdenc(path, inpw(path + " is encrypted, password: "))
         if src == nil then
             MESSAGE = "Wrong password for " + path
             return false
         end
     else
-        src = read_file(path)
+        src = rdf(path)
     end
     status("Reading " + path + "...")
     let kind = file_kind(path)

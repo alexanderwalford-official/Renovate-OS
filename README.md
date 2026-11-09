@@ -47,12 +47,12 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Programming interface. (AerLang: an interpreter, a prompt and a text editor, see docs/AERLANG.md)
 - [x] Graphics driver. (framebuffer console, pixels, shapes, text and BMP pictures for apps)
 - [x] User accounts. (login screen, passwords stored as salted PBKDF2 hashes)
-- [x] File encryption. (ENCRYPT / DECRYPT, AES-256 with an HMAC tag)
-- [x] Audio. (AC'97 sound card, PLAY for WAV and MP3 files using minimp3, and a startup sound in /sys/startup.wav that you can replace)
-- [x] A manual inside the OS. (DOCS opens /docs/ in a Markdown / HTML / text reader written in AerLang)
+- [x] File encryption. (ENC / DEC, AES-256 with an HMAC tag)
+- [x] Audio. (AC'97 sound card, PLY for WAV and MP3 files using minimp3, and a startup sound in /sys/startup.wav that you can replace)
+- [x] A manual inside the OS. (DOC opens /docs/ in a Markdown / HTML / text reader written in AerLang)
 - [x] System information. (SYSINFO shows the processor, memory, screen, disks, sound card and every PCI device)
-- [x] Animations. (progress bars and spinners for long jobs like DEL, ENCRYPT and PLAY, and progress / spinner / frame in AerLang)
-- [x] A program queue. (QUEUE lines programs up on the process stack and GO runs them one after another)
+- [x] Animations. (progress bars and spinners for long jobs like DEL, ENC and PLY, and progress / spinner / frame in AerLang)
+- [x] A program queue. (QUE lines programs up on the process stack and GO runs them one after another)
 - [x] Scrollback. (Page Up / Page Down in the terminal look back through the last 400 lines of output)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

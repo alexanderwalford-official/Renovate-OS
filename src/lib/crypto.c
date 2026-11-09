@@ -13,7 +13,7 @@
         helpers, self-test
 
     Two habits run through all of it:
-      - every buffer that held a secret is wiped with crypto_wipe() before it goes out of scope,
+      - every buffer that held a secret is wiped with wipe() before it goes out of scope,
         so keys and passwords don't linger in memory for something else to find later
       - nothing branches on secret data, so how long an operation takes says nothing about it
 */
@@ -96,7 +96,7 @@ static void sha256_block (uint32_t state[8], const uint8_t* block) {
     // adding the old state back in is what makes the step impossible to run backwards
     state[0] += a; state[1] += b; state[2] += c; state[3] += d;
     state[4] += e; state[5] += f; state[6] += g; state[7] += h;
-    crypto_wipe(w, sizeof(w));
+    wipe(w, sizeof(w));
 }
 
 void sha256_init (sha256_t* s) {
@@ -152,7 +152,7 @@ void sha256_final (sha256_t* s, uint8_t out[SHA256_SIZE]) {
     for (int i = 0; i < 8; i++) {
         store_be32(out + i * 4, s->state[i]);
     }
-    crypto_wipe(s, sizeof(*s));
+    wipe(s, sizeof(*s));
 }
 
 void sha256 (const void* data, size_t length, uint8_t out[SHA256_SIZE]) {
@@ -195,8 +195,8 @@ void hmac_init (hmac_t* h, const void* key, size_t key_length) {
     sha256_init(&h->outer);
     sha256_update(&h->outer, pad, 64);
 
-    crypto_wipe(block, sizeof(block));
-    crypto_wipe(pad, sizeof(pad));
+    wipe(block, sizeof(block));
+    wipe(pad, sizeof(pad));
 }
 
 // one HMAC over first || second (second may be empty), starting from a prepared context, which
@@ -212,14 +212,14 @@ static void hmac_run (const hmac_t* h, const void* first, size_t first_length,
     s = h->outer;
     sha256_update(&s, inner, sizeof(inner));
     sha256_final(&s, out);
-    crypto_wipe(inner, sizeof(inner));
+    wipe(inner, sizeof(inner));
 }
 
 void hmac_sha256 (const void* key, size_t key_length, const void* data, size_t length, uint8_t out[SHA256_SIZE]) {
     hmac_t h;
     hmac_init(&h, key, key_length);
     hmac_run(&h, data, length, 0, 0, out);
-    crypto_wipe(&h, sizeof(h));
+    wipe(&h, sizeof(h));
 }
 
 // ---- PBKDF2-HMAC-SHA-256 (RFC 8018) -----------------------------------------------------------
@@ -259,10 +259,10 @@ void pbkdf2_sha256 (const void* password, size_t password_length, const void* sa
         memcpy(out, t, take);
         out += take;
         length -= take;
-        crypto_wipe(u, sizeof(u));
-        crypto_wipe(t, sizeof(t));
+        wipe(u, sizeof(u));
+        wipe(t, sizeof(t));
     }
-    crypto_wipe(&h, sizeof(h));
+    wipe(&h, sizeof(h));
 }
 
 // ---- AES-256 (FIPS 197) -----------------------------------------------------------------------
@@ -394,8 +394,8 @@ void aes256_encrypt_block (const aes256_t* aes, const uint8_t in[16], uint8_t ou
         memcpy(s, t, 16);
     }
     memcpy(out, s, 16);
-    crypto_wipe(s, sizeof(s));
-    crypto_wipe(t, sizeof(t));
+    wipe(s, sizeof(s));
+    wipe(t, sizeof(t));
 }
 
 // ---- CTR mode ---------------------------------------------------------------------------------
@@ -425,7 +425,7 @@ void aes256_ctr (const aes256_t* aes, const uint8_t nonce[8], uint8_t* data, siz
         data += take;
         length -= take;
     }
-    crypto_wipe(stream, sizeof(stream));
+    wipe(stream, sizeof(stream));
 }
 
 // ---- random numbers ---------------------------------------------------------------------------
@@ -515,7 +515,7 @@ void crypto_random (void* buffer, size_t length) {
         sha256(digest, sizeof(digest), pool);
         out += take;
         length -= take;
-        crypto_wipe(digest, sizeof(digest));
+        wipe(digest, sizeof(digest));
     }
 }
 
@@ -531,7 +531,7 @@ bool crypto_equal (const void* a, const void* b, size_t length) {
     return difference == 0;
 }
 
-void crypto_wipe (void* buffer, size_t length) {
+void wipe (void* buffer, size_t length) {
     // volatile, so the compiler can't decide the writes are pointless (the buffer is about to
     // go out of scope) and leave them out
     volatile uint8_t* p = buffer;
@@ -612,6 +612,6 @@ bool crypto_selftest (void) {
     aes256_init(&aes, key);
     aes256_encrypt_block(&aes, block, block);
     ok &= check_hex(block, 16, "8ea2b7ca516745bfeafc49904b496089");
-    crypto_wipe(&aes, sizeof(aes));
+    wipe(&aes, sizeof(aes));
     return ok;
 }

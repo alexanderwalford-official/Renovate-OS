@@ -148,7 +148,7 @@ const char* aer_intern (const char* text, size_t length) {
 void aer_error (int line, const char* format, ...) {
     va_list ap;
     enum color old_fg = console_fg;
-    console_set_color(LIGHT_RED, console_bg);
+    colour(LIGHT_RED, console_bg);
     if (line > 0) {
         prtf("Error in %s on line %d: ", aer->name, line);
     } else {
@@ -158,7 +158,7 @@ void aer_error (int line, const char* format, ...) {
     vprtf(format, ap);
     va_end(ap);
     prtf("\n");
-    console_set_color(old_fg, console_bg);
+    colour(old_fg, console_bg);
     longjmp(aer->error, 1);
 }
 
@@ -329,7 +329,7 @@ static void text_value (text_t* t, value_t v, int depth) {
             break;
         case V_INT:
             itoa(v.as.i, number, 10);
-            text_add(t, number, (uint32_t)strlen(number));
+            text_add(t, number, (uint32_t)slen(number));
             break;
         case V_STR:
             if (depth > 0) {
@@ -358,8 +358,8 @@ static void text_value (text_t* t, value_t v, int depth) {
             break;
         case V_BYTES: {
             char label[32];
-            snprintf(label, sizeof(label), "<%u bytes>", v.as.obj->length);
-            text_add(t, label, (uint32_t)strlen(label));
+            sfmt(label, sizeof(label), "<%u bytes>", v.as.obj->length);
+            text_add(t, label, (uint32_t)slen(label));
             break;
         }
         case V_FUNC:
@@ -434,7 +434,7 @@ static void scope_free (aer_scope_t* scope) {
 }
 
 void aer_define_global (const char* name, value_t value) {
-    scope_set(&aer->globals, aer_intern(name, strlen(name)), value);
+    scope_set(&aer->globals, aer_intern(name, slen(name)), value);
 }
 
 // the function's own variables first, then the globals
@@ -523,7 +523,7 @@ static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
     }
 
     if (a.type == V_STR && b.type == V_STR) {
-        int c = strcmp(a.as.obj->data.chars, b.as.obj->data.chars);
+        int c = scmp(a.as.obj->data.chars, b.as.obj->data.chars);
         switch (op) {
             case T_LT: return aer_bool(c < 0);
             case T_LE: return aer_bool(c <= 0);
@@ -968,9 +968,9 @@ static char* find_program (const char* path, char* name_out, size_t name_size) {
     const char* folders[2] = { 0, "/bin/" };
     for (int with_extension = 0; with_extension < 2; with_extension++) {
         char full[FS_PATH_MAX];
-        strlcpy(full, path, sizeof(full));
+        scpy(full, path, sizeof(full));
         if (with_extension) {
-            strlcat(full, ".aer", sizeof(full));
+            scat(full, ".aer", sizeof(full));
         }
         if (!fs_split_path(full, dir, sizeof(dir), name, sizeof(name))) {
             continue;
@@ -982,7 +982,7 @@ static char* find_program (const char* path, char* name_out, size_t name_size) {
             const char* folder = folders[f] ? folders[f] : dir;
             char* source = fs_read_f(folder, name);
             if (source) {
-                strlcpy(name_out, name, name_size);
+                scpy(name_out, name, name_size);
                 return source;
             }
         }
@@ -1016,11 +1016,11 @@ void aer_repl (void) {
         if (x != 0) {
             prtf("\n");
         }
-        console_set_color(LIGHT_CYAN, console_bg);
+        colour(LIGHT_CYAN, console_bg);
         prtf("aer> ");
-        console_set_color(BRIGHT, console_bg);
-        GetString(line, sizeof(line));
-        if (strcmp(StrTrim(line), "exit") == 0) {
+        colour(BRIGHT, console_bg);
+        getln(line, sizeof(line));
+        if (scmp(trim(line), "exit") == 0) {
             break;
         }
         run_program(line);
