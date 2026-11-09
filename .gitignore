@@ -7,3 +7,14 @@ src/main.iso
 src/disk.img
 src/obj/
 src/serial.log
+
+# disk images hold your own files, accounts and home folders: never commit one
+*.img
+*.vhd
+*.vmdk
+*.qcow2
+
+# left over by QEMU and its tests
+serial.log
+vga.bin
+*.ppm

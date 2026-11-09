@@ -185,9 +185,14 @@ boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
 
 `src/docs/` holds the manual that ships inside the OS: short Markdown pages written for an
 80-column screen, plus an HTML sample. They are linked into the kernel like the apps and
-copied to `/docs/` at boot. Unlike the apps, which are only copied when missing so your own
-changes are kept, each page is **replaced whenever it differs** from the built-in copy, so the
-manual always matches the version that is running.
+copied to `/docs/` at boot. Each page is **replaced whenever it differs** from the built-in
+copy, so the manual always matches the version that is running.
+
+The apps are more careful, because they are yours to change. `/sys/apps.lst` records the
+SHA-256 of each app as AerOS installed it. At boot an app on the disk that still matches its
+record is replaced by a newer built-in version, and one that doesn't (you changed it) is kept.
+Apps installed before the record existed are kept too, since there is no way to tell. See
+the top of `sys/apps.c`.
 
 `DOCS [topic]` opens it in the reader, `/bin/read.aer`. The reader is an AerLang app that shows
 Markdown, HTML and plain text with colours, word wrapping, tables and links (Tab picks a link,

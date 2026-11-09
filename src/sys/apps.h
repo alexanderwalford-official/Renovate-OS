@@ -9,9 +9,9 @@
 
 #include <stdint.h>
 
-// copy every built-in file that isn't on the disk yet, returns how many were copied or updated
-// (an app already on the disk is left alone, so your own changes to it are kept, but the manual
-// is replaced whenever it differs from the built-in copy)
+// copy the built-in files to the disk, returns how many were copied or updated: missing files,
+// apps still exactly as an older AerOS installed them (see /sys/apps.lst), and the manual
+// whenever it differs. An app you have changed is left alone
 int apps_install (void);
 
 // the built-in copy of a file (e.g. "startup.wav") and its size, NULL if there is no such file
