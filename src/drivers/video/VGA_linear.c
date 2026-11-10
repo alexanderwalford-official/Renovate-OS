@@ -454,6 +454,56 @@ int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* tex
     return width;
 }
 
+// a filled rectangle of pixels on the framebuffer, cut to fit the screen
+static void fb_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
+    for (uint32_t row = y; row < y + h && row < fb.height; row++) {
+        uint8_t* pixel = fb.base + row * fb.pitch + x * fb.bytes;
+        for (uint32_t col = x; col < x + w && col < fb.width; col++) {
+            fb_put(pixel, color);
+            pixel += fb.bytes;
+        }
+    }
+}
+
+int big_text_sized(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text, int percent, uint8_t* rows) {
+    uint32_t left, top, cell_w, cell_h;
+    if (percent >= 100 || !vga_cell_area(x, y, 1, 1, &left, &top, &cell_w, &cell_h)) {
+        // the text screen (or full size): big_text, in cells
+        if (rows != NULL) {
+            *rows = BIG_TEXT_ROWS;
+        }
+        return big_text(x, y, fg, bg, text);
+    }
+    if (percent < 10) {
+        percent = 10;
+    }
+    LIVE_SCREEN();
+
+    // one font pixel at full size is a cell wide and half a cell tall: this is `percent` of it
+    uint32_t pixel_w = cell_w * (uint32_t)percent / 100;
+    uint32_t pixel_h = cell_h / 2 * (uint32_t)percent / 100;
+    pixel_w = pixel_w > 0 ? pixel_w : 1;
+    pixel_h = pixel_h > 0 ? pixel_h : 1;
+
+    uint32_t at = left;
+    for (const char* c = text; *c != '\0'; c++) {
+        const uint8_t* glyph = font8x16[(uint8_t)*c];
+        for (uint32_t row = 0; row < BIG_TEXT_ROWS * 2; row++) {
+            uint8_t bits = glyph[BIG_TEXT_FIRST_FONT_ROW + row];
+            for (uint32_t col = 0; col < 8; col++) {
+                uint32_t colour = (bits & (0x80 >> col)) ? fb_colors[fg] : fb_colors[bg];
+                fb_rect(at + col * pixel_w, top + row * pixel_h, pixel_w, pixel_h, colour);
+            }
+        }
+        at += 8 * pixel_w;
+    }
+    // how many cells it covers, rounded up
+    if (rows != NULL) {
+        *rows = (uint8_t)((BIG_TEXT_ROWS * 2 * pixel_h + cell_h - 1) / cell_h);
+    }
+    return (int)((at - left + cell_w - 1) / cell_w);
+}
+
 // fill the whole screen with colour bg (spaces drawn in bg on bg) and hand the screen over to
 // positional drawing
 void clear(enum color bg) {

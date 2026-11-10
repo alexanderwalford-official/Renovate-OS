@@ -71,6 +71,7 @@ EMBEDDED(docs_versions_md)
 EMBEDDED(docs_perms_md)
 EMBEDDED(docs_network_md)
 EMBEDDED(docs_rt_md)
+EMBEDDED(docs_text_md)
 EMBEDDED(docs_sample_htm)
 EMBEDDED(apps_sleep_aer)
 
@@ -110,6 +111,7 @@ static const struct {
     FILE_ENTRY("/docs/", "perms.md", docs_perms_md, true),
     FILE_ENTRY("/docs/", "network.md", docs_network_md, true),
     FILE_ENTRY("/docs/", "rt.md", docs_rt_md, true),
+    FILE_ENTRY("/docs/", "text.md", docs_text_md, true),
     FILE_ENTRY("/docs/", "sample.htm", docs_sample_htm, true),
 };
 

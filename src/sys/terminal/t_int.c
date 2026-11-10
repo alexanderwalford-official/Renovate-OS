@@ -272,7 +272,14 @@ int cli_rend_main (void) {
     // console_clear() fills the screen with the current colours, so set those first
     colour(WHITE, BLACK);
     console_clear();
-    prtf("AerOS - Version " AEROS_VERSION "\n");
+    // the title in big letters, three quarters of big_text's size on a framebuffer. It is
+    // drawn in place, so the cursor is then moved below it, or the text would print over it
+    uint8_t title_rows;
+    big_text_sized(2, 1, ORANGE, BLACK, "aerOS", 75, &title_rows);
+    console_set_cursor(0, (uint8_t)(1 + title_rows + 1));
+    colour(ORANGE, BLACK);
+    prtf("Version " AEROS_VERSION "\n");
+    colour(BRIGHT, BLACK);
     prtf("Alexander Walford 2026\n\n");
 
     if (fs_mode == FS_MODE_DISK) {

@@ -45,6 +45,7 @@
 #include "../f_sys.h"
 #include "../sys_clck.h"
 #include "../ui.h"
+#include "../rt.h"
 
 #define ACCOUNTS_FOLDER  "/acc/"
 #define ACCOUNTS_FILE    "users"
@@ -573,6 +574,13 @@ void auth_login (void) {
     }
 
     heading("[ ! ] Authentication required");
+
+    // RT mode was picked in the boot options (sys/rt.h): say so, before anyone logs in
+    if (rt_on()) {
+        colour(YELLOW, BLACK);
+        prtf("  [ RT ] Real-time mode is on (experimental)\n\n");
+        colour(BRIGHT, BLACK);
+    }
 
     for (;;) {
         char name[64];
