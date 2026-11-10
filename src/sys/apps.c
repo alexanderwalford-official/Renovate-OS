@@ -71,6 +71,7 @@ EMBEDDED(docs_versions_md)
 EMBEDDED(docs_perms_md)
 EMBEDDED(docs_network_md)
 EMBEDDED(docs_sample_htm)
+EMBEDDED(apps_sleep_aer)
 
 static const struct {
     const char* dir;
@@ -85,6 +86,7 @@ static const struct {
     FILE_ENTRY("/bin/", "read.aer", apps_read_aer, false),
     FILE_ENTRY("/bin/", "sysinfo.aer", apps_sysinfo_aer, false),
     FILE_ENTRY("/bin/", "anim.aer", apps_anim_aer, false),
+    FILE_ENTRY("/bin/", "sleep.aer", apps_sleep_aer, false),
     FILE_ENTRY("/bin/", "move.aer", apps_move_aer, false),
     FILE_ENTRY("/bin/", "sample.mpg", apps_sample_mpg, false),
     FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),
