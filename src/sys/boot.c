@@ -37,6 +37,7 @@
 #include "../lib/crypto.h"
 #include "../drivers/audio/ac97.h"
 #include "net.h"
+#include "rt.h"
 
 // the value a multiboot bootloader leaves in eax (not the same as the 0x1BADB002 in our header)
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -218,6 +219,11 @@ int init_boot (void) {
         prtf("[ OK ] Network: %s, firewall on\n\n", net_card_name());
     } else {
         prtf("[INFO] No network card found (AerOS supports the Intel e1000)\n\n");
+    }
+    // RT mode (picked in the boot options): the real-time tasks start ticking from here
+    if (boot_option == BOOT_OPT_RT) {
+        rt_start();
+        prtf("[INFO] RT mode (experimental): %d real-time task(s), RT lists them\n\n", rt_count());
     }
 
     // initialise the file system (the disk, or the temporary one if there is no disk)

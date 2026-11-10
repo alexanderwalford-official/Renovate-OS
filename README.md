@@ -72,5 +72,6 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] AerLang at the prompt. (variables, sums and code right in the terminal, "did you mean", and cmd() for a command's output)
 - [x] Programs ask first. (apps ask before reading your files or changing any, PERM remembers the answers)
 - [x] File versions. (the last 10 versions of every file in a home folder: VERS, file@N and UNDO)
+- [x] RT mode, experimental. (boot option 6: real-time tasks from the timer, a schedulability check and a watchdog; RT lists them)
 - [x] Ethernet network driver. (Intel e1000, sealed messages only, and a firewall that blocks everything until FW ALLOW; see docs/NETWORK.md)
 - [ ] More in the pipeline coming soon..

@@ -12,6 +12,7 @@ while it is showing to open the boot options:
 | 3 | Demo mode: never saves anything to a disk |
 | 4 | Reboot |
 | 5 | Shut down |
+| 6 | [RT mode](rt.md): a normal boot, plus real-time tasks (experimental) |
 
 Then the boot log lists every piece of hardware AerOS set up, with `[ OK ]`, `[WARN]` or
 `[FAIL]` in front of each line.

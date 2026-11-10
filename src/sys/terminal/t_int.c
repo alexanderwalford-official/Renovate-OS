@@ -91,6 +91,7 @@
 #include "../firewall.h"
 #include "../netseal.h"
 #include "../appmode.h"
+#include "../rt.h"
 
 // the longest line the user can type, counting the '\0' that ends it
 #define CLI_INPUT_MAX 128
@@ -1366,6 +1367,43 @@ static void cli_listen (char* arguments) {
 
 
 // =================================================================================================
+//  RT mode's real-time tasks (sys/rt.h)
+// =================================================================================================
+
+// RT [STRESS]: the real-time tasks, how often they run and the longest they have taken.
+// RT STRESS adds one that breaks its budget on purpose, so the watchdog can be seen stopping it
+static void cli_realtime (char* arguments) {
+    if (!rt_on()) {
+        prtf("RT mode is off. To try it, press X on the splash screen as AerOS starts, then 6.\n");
+        return;
+    }
+    if (strcasecmp(arguments, "stress") == 0) {
+        int result = rt_add_stress();
+        prtf(result == RT_OK ? "Added \"stress\": it overruns its budget every time, watch the watchdog stop it.\n"
+                             : "Couldn't add it: the tasks would no longer all meet their deadlines.\n");
+        return;
+    }
+    if (arguments[0] != '\0') {
+        show_usage("RT on its own, or RT STRESS");
+        return;
+    }
+
+    prtf("Real-time tasks, most urgent first:\n");
+    prtf("  %-10s %7s %8s %8s %8s %6s\n", "TASK", "EVERY", "BUDGET", "WORST", "RUNS", "OVER");
+    for (int i = 0; i < rt_count(); i++) {
+        const rt_task_t* task = rt_task(i);
+        prtf("  %-10s %5ums %6uus %6uus %8u %6u%s\n", task->name, task->period_ms, task->budget_us,
+             task->worst_us, task->runs, task->overruns, task->stopped ? "  stopped by the watchdog" : "");
+    }
+    uint32_t load = rt_load();
+    uint32_t limit = rt_limit(rt_count());
+    prtf("They need %u.%u%% of the processor, of the %u.%u%% that keeps every deadline safe.\n",
+         load / 10, load % 10, limit / 10, limit % 10);
+    prtf("Heartbeats so far: %u (one every 10ms since RT mode started)\n", rt_heartbeats());
+}
+
+
+// =================================================================================================
 //  Apps and AerLang
 // =================================================================================================
 
@@ -1918,6 +1956,7 @@ static const command_t commands[] = {
     COMMAND("fw",   "[ALLOW ...]","THE FIREWALL: FW ALLOW <ADDRESS OR NAME> <PORT>, FW DEL <N>", cli_firewall),
     COMMAND("msg",  "<TO> <PORT>","SEND A SEALED MESSAGE (e.g. MSG 10.0.2.2 5000 HELLO)",        cli_message),
     COMMAND("lsn",  "<PORT>",     "SHOW THE SEALED MESSAGES THAT ARRIVE ON A PORT (ESC STOPS)",  cli_listen),
+    COMMAND("rt",   "[STRESS]",   "RT MODE'S REAL-TIME TASKS (EXPERIMENTAL, FROM THE BOOT MENU)", cli_realtime),
     COMMAND("rbt",  "",           "RESTART THE COMPUTER (REBOOT)",                               cli_reboot),
     COMMAND("off",  "",           "TURN OFF THE COMPUTER (SHUT DOWN)",                           cli_shutdown),
     COMMAND("res",  "[WxH]",      "SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)",    cli_resolution),
