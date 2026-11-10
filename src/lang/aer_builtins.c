@@ -37,6 +37,7 @@
 #include "../sys/perm.h"
 #include "../sys/net.h"
 #include "../sys/firewall.h"
+#include "../sys/appmode.h"
 #include "../lib/crypto.h"
 
 // argument checks
@@ -1082,6 +1083,9 @@ static value_t bi_exit (int argc, value_t* argv, int line) {
     longjmp(aer->error, 2);
 }
 
+// (written after the table, next to the list of which built-ins belong to which part)
+static value_t bi_appmode (int argc, value_t* argv, int line);
+
 // One row of the table: the name programs call it by, the C function that does it, and how
 // many arguments it takes (fewest, most). #fn turns the function into its name as a string,
 // "bi_print", so WHY and SRC can find the C code behind an AerLang function
@@ -1137,6 +1141,7 @@ const aer_builtin_t aer_builtins[] = {
     BUILTIN("cmd", bi_cmd, 1, 1),
     BUILTIN("nsend", bi_net_send, 3, 3),
     BUILTIN("nrecv", bi_net_receive, 2, 2),
+    BUILTIN("appmode", bi_appmode, 0, 0),
     BUILTIN("random", bi_random, 1, 1),
     BUILTIN("beep", bi_beep, 0, 1),
     BUILTIN("play", bi_play, 1, 1),
@@ -1164,6 +1169,74 @@ const aer_builtin_t aer_builtins[] = {
 };
 
 const int aer_builtin_count = sizeof(aer_builtins) / sizeof(aer_builtins[0]);
+
+// ---- app mode: which built-ins belong to which part of AerOS (sys/appmode.h) ---------------------
+
+static const struct {
+    uint32_t part;
+    const char* names[16];   // ends with NULL
+} parts[] = {
+    { APP_GRAPHICS, { "gopen", "gclose", "gw", "gh", "gclear", "rgb", "pixel", "rect", "line",
+                      "text", "image", "imgsz", "gbuf", "gshow", NULL } },
+    { APP_SOUND,    { "beep", "play", "sload", "splay", "sstop", "isply", NULL } },
+    { APP_VIDEO,    { "video", NULL } },
+    { APP_FILES,    { "rdf", "rdb", "wrf", "apf", "isf", "delf", "la", "cwd", "enc", "dec",
+                      "isenc", "rdenc", NULL } },
+    { APP_NETWORK,  { "nsend", "nrecv", NULL } },
+};
+
+// the part a built-in's name belongs to, 0 for the ones every program has (print, len...)
+static uint32_t part_of (const char* name) {
+    for (size_t p = 0; p < sizeof(parts) / sizeof(parts[0]); p++) {
+        for (int i = 0; parts[p].names[i] != NULL; i++) {
+            if (scmp(parts[p].names[i], name) == 0) {
+                return parts[p].part;
+            }
+        }
+    }
+    return 0;
+}
+
+uint32_t aer_profile (const token_t* tokens, int count) {
+    // every name in the program, called or not: "let f = play" then "f(...)" still names play.
+    // (A variable that happens to share a built-in's name counts too, which only means a part
+    // is kept that could have been put away: never the other way round)
+    uint32_t uses = 0;
+    for (int i = 0; i < count; i++) {
+        if (tokens[i].type == T_NAME) {
+            uses |= part_of(tokens[i].text);
+        }
+    }
+    return uses;
+}
+
+// appmode(): what app mode did for this program, as [the parts of AerOS it uses, KB of memory
+// given back for it, KB free], e.g. [["graphics", "files"], 84, 3900]. It also puts away again
+// any part the program doesn't use that has started since. At the prompt, which might use
+// anything later, it puts away everything it can (a part starts again by itself when needed)
+static value_t bi_appmode (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    if (aer->shell) {
+        appmode_begin(0);
+    } else {
+        appmode_again();
+    }
+    const appmode_t* mode = appmode_now();
+
+    value_t used = aer_list(APP_PARTS);
+    for (int bit = 0; bit < APP_PARTS; bit++) {
+        uint32_t part = 1u << bit;
+        if (mode->uses & part) {
+            const char* name = appmode_part_name(part);
+            aer_list_push(used.as.obj, aer_string(name, (uint32_t)slen(name)));
+        }
+    }
+    value_t result = aer_list(3);
+    aer_list_push(result.as.obj, used);
+    aer_list_push(result.as.obj, aer_int((int32_t)(mode->freed / 1024)));
+    aer_list_push(result.as.obj, aer_int((int32_t)(mode->free / 1024)));
+    return result;
+}
 
 const char* aer_builtin_function (const char* name) {
     for (int i = 0; i < aer_builtin_count; i++) {

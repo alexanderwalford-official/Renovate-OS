@@ -117,6 +117,14 @@ The names are built like the terminal's commands: `rd` read, `wr` write, `ap` ap
 gives back how many are queued. At the prompt only, `cmd("la")` runs a terminal command and
 gives back what it printed, as a list of lines.
 
+**App mode:** before a program runs, AerOS reads all of it, so it knows every part of AerOS
+the program can use, and puts away the parts it won't, to leave their memory for the
+program. It happens by itself, for every program, even one saved a second ago. `appmode()`
+gives back what it did: `[["graphics", "files"], 82, 257990]` is the parts the program uses,
+the KB put away for it, and the KB free. It also puts away again anything that has started
+since. A part that was put away starts again by itself the next time something uses it. `mem`
+shows what app mode did for the last program.
+
 **Network:** `nsend(host, port, text)` sends a sealed message to a computer the firewall
 allows (true if it was sent), and `nrecv(port, ms)` waits up to `ms` milliseconds for one:
 the message, or nil. See [The network](network.md).

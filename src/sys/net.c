@@ -48,7 +48,8 @@
 
 static const uint8_t BROADCAST[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-static bool card_ready = false;
+static bool card_found = false;   // there is a card (net_init found one)
+static bool card_ready = false;   // ...and it is running (net_rest stops it, ready() restarts it)
 
 // AerOS's own address and the ones it needs, QEMU's usual ones until NET IP changes them
 static struct {
@@ -143,9 +144,13 @@ static void load_config (void) {
     free(text);
 }
 
-// the card is there and the settings are read: everything below starts with this
+// the card is running and the settings are read: everything below starts with this. A card
+// that was resting (net_rest) is started again
 static bool ready (void) {
     load_config();
+    if (card_found && !card_ready) {
+        card_ready = e1000_init();
+    }
     return card_ready;
 }
 
@@ -246,17 +251,19 @@ static void handle_arp (const uint8_t* packet, size_t length) {
 
 static void poll (void);
 
-// the MAC address of the card with this address: remembered, or asked for (three times, a
-// third of a second each)
+// The MAC address of the card with this address: remembered, or asked for (four times, half a
+// second each). Two seconds in all, because just after the card has been started again (after
+// app mode put it away) QEMU's e1000 holds arriving frames back for a second before handing
+// them over, so the answer can come that late
 static bool find_mac (uint32_t address, uint8_t mac[6]) {
     if (arp_known(address, mac)) {
         return true;
     }
     static const uint8_t unknown[6] = { 0 };
-    for (int tries = 0; tries < 3; tries++) {
+    for (int tries = 0; tries < 4; tries++) {
         send_arp(1, unknown, address);
         uint32_t start = clkuptms();
-        while (clkuptms() - start < 333) {
+        while (clkuptms() - start < 500) {
             poll();
             if (arp_known(address, mac)) {
                 return true;
@@ -491,19 +498,27 @@ const char* net_strerror (int error) {
 }
 
 bool net_init (void) {
-    card_ready = e1000_init();
-    return card_ready;
+    card_found = e1000_init();
+    card_ready = card_found;
+    return card_found;
 }
 
 const char* net_card_name (void) {
-    return card_ready ? e1000_name() : "none";
+    return card_found ? e1000_name() : "none";
+}
+
+void net_rest (void) {
+    if (card_ready) {
+        e1000_stop();
+        card_ready = false;
+    }
 }
 
 void net_status (net_status_t* out) {
     ready();
     *out = counts;
-    out->card = card_ready;
-    out->card_name = card_ready ? e1000_name() : "";
+    out->card = card_found;
+    out->card_name = card_found ? e1000_name() : "";
     out->link = e1000_link_up();
     if (card_ready) {
         e1000_mac(out->mac);

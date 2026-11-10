@@ -80,6 +80,7 @@ src/
     net.c                 the network stack: ARP, IPv4, UDP, DNS lookups (NET, MSG, LSN)
     firewall.c            the firewall's rules, everything blocked until FW ALLOW
     netseal.c             sealed messages: the only thing ever sent over the network
+    appmode.c             app mode: a program gets the memory of the parts of AerOS it doesn't use
     explain.c             WHY and SRC: the last problem, its explanation, and reading the source
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
@@ -287,7 +288,9 @@ for the details.
 The terminal's prompt has an AerLang session of its own, "the shell", which lasts from logging
 in to logging out. Only one session can be the running one, so when a program starts, the
 shell's session is copied aside and copied back when the program ends ("The shell" in
-`aer_interp.c`). Programs go through `aer_run_file()`, which also tells `sys/perm.c` which
+`aer_interp.c`). Once a program is parsed, and before it runs, its tokens give its profile
+(the built-ins it names, `aer_profile`), and `appmode_begin()` (`sys/appmode.c`) puts away the
+parts of AerOS it won't use. A part that keeps memory while idle should be added there. Programs go through `aer_run_file()`, which also tells `sys/perm.c` which
 program is running, so its file functions ask before they touch your files.
 
 ## Building and testing

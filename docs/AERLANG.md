@@ -179,6 +179,17 @@ as if the file wasn't there (nil or false), and `/acc/` is never allowed. The ru
 **At the prompt only**
 `cmd(line)` runs a terminal command and gives back what it printed, as a list of lines
 
+**App mode** (src/sys/appmode.h)
+Before a program runs, the whole file is read, so AerOS knows every part of itself the program
+can use: built-ins are only reached by name, every name is in the source, and there is no eval.
+From the names it works out the program's profile (graphics, sound, video, files, network) and
+puts away what the program won't use. At the moment that is the network card's buffers, about
+82 KB, as everything else is only in memory while it is used anyway. It happens for every
+program, however new, and a part that was put away starts again the next time it is used.
+`appmode()` gives back `[parts used, KB put away, KB free]`, e.g.
+`[["graphics", "files"], 82, 257990]`, and puts away again anything started since. At the
+prompt it puts away everything it can. `MEM` shows what app mode did for the last program.
+
 **Network** (sealed messages, to and from computers the firewall allows: see NETWORK.md)
 `nsend(host, port, text)` true if it was sent (host is an address, or a name a rule was made
 for) · `nrecv(port, ms)` wait up to ms milliseconds: the message, or nil

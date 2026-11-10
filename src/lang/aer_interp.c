@@ -43,6 +43,7 @@
 #include "../sys/f_sys.h"
 #include "../sys/explain.h"
 #include "../sys/perm.h"
+#include "../sys/appmode.h"
 
 #define STACK_RESERVE (32 * 1024) // stop a runaway program before it uses the last 32KB of stack
 
@@ -1036,6 +1037,14 @@ __attribute__((noinline)) static void parse_and_run (const char* source) {
     int count;
     token_t* tokens = aer_lex(source, &count);
     aer_node_t* program = aer_parse(tokens, count);
+
+    // App mode: the whole program has been read, so every part of AerOS it can use is named in
+    // it. Put the rest away before it starts (sys/appmode.h). Not for code typed at the prompt,
+    // which might use anything on its next line
+    if (!aer->shell) {
+        aer->uses = aer_profile(tokens, count);
+        appmode_begin(aer->uses);
+    }
     define_functions(program);
     exec_block(program);
 }

@@ -21,7 +21,11 @@
         send:    descriptors from head to tail are frames to send. We add one and move the
                  tail past it, then wait for its "done" bit
 
-    The rings and buffers are allocated once, here, and never freed.
+    The rings and buffers (about 84 KB) are allocated by e1000_init, and given back by
+    e1000_stop, which app mode does for a program that doesn't use the network (sys/appmode.h).
+    Starting again doesn't reset the card (that would drop the link for a while). One thing to
+    know: QEMU's e1000 holds arriving frames back for a second after receiving is switched on,
+    then hands them over, so just after a restart answers take a second to show up.
 */
 
 #include "e1000.h"
@@ -125,13 +129,18 @@ static void write_register (uint32_t offset, uint32_t value) {
     registers[offset / 4] = value;
 }
 
+// everything card_memory has allocated, as malloc gave it, so e1000_stop can give it back
+static void* allocations[RX_COUNT + TX_COUNT + 2];
+static int allocation_count = 0;
+
 // memory that the card reads or writes itself, `align` bytes aligned (malloc's 16 aren't enough
-// for the rings, which the manual wants on 128 byte boundaries). Never freed
+// for the rings, which the manual wants on 128 byte boundaries). Kept until e1000_stop
 static void* card_memory (size_t size, size_t align) {
     uint8_t* raw = malloc(size + align);
     if (raw == NULL) {
         return NULL;
     }
+    allocations[allocation_count++] = raw;
     uintptr_t aligned = ((uintptr_t)raw + align - 1) & ~(uintptr_t)(align - 1);
     memset((void*)aligned, 0, size);
     return (void*)aligned;
@@ -228,10 +237,12 @@ static bool set_up_sending (void) {
     return true;
 }
 
-bool e1000_init (void) {
-    if (ready) {
-        return true;
-    }
+// the first time: find the card, reset it, and read its MAC address. A restart after
+// e1000_stop skips this: a reset would take the link down for a while (half a second in QEMU),
+// and anything sent meanwhile would be lost
+static bool found = false;
+
+static bool find_and_reset (void) {
     if (!pci_each(is_e1000, &card)) {
         return false;
     }
@@ -255,11 +266,40 @@ bool e1000_init (void) {
     for (int i = 0; i < 128; i++) {
         write_register(REG_MTA + i * 4, 0);
     }
+    return true;
+}
+
+bool e1000_init (void) {
+    if (ready) {
+        return true;
+    }
+    if (!found) {
+        found = find_and_reset();
+        if (!found) {
+            return false;
+        }
+    }
+    // new rings and buffers (again, after e1000_stop), and sending and receiving switched on
     if (!set_up_receiving() || !set_up_sending()) {
         return false;
     }
     ready = true;
     return true;
+}
+
+void e1000_stop (void) {
+    if (!ready) {
+        return;
+    }
+    // stop the card using the rings before they go, then give the memory back
+    write_register(REG_RCTL, 0);
+    write_register(REG_TCTL, 0);
+    sleep_ms(1);
+    for (int i = 0; i < allocation_count; i++) {
+        free(allocations[i]);
+    }
+    allocation_count = 0;
+    ready = false;
 }
 
 const char* e1000_name (void) {

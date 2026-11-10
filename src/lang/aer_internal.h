@@ -157,6 +157,7 @@ typedef struct {
     value_t return_value; // set by "return", picked up by the call
     bool repl;            // typed at the prompt: show the value of expressions
     bool shell;           // the terminal's own session (see "The shell" in aer_interp.c): cmd() works
+    uint32_t uses;        // the program's profile: the parts of AerOS it uses (sys/appmode.h)
     bool graphics;        // the program switched to graphics, switch back when it ends
 } aer_state_t;
 
@@ -211,6 +212,9 @@ void aer_define_constants (void);       // KEY_UP, BLACK ... as global variables
 void aer_define_global (const char* name, value_t value);
 void aer_builtins_finish (void);       // tidy up after a program (e.g. leave graphics mode)
 void aer_give_screen_back (void);      // leave graphics mode, if the code switched to it
+
+// which parts of AerOS (APP_ bits, sys/appmode.h) a program's tokens name (aer_builtins.c)
+uint32_t aer_profile (const token_t* tokens, int count);
 
 // is this word (length characters) one of AerLang's keywords? (aer_lexer.c)
 bool aer_is_keyword (const char* word, size_t length);

@@ -90,6 +90,7 @@
 #include "../net.h"
 #include "../firewall.h"
 #include "../netseal.h"
+#include "../appmode.h"
 
 // the longest line the user can type, counting the '\0' that ends it
 #define CLI_INPUT_MAX 128
@@ -878,6 +879,17 @@ static void cli_memory (char* arguments) {
     }
     prtf("Kernel heap: %u / %u bytes used\n", (unsigned int)heap_used(), (unsigned int)heap_total());
     prtf("Processes: %d / %d\n", p_cnt, P_STACK_SIZE);
+
+    // what app mode (sys/appmode.h) did for the last program that ran
+    const appmode_t* mode = appmode_now();
+    if (mode->ran) {
+        char uses[64];
+        appmode_describe(mode->uses, uses, sizeof(uses));
+        prtf("App mode: %u KB put away for the last program, which used\n", (unsigned int)(mode->freed / 1024));
+        prtf("          %s\n", uses);
+    } else {
+        prtf("App mode: no program has run yet\n");
+    }
 
     if (fs_mode == FS_MODE_DISK) {
         // Work in sectors (512 bytes, so 2 sectors = 1 KB) rather than "cluster size in KB": a

@@ -29,6 +29,10 @@
 // is no such card. Safe to call more than once
 bool e1000_init (void);
 
+// stop sending and receiving and give the card's buffers back to the heap. e1000_init starts
+// it again (frames that arrive meanwhile are lost)
+void e1000_stop (void);
+
 // a short description for the boot log and NET, e.g. "Intel 82540EM (PCI 00:03.0)"
 const char* e1000_name (void);
 

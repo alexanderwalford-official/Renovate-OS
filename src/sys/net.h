@@ -73,6 +73,11 @@ bool net_init (void);
 // the card, e.g. "Intel e1000 100e (PCI 00:03.0)", for the boot log
 const char* net_card_name (void);
 
+// stop the card and give its buffers back, for a program that doesn't use the network (app
+// mode, sys/appmode.h). The next thing that uses the network starts it again. While it rests,
+// whatever arrives is lost
+void net_rest (void);
+
 // everything NET shows
 typedef struct {
     bool card;                    // there is a network card
