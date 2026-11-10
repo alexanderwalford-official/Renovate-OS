@@ -10,7 +10,8 @@ AerLang is the programming language built into AerOS. A program is a text file e
 | --- | --- |
 | `hello` | run `hello.aer` from here, or from `/bin/` |
 | `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
-| `aer` | the prompt: type code and see the result, `exit` to leave |
+| `2 + 2`, `let x = 5` | right at the terminal's prompt: see [The prompt speaks AerLang](shell.md) |
+| `aer` | a prompt where every line is code, `exit` to leave |
 | `edt app.aer` then Ctrl+R | write a program and run it |
 
 **Ctrl+C** stops a program that is stuck.
@@ -96,7 +97,9 @@ orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`
 
 **Files:** `rdf(path)` (nil if missing), `rdb(path)`, `wrf(path, text)`,
 `apf(path, text)`, `isf(path)`, `delf(path)`, `la(dir)`,
-`cwd()`.
+`cwd()`. A program [asks you first](perms.md) before it reads your files or changes any
+file, and if you say no the function fails as if the file wasn't there. `rdf("notes.txt@2")`
+reads an [old version](versions.md) of a file.
 
 The names are built like the terminal's commands: `rd` read, `wr` write, `ap` append,
 `del` delete, `is` "is there one?", then `f` file or `b` bytes. So `rdf` reads a file and
@@ -106,11 +109,29 @@ The names are built like the terminal's commands: `rd` read, `wr` write, `ap` ap
 `isenc(path)`, `rdenc(path, password)` (nil if the password is wrong).
 
 **System:** `sleep(ms)`, `time()` (ms since start), `random(n)` (0 to n - 1), `beep(hz)`,
-`play(path)`, `exit()`. `args` is the list of words typed after the program's name.
+`play(path)`, `video(path)` (an .mpg, full screen: see [Video](video.md)), `exit()`.
+`args` is the list of words typed after the program's name.
 `sysinfo()` gives everything AerOS knows about the computer as a list of
 `[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
 `queue("hello.aer")` adds a program (with its arguments) to the queue that `go` runs, and
-gives back how many are queued.
+gives back how many are queued. At the prompt only, `cmd("la")` runs a terminal command and
+gives back what it printed, as a list of lines.
+
+**App mode:** before a program runs, AerOS reads all of it, so it knows every part of AerOS
+the program can use, and puts away the parts it won't, to leave their memory for the
+program. It happens by itself, for every program, even one saved a second ago. `appmode()`
+gives back what it did: `[["graphics", "files"], 82, 257990]` is the parts the program uses,
+the KB put away for it, and the KB free. It also puts away again anything that has started
+since. A part that was put away starts again by itself the next time something uses it. `mem`
+shows what app mode did for the last program.
+
+**Network:** `nsend(host, port, text)` sends a sealed message to a computer the firewall
+allows (true if it was sent), and `nrecv(port, ms)` waits up to `ms` milliseconds for one:
+the message, or nil. See [The network](network.md).
+
+When a name isn't known, the error suggests the closest one that is:
+`unknown name 'prnt' (did you mean print?)`. `why` after an error shows the lines around it,
+and `why gopen` (or any built-in's name) explains a function from the C code behind it.
 
 **Animation:** `progress(x, y, width, done, total, colour)` draws a bar like
 `[#####.....]  50%`, `spinner(x, y, style, colour)` draws a spinner as it should look right
@@ -150,6 +171,30 @@ text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
 
+**For games:** `gbuf(true)` draws into a back buffer out of sight and `gshow()` puts
+each finished frame on the screen, so moving things don't flicker. `keydown(k)` says if a
+key is held right now (`"a"`, `KEY_LEFT`, `KEY_SPACE`, `KEY_SHIFT`...), without waiting.
+`sload(path)` loads a WAV or MP3, and `splay(sound, loop, volume)` starts it and carries on
+at once: up to 8 sounds play together. `sstop(n)` stops one, `isply(n)` asks if it still
+plays. Use `keydown` for things that last (moving) and `haskey()` / `key()` for single
+presses (jumping): every press waits there until it is read, so a quick tap is never missed.
+`/bin/move.aer` uses them all.
+
+```
+gopen()
+gbuf(true)
+let x = 100
+while not keydown(KEY_ESCAPE) do
+    if keydown(KEY_RIGHT) then
+        x = x + 4
+    end
+    gclear(0)
+    rect(x, 100, 40, 40, 0xFF7F00)
+    gshow()
+    frame(60)
+end
+```
+
 ## Programs to learn from
 
 | File | Shows |
@@ -157,6 +202,7 @@ key()
 | `/bin/hello.aer` | input, functions, lists, loops |
 | `/bin/guess.aer` | random numbers and a game loop |
 | `/bin/viewer.aer` | graphics, pictures and a menu |
+| `/bin/move.aer` | smooth movement, held keys and mixed sounds |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
 | `/bin/anim.aer` | spinners, progress bars and moving text |

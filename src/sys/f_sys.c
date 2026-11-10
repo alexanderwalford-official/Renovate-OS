@@ -23,9 +23,20 @@
        just a list of full paths ("/sys/cache/"), and a file remembers the path of the folder it
        is in. Only the contents of files are malloc'd. It is all gone when the computer restarts.
 
+    One folder is neither on the disk nor in the tables: /src/, AerOS's own source code, which
+    is built into the kernel (see sys/source.h). Every public function checks for it first and
+    hands it to the source_ functions, so you can LA, RD and SD around in it like anywhere else,
+    in both modes. Anything that would change it gets FS_ERR_READ_ONLY.
+
+    And files in home folders remember their past: before one is changed or deleted, the
+    functions here hand it to versions_keep() (sys/versions.h), which keeps a copy, and a name
+    like "notes.txt@2" reads one of those copies instead of the file.
+
     https://wiki.osdev.org/VFS
 */
 #include "f_sys.h"
+#include "source.h"
+#include "versions.h"
 #include "sys_clck.h"
 #include "../lib/primary_definitions.h"
 #include "../lib/busy.h"
@@ -461,11 +472,31 @@ static int mem_print (const char* path) {
 //
 // Each one cleans up the path it was given (relative paths, ".", ".."), then hands the clean
 // absolute path to the disk driver (DISK mode) or the memory tables above (VFS mode).
+// A path inside /src/ goes to the built-in source files instead (sys/source.c).
+
+// a copy of a built-in source file, with a '\0' after it so it can be used as text too.
+// free() it when done. *size (if not NULL) gets its length
+static char* copy_source_file (const source_file_t* file, uint32_t* size) {
+    uint32_t length = source_size(file);
+    char* copy = malloc(length + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+    memcpy(copy, file->start, length);
+    copy[length] = '\0';
+    if (size != NULL) {
+        *size = length;
+    }
+    return copy;
+}
 
 bool fs_dir_exists (const char* d_path) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path))) {
         return false; // too long to be a real folder
+    }
+    if (source_in(path)) {
+        return source_folder_exists(path);
     }
     if (on_disk()) {
         return fat_dir_exists(path);
@@ -478,10 +509,23 @@ bool fs_file_exists (const char* f_path, const char* f_name) {
     if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
         return false;
     }
-    if (on_disk()) {
-        return fat_file_exists(folder, f_name);
+    if (source_in(folder)) {
+        return source_find(folder, f_name) != NULL;
     }
-    return mem_find_file(folder, f_name) >= 0;
+    bool exists;
+    if (on_disk()) {
+        exists = fat_file_exists(folder, f_name);
+    } else {
+        exists = mem_find_file(folder, f_name) >= 0;
+    }
+    // "notes.txt@2", an old version of notes.txt (see sys/versions.h), counts as a file too
+    char base[FS_NAME_MAX];
+    int number;
+    if (!exists && versions_split_name(f_name, base, sizeof(base), &number)) {
+        version_t list[VERSIONS_KEPT];
+        exists = versions_list(folder, base, list) >= number;
+    }
+    return exists;
 }
 
 // make a folder. d_name is a description LA shows next to it (VFS mode only: a FAT disk has
@@ -493,6 +537,9 @@ int fs_create_d (const char* d_path, const char* d_name) {
     }
     if (seq(path, "/")) {
         return FS_ERR_EXISTS;
+    }
+    if (source_in(path)) {
+        return FS_ERR_READ_ONLY; // also "/src/" itself, which would hide the built-in one
     }
     if (on_disk()) {
         return fat_create_dir(path);
@@ -517,6 +564,9 @@ int fs_create_bytes (const char* f_path, const char* f_name, const void* data, u
     if (!fs_valid_name(f_name)) {
         return FS_ERR_BAD_NAME;
     }
+    if (source_in(folder)) {
+        return FS_ERR_READ_ONLY;
+    }
     if (on_disk()) {
         return fat_create_file(folder, f_name, data, length);
     }
@@ -529,6 +579,10 @@ int fs_write_f (const char* f_path, const char* f_name, const char* text, bool a
     if (text == NULL || !fs_resolve_dir(f_path, folder, sizeof(folder))) {
         return FS_ERR_NOT_FOUND;
     }
+    if (source_in(folder)) {
+        return FS_ERR_READ_ONLY;
+    }
+    versions_keep(folder, f_name); // the file as it is now, before it changes
     if (on_disk()) {
         return fat_write_file(folder, f_name, text, append);
     }
@@ -541,6 +595,16 @@ int fs_write_bytes (const char* f_path, const char* f_name, const void* data, ui
     if (data == NULL || !fs_resolve_dir(f_path, folder, sizeof(folder))) {
         return FS_ERR_NOT_FOUND;
     }
+    if (source_in(folder)) {
+        return FS_ERR_READ_ONLY;
+    }
+    // Keep the file as it is now, before it changes. Unless the old bytes are being wiped
+    // (encryption): then any copies of them are wiped too
+    if (wipe_old) {
+        versions_forget(folder, f_name);
+    } else {
+        versions_keep(folder, f_name);
+    }
     if (on_disk()) {
         return fat_replace_file(folder, f_name, data, length, wipe_old);
     }
@@ -550,31 +614,21 @@ int fs_write_bytes (const char* f_path, const char* f_name, const void* data, ui
 // a copy of a text file's contents, or NULL if there is no such file. The copy is the
 // caller's to change, and to free() when done with it
 char* fs_read_f (const char* f_path, const char* f_name) {
-    char folder[FS_PATH_MAX];
-    if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
-        return NULL;
-    }
-    if (on_disk()) {
-        return fat_read_file(folder, f_name, NULL);
-    }
-    int index = mem_find_file(folder, f_name);
-    if (index < 0) {
-        return NULL;
-    }
-    return strdup(files[index].f_cont);
+    uint32_t size; // (a '\0' always follows what fs_read_bytes reads, so it is a string too)
+    return fs_read_bytes(f_path, f_name, &size);
 }
 
-// like fs_read_f, but for any file: also says how many bytes it is (*size)
-char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
-    char folder[FS_PATH_MAX];
-    if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
-        return NULL;
+// fs_read_bytes for a folder that has been cleaned up already
+static char* read_file (const char* folder, const char* name, uint32_t* size) {
+    if (source_in(folder)) {
+        const source_file_t* file = source_find(folder, name);
+        return file != NULL ? copy_source_file(file, size) : NULL;
     }
     if (on_disk()) {
-        return fat_read_file(folder, f_name, size);
+        return fat_read_file(folder, name, size);
     }
 
-    int index = mem_find_file(folder, f_name);
+    int index = mem_find_file(folder, name);
     if (index < 0) {
         return NULL;
     }
@@ -587,12 +641,93 @@ char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
     return copy;
 }
 
+// like fs_read_f, but for any file: also says how many bytes it is (*size)
+char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
+    char folder[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
+        return NULL;
+    }
+    char* contents = read_file(folder, f_name, size);
+
+    // no such file: is it "notes.txt@2", an old version of notes.txt? (see sys/versions.h)
+    char base[FS_NAME_MAX];
+    int number;
+    if (contents == NULL && versions_split_name(f_name, base, sizeof(base), &number)) {
+        contents = versions_read(folder, base, number, size);
+    }
+    return contents;
+}
+
+bool fs_open (const char* path, fs_file_t* file) {
+    char folder[FS_PATH_MAX];
+    char name[FS_NAME_MAX];
+    if (!fs_split_path(path, folder, sizeof(folder), name, sizeof(name))) {
+        return false;
+    }
+    file->built_in = NULL;
+    if (source_in(folder)) {
+        const source_file_t* source = source_find(folder, name);
+        if (source == NULL) {
+            return false;
+        }
+        file->built_in = source->start;
+        file->size = source_size(source);
+        return true;
+    }
+    file->on_disk = on_disk();
+    if (file->on_disk) {
+        if (!fat_open(folder, name, &file->fat)) {
+            return false;
+        }
+        file->size = file->fat.size;
+        return true;
+    }
+    file->vfs_slot = mem_find_file(folder, name);
+    if (file->vfs_slot < 0) {
+        return false;
+    }
+    file->size = (uint32_t)files[file->vfs_slot].f_size;
+    return true;
+}
+
+// copy up to `length` bytes from `offset` out of a file that is all in memory already
+static int32_t copy_part (const char* bytes, uint32_t size, uint32_t offset, void* out, uint32_t length) {
+    if (offset >= size) {
+        return 0;
+    }
+    if (length > size - offset) {
+        length = size - offset;
+    }
+    memcpy(out, bytes + offset, length);
+    return (int32_t)length;
+}
+
+int32_t fs_read_at (fs_file_t* file, uint32_t offset, void* out, uint32_t length) {
+    if (file->built_in != NULL) {
+        return copy_part(file->built_in, file->size, offset, out, length);
+    }
+    if (file->on_disk) {
+        return fat_read_at(&file->fat, offset, out, length);
+    }
+    // in memory the whole file is already there: just copy the part that's wanted
+    const struct file* entry = &files[file->vfs_slot];
+    if (!entry->f_used) {
+        return -1; // deleted since it was opened
+    }
+    return copy_part(entry->f_cont, (uint32_t)entry->f_size, offset, out, length);
+}
+
 // call fn for every file and folder in a folder. Returns how many there were, or -1 if
 // the folder isn't there
 int fs_list (const char* d_path, fs_list_fn fn, void* ctx) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path))) {
         return -1;
+    }
+    // (listing "/" doesn't include src: then DEL / and the wipe would try to delete it, and
+    // every count of "/" would include about 100 source files)
+    if (source_in(path)) {
+        return source_list(path, fn, ctx);
     }
     if (on_disk()) {
         return fat_list_dir(path, fn, ctx);
@@ -605,6 +740,10 @@ int fs_delete_f (const char* f_path, const char* f_name) {
     if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
         return FS_ERR_NOT_FOUND;
     }
+    if (source_in(folder)) {
+        return FS_ERR_READ_ONLY;
+    }
+    versions_keep(folder, f_name); // so UNDO can bring it back
     if (on_disk()) {
         return fat_delete_file(folder, f_name);
     }
@@ -616,6 +755,9 @@ int fs_delete_d (const char* d_path) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path)) || seq(path, "/")) {
         return FS_ERR_NOT_FOUND;
+    }
+    if (source_in(path)) {
+        return FS_ERR_READ_ONLY;
     }
     // If the current folder starts with this path, it IS this folder or is somewhere inside it.
     // The '/' on the end of every path stops look-alikes matching: "/system/" doesn't start
@@ -707,6 +849,9 @@ int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, vo
     if (!fs_resolve_dir(d_path, path, sizeof(path)) || !fs_dir_exists(path)) {
         return FS_ERR_NOT_FOUND;
     }
+    if (source_in(path)) {
+        return FS_ERR_READ_ONLY;
+    }
 
     // 32 names of 32 bytes is 1KB, too much to put on the kernel's small stack
     char (*names)[FS_NAME_MAX] = malloc(BATCH_SIZE * FS_NAME_MAX);
@@ -716,6 +861,9 @@ int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, vo
     bool is_folder[BATCH_SIZE];
     int files_deleted = 0;
 
+    // A whole folder going doesn't keep versions of its files (sys/versions.h): that would
+    // copy everything in it just to delete it. (And in the wipe, the versions go too.)
+    versions_pause();
     for (;;) {
         batch_t batch = { names, is_folder, 0 };
         fs_list(path, collect_entry, &batch);
@@ -756,6 +904,7 @@ int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, vo
             break;
         }
     }
+    versions_resume();
     free(names);
     return files_deleted;
 }
@@ -778,19 +927,31 @@ int fs_set_cd (const char* input) {
 
 // LA: list what is in the current folder
 void fs_print (void) {
+    if (source_in(cd)) {
+        prtf("Directory of %s  (AerOS's own source code, read only)\n", cd);
+        source_print(cd);
+        return;
+    }
     if (on_disk()) {
         prtf("Directory of %s  (disk)\n", cd);
     } else {
         prtf("Directory of %s\n", cd);
     }
 
-    // both return how many lines they printed (the disk one -1 if it couldn't read the folder)
-    int shown;
-    if (on_disk()) {
-        shown = fat_print_dir(cd);
-    } else {
-        shown = mem_print(cd);
+    // all three return how many lines they printed (the disk one -1 if it couldn't read it)
+    int shown = 0;
+    if (seq(cd, "/")) {
+        // /src/ isn't on the disk or in the tables, so it gets its own line
+        prtf("  <DIR>   %-22s %s\n", "src/", "AerOS's own source code (read only)");
+        shown++;
     }
+    int listed;
+    if (on_disk()) {
+        listed = fat_print_dir(cd);
+    } else {
+        listed = mem_print(cd);
+    }
+    shown = listed < 0 ? listed : shown + listed;
 
     if (shown == 0) {
         prtf("  (empty)\n");

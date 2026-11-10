@@ -110,6 +110,35 @@ AerOS carries on booting. Any later `PLY` stops it first.
 If the card stops moving for 2 seconds, `ac97_play` gives up with "the sound card stopped
 responding", so a broken card can't hang the OS.
 
+### Streaming, and the mixer
+
+`ac97_play` needs the whole sound decoded in memory first. Games and videos make their sound as
+they go, so the driver also has a **streaming** mode (`ac97_stream_start`). The driver owns 32
+small blocks of 512 frames (about 11 ms each), one per descriptor, and keeps 8 of them queued
+after the one playing. Each time it needs a new block it calls a *fill function*.
+
+`ac97_stream_service` does the topping up. It runs from the **timer interrupt** every 2 ms
+(through `clck_tick_hook` in `sys_clck.c`), so the sound carries on smoothly whatever the program
+is doing, with no help from it. If the interrupt is ever held off long enough for the card to
+run dry, the card halts and the next service starts it again.
+
+The fill function is the **mixer** (`sys/mixer.c`). It has 8 voices and adds them all up into
+each block, clipping anything too loud for 16 bits:
+
+| Kind of voice | Started with | Plays |
+| --- | --- | --- |
+| a sound | `mixer_play(frames, count, loop, volume)` | a whole sound already in memory, once or looping (AerLang's `splay`) |
+| a stream | `mixer_stream_open(buffer, volume)` | whatever the program has written into its ring buffer with `mixer_stream_write`, silence if it falls behind (a video's sound track) |
+
+The ring buffer needs no lock: the program only moves the "written" counter and the interrupt
+only moves the "read" counter. Voices can be paused (`mixer_pause`), and `mixer_played` says how
+many frames a voice has played, which the video player uses as its clock (see
+[VIDEO.md](VIDEO.md)). Everything the mixer plays is at 48 000 Hz, which every card supports;
+`sound_load` converts a file to that rate when it loads it.
+
+Because the mixing happens inside an interrupt, it uses whole numbers only: the x87 FPU's state
+isn't saved on interrupts, so a float there could upset a program that was using one.
+
 ## The startup sound
 
 * It lives at **`/sys/startup.wav`**, copied there from a built-in copy

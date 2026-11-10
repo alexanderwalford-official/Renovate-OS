@@ -12,6 +12,7 @@
 #define SOUND_H
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #define SOUND_OK             0
 #define SOUND_ERR_NO_CARD   -1
@@ -27,6 +28,14 @@ int sound_play_file (const char* path, bool (*should_stop)(void));
 // it is /sys/startup.wav, which can be replaced with any WAV or MP3 (or an empty file for silence).
 // The built-in copy plays when there is no disk, and is put back if the file is deleted
 void sound_startup (void);
+
+// decode a WAV or MP3 file into 16 bit stereo at the mixer's rate (48000 Hz), for the mixer
+// (sys/mixer.h) to play. *frames is a new buffer, free() it when done; *count is how many
+// stereo frames it holds. Returns SOUND_OK or a SOUND_ERR_ code
+int sound_load (const char* path, int16_t** frames, uint32_t* count);
+
+// stop the startup sound if it is still playing, and free its memory
+void sound_stop (void);
 
 const char* sound_strerror (int error);
 

@@ -19,7 +19,18 @@ SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
 # the disk when the OS starts: apps/ (the apps and their files) into /bin/, and docs/ (the
 # documentation the DOCS command shows) into /docs/
 BUILTIN_FILES = $(wildcard apps/* docs/*)
-OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(BUILTIN_FILES))
+
+# AerOS's own source code is linked in too, the same way, and shows up as the read-only folder
+# /src/ (see sys/source.h): every .c and .h file AerOS was built from, plus the files that
+# build and boot it. Left out: other people's code (lib/minimp3, lib/pl_mpeg, which the
+# wildcards don't reach) and two big files that are only data (the logo and the font)
+HEADERS = $(wildcard *.h lib/*.h lib/shim/*.h sys/*.h sys/*/*.h drivers/*/*.h lang/*.h)
+SOURCE_CODE = $(sort $(filter-out sys/splash_logo.c drivers/video/font8x16.c, \
+                $(SOURCES) $(HEADERS)) entry.asm linker.ld Makefile iso/boot/grub/grub.cfg)
+SOURCE_OBJECTS = $(patsubst %,obj/source/%.o,$(SOURCE_CODE)) obj/source_index.o
+
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(BUILTIN_FILES)) \
+          $(SOURCE_OBJECTS)
 
 QEMU = qemu-system-i386
 
@@ -34,7 +45,11 @@ QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
 AUDIO = pa
 QEMU_AUDIO = -audiodev $(AUDIO),id=snd0 -device AC97,audiodev=snd0
 
-.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev
+# an Intel e1000 network card on QEMU's own little network, where this computer is 10.0.2.2.
+# UDP port 5001 here is passed on to AerOS's port 5000, so tools/aernet.py can send to it
+QEMU_NET = -nic user,model=e1000,hostfwd=udp::5001-:5000
+
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev FORCE
 
 all: main.iso
 
@@ -67,8 +82,42 @@ obj/docs/%.o: docs/%
 	@mkdir -p obj/docs
 	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
 
-# minimp3 includes <string.h> and <stdlib.h>, point those at our own versions for this file only
-obj/lib/mp3.o: CFLAGS += -Ilib/minimp3/shim
+# a source file for /src/: obj/source/sys/fat.c.o holds sys/fat.c, between the symbols
+# _binary_sys_fat_c_start and _end (ld turns every character that isn't a letter or digit into _)
+obj/source/%.o: %
+	@mkdir -p '$(dir $@)'
+	@$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
+
+# the table of them that sys/source.c looks through, one line per file:
+#     { "sys/fat.c", _binary_sys_fat_c_start, _binary_sys_fat_c_end },
+# It is written fresh every time, but only replaces the old one when something is different
+# (a file was added or removed), so it is only compiled again when it needs to be
+source_symbol = _binary_$(subst /,_,$(subst .,_,$(subst -,_,$(1))))
+
+obj/source_index.c: FORCE
+	@mkdir -p obj
+	@{ \
+	  echo '/* written by the Makefile: the source files built into AerOS, see sys/source.h */'; \
+	  echo '#include "../sys/source.h"'; \
+	  echo; \
+	  $(foreach f,$(SOURCE_CODE),echo 'extern const char $(call source_symbol,$(f))_start[], $(call source_symbol,$(f))_end[];';) \
+	  echo; \
+	  echo 'const source_file_t source_files[] = {'; \
+	  $(foreach f,$(SOURCE_CODE),echo '    { "$(f)", $(call source_symbol,$(f))_start, $(call source_symbol,$(f))_end },';) \
+	  echo '};'; \
+	  echo 'const int source_file_count = sizeof(source_files) / sizeof(source_files[0]);'; \
+	} > '$@.new'
+	@if cmp -s '$@.new' '$@'; then rm -f '$@.new'; else mv '$@.new' '$@'; fi
+
+obj/source_index.o: obj/source_index.c
+	$(CC) $(CFLAGS) -c '$<' -o '$@'
+
+FORCE:
+
+# the MP3 and MPEG decoders include <string.h> and <stdlib.h>: point those at AerOS's own
+# versions (lib/shim), for these two files only
+obj/lib/mp3.o: CFLAGS += -Ilib/shim
+obj/lib/mpg.o: CFLAGS += -Ilib/shim
 
 # header dependencies written by -MMD
 -include $(OBJECTS:.o=.d)
@@ -101,20 +150,20 @@ disk-put: $(DISK)
 # boot the ISO through GRUB with the disk attached (terminal output is mirrored to this console via the serial port)
 # -boot d starts from the CD, otherwise the BIOS would try the (non bootable) disk first
 run: main.iso $(DISK)
-	$(QEMU) -cdrom main.iso $(QEMU_DISK) -boot d -smp 1 -serial stdio $(QEMU_AUDIO)
+	$(QEMU) -cdrom main.iso $(QEMU_DISK) -boot d -smp 1 -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot the kernel directly with the disk attached, skipping GRUB
 run-kernel: main.elf $(DISK)
-	$(QEMU) -kernel main.elf $(QEMU_DISK) -serial stdio $(QEMU_AUDIO)
+	$(QEMU) -kernel main.elf $(QEMU_DISK) -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot without a disk (temporary VFS mode)
 run-vfs: main.iso
-	$(QEMU) -cdrom main.iso -smp 1 -serial stdio $(QEMU_AUDIO)
+	$(QEMU) -cdrom main.iso -smp 1 -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot the ISO like a modern UEFI PC (OVMF firmware). The ISO only contains UEFI boot files when
 # grub-efi-amd64-bin is installed (make setup-dev), and the 64 bit firmware needs the 64 bit QEMU
 run-uefi: main.iso $(DISK)
-	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom main.iso $(QEMU_DISK) -m 256 -serial stdio $(QEMU_AUDIO)
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom main.iso $(QEMU_DISK) -m 256 -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot the ISO as a hard drive image
 run-img: main.iso

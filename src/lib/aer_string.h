@@ -113,4 +113,11 @@ char* strupr(char* s);
 // make every letter in s lower case, returns s
 char* strlwr(char* s);
 
+// How different two short strings are: the fewest single character changes that turn one into
+// the other, where a change is adding a character, taking one away, swapping one for another,
+// or swapping two next to each other round. Upper and lower case don't count.
+//     sdist("del", "del") is 0,  sdist("dle", "del") is 1,  sdist("notez.txt", "notes.txt") is 1
+// For "did you mean...?" (names): strings of 32 characters or more just give 99
+int sdist(const char* a, const char* b);
+
 #endif /* AER_STRING_H */

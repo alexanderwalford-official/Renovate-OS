@@ -20,6 +20,18 @@ bool gfx_begin(void);
 // hand the screen back to the terminal, which redraws itself
 void gfx_end(void);
 
+// Smooth animation: gfx_buffered(true) sends all drawing to a back buffer, a copy of the
+// screen in memory, and gfx_show() puts the finished frame on the screen in one go, so it
+// never flickers. A game or video draws each frame like this:
+//
+//     gfx_buffered(true);
+//     for each frame:   gfx_clear(...); draw everything; gfx_show();
+//
+// gfx_buffered(false) goes back to drawing straight to the screen (showing the last frame
+// first). False if there isn't enough memory for the back buffer (then nothing changes)
+bool gfx_buffered(bool on);
+void gfx_show(void);
+
 uint32_t gfx_width(void);
 uint32_t gfx_height(void);
 
@@ -30,6 +42,11 @@ void gfx_line(int x0, int y0, int x1, int y1, uint32_t rgb);
 // text with the built-in 8x16 font, each font pixel drawn as a scale x scale square
 void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale);
 
+// draw a block of pixels, each 0x00RRGGBB (the top 8 bits are ignored), scaled to out_w x out_h
+// with its top left corner at x, y. The block is w x h pixels, and `stride` pixels apart from one
+// row to the next (usually just w). Used for video frames, and handy for sprites
+void gfx_draw_pixels(const uint32_t* pixels, int w, int h, int stride, int x, int y, int out_w, int out_h);
+
 // the size of a BMP picture, false if the data isn't a BMP we can show (8, 24 or 32 bit, uncompressed)
 bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h);
 
@@ -38,5 +55,18 @@ bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h);
 // screen (up to 16384 pixels each way) and x, y may be negative, which is how a picture is zoomed
 // in on: only the part that lands on the screen is drawn. False if it isn't a BMP we can show.
 bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, int max_h);
+
+// Draw over the screen for a moment, without spoiling what a program has drawn:
+//
+//     gfx_overlay_t* overlay = gfx_overlay_begin(x, y, w, h);  // keeps what is under it
+//     gfx_rect(...); gfx_text(...);                            // drawn straight on the screen
+//     gfx_overlay_end(overlay);                                // and the screen is as it was
+//
+// Drawing goes straight to the screen in between, even when the program has a back buffer (its
+// half drawn frame isn't shown). Used for the question a program asks before it touches your
+// files (sys/perm.c). NULL if there isn't enough memory to keep the area, or no graphics
+typedef struct gfx_overlay gfx_overlay_t;
+gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h);
+void gfx_overlay_end(gfx_overlay_t* overlay);
 
 #endif /* GFX_H */

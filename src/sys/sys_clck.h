@@ -57,6 +57,11 @@ extern bool sys_threads_status[4]; // eventual support for quad threads, only st
 // true once clck_init() has programmed the PIT, sleep_ms() uses it to decide how to wait
 extern bool clck_ready;
 
+// called from the timer interrupt on every tick (once a millisecond) when it isn't NULL.
+// It runs inside the interrupt, with interrupts off, so it has to be quick and must never wait
+// (no sleep_ms). The sound mixer (sys/mixer.c) uses it to keep the sound card topped up
+extern void (*clck_tick_hook)(void);
+
 // start the system timer (requires idt_init() first)
 // programs PIT channel 0 to 1000Hz and claims IRQ0. Ticks only start counting once interrupts
 // are enabled with interrupts_enable()

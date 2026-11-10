@@ -132,36 +132,89 @@ static void kb_push(uint8_t key) {
     kb_head = next;
 }
 
+// ---- keys held down (for games) -------------------------------------------------------------
+//
+// The buffer above only records key PRESSES, as characters, which is what typing wants. A game
+// wants to know which keys are down right now ("is the left arrow held?"), so every press and
+// release also updates this table. It is indexed by the key itself, whatever shift or caps lock
+// are doing: the A key is always 'a', the arrows are KEY_LEFT and so on, shift is KEY_SHIFT
+static volatile bool held[256];
+
+static void set_held(int key, bool down) {
+    if (key > 0 && key < 256) {
+        held[key] = down;
+    }
+}
+
+bool kb_is_down(int key) {
+    if (key >= 'A' && key <= 'Z') {
+        key = key - 'A' + 'a'; // the table only has the lower case letters
+    }
+    if (key <= 0 || key >= 256) {
+        return false;
+    }
+    return held[key];
+}
+
+// the key an ordinary (not 0xE0) scancode stands for, without shift: 0x1E is always 'a'.
+// 0 for keys that don't have one
+static int plain_key(uint8_t code) {
+    switch (code) {
+        case 0x2A:
+        case 0x36: return KEY_SHIFT;
+        case 0x1D: return KEY_CTRL;
+        case 0x38: return KEY_ALT;
+    }
+    if (code < sizeof(kb_map_normal) - 1) {
+        return (uint8_t)kb_map_normal[code];
+    }
+    if (code >= 0x47 && code <= 0x53) {
+        return (uint8_t)kb_map_keypad[code - 0x47];
+    }
+    return 0;
+}
+
+// the key a scancode after the 0xE0 prefix stands for, 0 for keys that don't have one
+static int extended_key(uint8_t code) {
+    switch (code) {
+        case 0x48: return KEY_UP;
+        case 0x50: return KEY_DOWN;
+        case 0x4B: return KEY_LEFT;
+        case 0x4D: return KEY_RIGHT;
+        case 0x47: return KEY_HOME;
+        case 0x4F: return KEY_END;
+        case 0x53: return KEY_DELETE;
+        case 0x49: return KEY_PGUP;
+        case 0x51: return KEY_PGDN;
+        case 0x1C: return '\n';       // keypad enter
+        case 0x35: return '/';        // keypad slash
+        case 0x1D: return KEY_CTRL;   // right ctrl
+        case 0x38: return KEY_ALT;    // right alt
+        default:   return 0;
+    }
+}
+
 // keys that follow the 0xE0 prefix byte
 // code: the scancode with the release bit already stripped, released: true for a key release
 static void kb_process_extended(uint8_t code, bool released) {
-    // first the keys that matter on release too
-    switch (code) {
-        case 0x1D: kb_ctrl = !released; return; // right ctrl
-        // some keyboards wrap keys like print screen or the arrows (with num lock on) in pretend
-        // shift presses / releases, ignore them so they don't mess up kb_shift
-        case 0x2A:
-        case 0x36: return;                      // fake shifts sent with some extended keys
-    }
-    // everything else only does something when pressed
-    if (released) {
+    // some keyboards wrap keys like print screen or the arrows (with num lock on) in pretend
+    // shift presses / releases: ignore them so they don't mess up kb_shift or the held keys
+    if (code == 0x2A || code == 0x36) {
         return;
     }
-    // 0xE0 + a keypad code = the separate cursor keys, plus keypad enter and slash
-    // (keys with no case here, like the Windows keys, are simply ignored)
-    switch (code) {
-        case 0x48: kb_push(KEY_UP); break;
-        case 0x50: kb_push(KEY_DOWN); break;
-        case 0x4B: kb_push(KEY_LEFT); break;
-        case 0x4D: kb_push(KEY_RIGHT); break;
-        case 0x47: kb_push(KEY_HOME); break;
-        case 0x4F: kb_push(KEY_END); break;
-        case 0x53: kb_push(KEY_DELETE); break;
-        case 0x49: kb_push(KEY_PGUP); break;
-        case 0x51: kb_push(KEY_PGDN); break;
-        case 0x1C: kb_push('\n'); break; // keypad enter
-        case 0x35: kb_push('/'); break;  // keypad slash
+    int key = extended_key(code); // 0 for keys AerOS doesn't use, like the Windows keys
+    set_held(key, !released);
+
+    // right ctrl matters on release too
+    if (code == 0x1D) {
+        kb_ctrl = !released;
+        return;
     }
+    // everything else only types something when pressed (and right alt types nothing)
+    if (released || key == 0 || key == KEY_ALT) {
+        return;
+    }
+    kb_push((uint8_t)key); // the cursor keys, Home, End..., keypad enter and slash
 }
 
 // translate one scancode into a key and store it
@@ -182,6 +235,8 @@ static void kb_process_scancode(uint8_t scancode) {
         kb_process_extended(code, released);
         return;
     }
+
+    set_held(plain_key(code), !released);
 
     // modifier keys: update our state, they never produce a character themselves
     switch (code) {
@@ -274,6 +329,9 @@ bool kb_haschar(void) {
 int getk(void) {
     if (!keyboard_ready || !interrupts_enabled()) {
         return 0; // no keyboard interrupts, waiting would hang forever
+    }
+    if (console_capturing()) {
+        return 0; // a command run by AerLang's cmd(): nobody can see what it is asking
     }
     // a key could arrive just after the check and just before the hlt, in which case we sleep
     // through it. That's harmless here: the 1000 Hz timer interrupt wakes us within a millisecond

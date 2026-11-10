@@ -1,33 +1,17 @@
 /*
     mp3.c - MP3 decoding with minimp3 (see mp3.h)
 
-    minimp3 does its maths with floats. The kernel is built without SSE, so gcc uses the x87 FPU
-    for them, which has to be switched on once before the first float instruction (fpu_enable).
+    minimp3 does its maths with floats, which need the x87 FPU switched on first (see fpu.h).
 */
 
 #include "mp3.h"
 #include "aer_stdlib.h"
 #include "busy.h"
+#include "fpu.h"
 
 #define MINIMP3_IMPLEMENTATION
 #define MINIMP3_NO_SIMD // plain C only, SSE isn't turned on in AerOS
 #include "minimp3/minimp3.h"
-
-// turn on the x87 FPU: CR0 bit 2 (EM, "no FPU, trap every float instruction") and bit 3 (TS)
-// off, bit 1 (MP) and bit 5 (NE, report errors as exceptions) on, then reset the FPU itself
-static void fpu_enable (void) {
-    static bool enabled = false;
-    if (enabled) {
-        return;
-    }
-    uint32_t cr0;
-    __asm__ volatile ("mov %%cr0, %0" : "=r"(cr0));
-    cr0 &= ~((1u << 2) | (1u << 3));
-    cr0 |= (1u << 1) | (1u << 5);
-    __asm__ volatile ("mov %0, %%cr0" : : "r"(cr0));
-    __asm__ volatile ("fninit");
-    enabled = true;
-}
 
 // an ID3v2 tag (title, artist, cover art...) can sit before the first frame, skip over it
 // its size is stored in 4 bytes of 7 bits each, plus 10 for the header and 10 more for a footer

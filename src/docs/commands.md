@@ -10,6 +10,10 @@ Press **Page Up** and **Page Down** to scroll back through what a command printe
 400 lines are kept, a tag in the top right says how far back you are, and any other key
 takes you back to the prompt. Logging out forgets them.
 
+Anything that isn't a command or an app runs as AerLang, so `2 + 2` or `let x = 5` work
+right at the prompt: see [The prompt speaks AerLang](shell.md). A mistyped command gets a
+suggestion (`Did you mean DEL?`), and `why` explains any problem.
+
 ## Files and folders
 
 | Command | Does |
@@ -21,9 +25,20 @@ takes you back to the prompt. Logging out forgets them.
 | `wr <file> <text>` | add a line to the end of a file |
 | `mkd <dir>` | make a folder |
 | `del <name>` | delete a file, or a folder and everything in it (asks first) |
+| `vers [file]` | a file's [old versions](versions.md); on its own, every file that has some |
+| `undo <file> [n]` | bring a file back as it was (or back from being deleted) |
 | `edt <file>` | open a file in the [editor](editor.md) |
 | `read [file]` | open a file in the [reader](reader.md) |
 | `doc [topic]` | this manual, e.g. `doc sound` |
+
+## Asking AerOS
+
+| Command | Does |
+| --- | --- |
+| `why` | explain the last thing that went wrong ([more](why.md)) |
+| `why <name>` | explain a command, an AerLang function or a C function: `why del` |
+| `src <name>` | show the code behind one, with line numbers: `src del`, `src fat.c` |
+| `perm [del <n>]` | what [programs may always do](perms.md) with your files, or forget it |
 
 ## Encrypted files
 
@@ -74,11 +89,25 @@ go
 
 | Command | Does |
 | --- | --- |
-| `ply <file>` | play a WAV or MP3 file, Esc stops it |
+| `ply <file>` | play a WAV or MP3 file, or an .mpg [video](video.md); Esc stops it |
 | `bp [hz]` | beep the PC speaker |
 | `res [WxH]` | show or change the resolution: `res 1280x720` |
 | `cls` | clear the screen |
 | `ech <text>` | print some text |
+
+## The network
+
+| Command | Does |
+| --- | --- |
+| `net` | the card, the address, and what was sent and kept out |
+| `net ip <address> <gateway> <dns>` | set AerOS's address: `net ip 10.0.2.15/24 10.0.2.2 10.0.2.3` |
+| `fw` | what the firewall allows (nothing, to start with) |
+| `fw allow <address or name> <port>` | allow one computer on one port, with a shared password |
+| `fw del <n>` | block it again |
+| `msg <address> <port> <text>` | send a sealed message |
+| `lsn <port>` | show the messages that arrive on a port, until Esc |
+
+See [The network](network.md).
 
 ## The computer
 

@@ -192,6 +192,7 @@ const char* fs_strerror (int error) {
         case FS_ERR_IO: return "disk read / write error";
         case FS_ERR_BUSY: return "it is the current directory";
         case FS_ERR_NO_MEMORY: return "out of memory";
+        case FS_ERR_READ_ONLY: return "it can be read but not changed";
         default: return "unknown error";
     }
 }
@@ -996,6 +997,90 @@ char* fat_read_file (const char* f_path, const char* name, uint32_t* size) {
         *size = e.entry.size;
     }
     return fat_read_chain(fat_entry_cluster(&e.entry), e.entry.size);
+}
+
+// ---- reading a file a piece at a time (see fat_file_t in fat.h) -------------------------------
+
+bool fat_open (const char* f_path, const char* name, fat_file_t* file) {
+    fat_entry_t e;
+    if (!fat_find_file(f_path, name, &e)) {
+        return false;
+    }
+    file->first_cluster = fat_entry_cluster(&e.entry);
+    file->size = e.entry.size;
+    file->cluster = file->first_cluster;
+    file->cluster_index = 0;
+    return true;
+}
+
+// move file->cluster to the file's cluster number `index` (0 = the first). Going forward it
+// carries on from the cluster read last; going back it has to start again from the first.
+// False if the chain ends too soon (a damaged disk)
+static bool fat_go_to_cluster (fat_file_t* file, uint32_t index) {
+    if (index < file->cluster_index) {
+        file->cluster = file->first_cluster;
+        file->cluster_index = 0;
+    }
+    while (file->cluster_index < index) {
+        file->cluster = fat_get(file->cluster);
+        if (!fat_valid_cluster(file->cluster)) {
+            return false;
+        }
+        file->cluster_index++;
+    }
+    return fat_valid_cluster(file->cluster);
+}
+
+int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t length) {
+    if (offset >= file->size) {
+        return 0;
+    }
+    if (length > file->size - offset) {
+        length = file->size - offset; // stop at the end of the file
+    }
+    uint32_t cluster_bytes = fat_vol.sectors_per_cluster * FAT_SECTOR_SIZE;
+    uint8_t* to = out;
+    uint32_t done = 0;
+
+    while (done < length) {
+        uint32_t position = offset + done;
+        if (!fat_go_to_cluster(file, position / cluster_bytes)) {
+            return -1;
+        }
+        // where `position` is inside its cluster: which sector, and where in that sector
+        uint32_t in_cluster = position % cluster_bytes;
+        uint32_t sector = in_cluster / FAT_SECTOR_SIZE;
+        uint32_t in_sector = in_cluster % FAT_SECTOR_SIZE;
+        uint32_t lba = fat_cluster_lba(file->cluster) + sector;
+        uint32_t left = length - done;
+
+        if (in_sector == 0 && left >= FAT_SECTOR_SIZE) {
+            // whole sectors: read as many as possible from this cluster straight into `out`
+            uint32_t sectors = left / FAT_SECTOR_SIZE;
+            uint32_t sectors_left_in_cluster = fat_vol.sectors_per_cluster - sector;
+            if (sectors > sectors_left_in_cluster) {
+                sectors = sectors_left_in_cluster;
+            }
+            if (!drive_read(fat_vol.bus, fat_vol.slave, lba, sectors, to + done)) {
+                return -1;
+            }
+            done += sectors * FAT_SECTOR_SIZE;
+        } else {
+            // part of a sector (the start or the end of what was asked for): read the whole
+            // sector into a spare buffer and copy the part that's wanted
+            fat_sector_t whole;
+            if (!fat_read_sector(lba, &whole)) {
+                return -1;
+            }
+            uint32_t take = FAT_SECTOR_SIZE - in_sector;
+            if (take > left) {
+                take = left;
+            }
+            memcpy(to + done, whole.u8 + in_sector, take);
+            done += take;
+        }
+    }
+    return (int32_t)done;
 }
 
 typedef struct {

@@ -1,0 +1,24 @@
+# sleep.aer - sleep mode: a dark screen until Esc is pressed
+#
+#     sleep            (Esc wakes it)
+#
+# key() waits for a key with the processor halted, so while it sleeps the computer does
+# nothing at all until a key is pressed. App mode also sees that this program uses nothing but
+# the screen and keyboard, and puts the network card away while it runs.
+
+let message = "Sleeping. Press Esc to wake up."
+
+# a black screen, with the message dimly in the middle
+color(DARK_GRAY, BLACK)
+cls()
+at((80 - len(message)) / 2, 12)
+write(message)
+
+# wait for Esc: any other key is ignored, and the screen stays dark
+while key() != KEY_ESCAPE do
+end
+
+# awake: the terminal's usual colours, on a clean screen
+color(BRIGHT, BLACK)
+cls()
+print("Awake again.")

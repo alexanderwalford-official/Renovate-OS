@@ -45,6 +45,8 @@ bool clck_ready = false;
 // read or write is a single instruction on x86, so no locking is needed
 static volatile uint32_t ticks = 0; // milliseconds since clck_init()
 
+void (*clck_tick_hook)(void) = NULL;
+
 // IRQ0 handler, the end of interrupt is sent by isr_dispatch
 // runs once a millisecond, so it does as little as possible
 static void timer_handler(struct regs* r) {
@@ -53,6 +55,10 @@ static void timer_handler(struct regs* r) {
     ticks++;
     // the exact cycle each tick lands on jitters a little, which helps the random generator
     crypto_add_entropy(ticks);
+    // anything that needs a regular nudge, like the sound mixer keeping the card topped up
+    if (clck_tick_hook != NULL) {
+        clck_tick_hook();
+    }
 }
 
 // program PIT channel 0 for PIT_HZ interrupts a second and hook IRQ0, see sys_clck.h

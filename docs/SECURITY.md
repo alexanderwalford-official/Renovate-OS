@@ -357,11 +357,20 @@ sys.stdout.buffer.write(plain)
 
 Being clear about the limits is part of good security:
 
-* **There are no file permissions yet.** Any logged in user can read, change or delete any
-  file, including `/acc/users`. Deleting it makes the next boot ask for a new first account,
-  which means anyone who can log in, or who can write to the disk, can take the computer over.
-  Encrypted files stay safe, because their keys come from their own passwords, not from the
-  accounts.
+* **There are no permissions between users.** Programs ask before they touch your files (see
+  [DIFFERENT.md](DIFFERENT.md), "Apps ask before they touch your files"), but the terminal's
+  own commands are trusted, so any logged in user can read, change or delete any file with
+  them, including `/acc/users` and other people's home folders. Deleting `/acc/users` makes
+  the next boot ask for a new first account, which means anyone who can log in, or who can
+  write to the disk, can take the computer over. Encrypted files stay safe, because their keys
+  come from their own passwords, not from the accounts.
+* **Network messages can be replayed.** Sealed messages ([NETWORK.md](NETWORK.md)) can't be
+  read or changed, but one recorded on the way and sent again is accepted again, and the
+  firewall's keys are kept in `/acc/firewall`, which programs can't read but anyone at the
+  terminal can.
+* **Program permissions are by path.** An "always" answer in `/acc/perms` is for a program's
+  path, so another program saved in its place gets the same permission. No program can write
+  to `/acc/`, but anyone at the terminal can.
 * **There are no administrator accounts.** Every user can `MKU` and `DELU`. `DELU`
   asks for your own password, so it protects against someone walking up to an unlocked
   terminal, not against another user. Deleting an account leaves its home folder behind.
@@ -380,6 +389,8 @@ Being clear about the limits is part of good security:
   used at that moment. But every *earlier* save of the file (FAT writes changes to new clusters
   and frees the old ones) left an unencrypted copy in free space that hasn't been overwritten.
   To keep something secret, encrypt it before it's saved many times, or on a fresh disk.
+  The old versions AerOS keeps of files in home folders (`VERS`) are a different matter:
+  encrypting a file zeros and deletes those, since they are plain copies of it.
 * **File names aren't protected.** An encrypted file's name isn't part of its tag, so someone
   with disk access could swap the names of two encrypted files without being noticed. The
   contents are still protected.

@@ -25,30 +25,44 @@
 */
 #include "aer_string.h"
 #include "aer_ctype.h"
+#include <stdint.h>
+#include <stdbool.h>
+
+// memset and memcpy use the CPU's own "string" instructions, which repeat one step ECX times:
+//
+//     rep stosl   store EAX at EDI, 4 bytes at a time       (filling)
+//     rep movsl   copy from ESI to EDI, 4 bytes at a time   (copying)
+//     rep stosb / rep movsb                                 the same, one byte at a time
+//
+// Most of the work goes 4 bytes a step, then the 0 to 3 bytes left over one at a time. That is
+// several times faster than a C loop over single bytes, which matters for big jobs like copying
+// a whole screen (3MB at 1024 x 768) every frame.
+// The "+D", "+S", "+c" parts tell GCC which registers the instructions read and change (EDI,
+// ESI, ECX), and "memory" that memory changes behind its back. The instructions step forwards
+// because the CPU's direction flag is clear: nothing in AerOS ever sets it.
 
 // fill count bytes starting at dest with value, returns dest
 // value is an int for historical reasons, only its low 8 bits are written (memset(p, 0x1FF, n) writes 0xFF)
-// note: the Makefile's -fno-tree-loop-distribute-patterns flag is what stops GCC turning this
-// very loop into a call to memset, which would recurse forever
 void* memset(void* dest, int value, size_t count) {
-    // void* can't be dereferenced, so look at the memory as plain bytes
-    unsigned char* d = dest;
-    // count-- tests the old value, so the loop body runs exactly count times
-    while (count--) {
-        *d++ = (unsigned char)value;
-    }
+    uint32_t byte = (uint8_t)value;
+    uint32_t pattern = byte * 0x01010101u; // the byte in all four places: 0xAB -> 0xABABABAB
+    void* to = dest;
+    size_t words = count / 4;
+    size_t bytes = count % 4;
+    __asm__ volatile ("rep stosl" : "+D"(to), "+c"(words) : "a"(pattern) : "memory");
+    __asm__ volatile ("rep stosb" : "+D"(to), "+c"(bytes) : "a"(pattern) : "memory");
     return dest;
 }
 
 // copy count bytes from src to dest, returns dest
 // the regions must not overlap (that is what "restrict" promises), use memmove if they might
 void* memcpy(void* restrict dest, const void* restrict src, size_t count) {
-    unsigned char* d = dest;
-    const unsigned char* s = src;
-    // plain front to back copy, one byte at a time
-    while (count--) {
-        *d++ = *s++;
-    }
+    void* to = dest;
+    const void* from = src;
+    size_t words = count / 4;
+    size_t bytes = count % 4;
+    __asm__ volatile ("rep movsl" : "+D"(to), "+S"(from), "+c"(words) : : "memory");
+    __asm__ volatile ("rep movsb" : "+D"(to), "+S"(from), "+c"(bytes) : : "memory");
     return dest;
 }
 
@@ -423,4 +437,62 @@ char* strlwr(char* s) {
         *p = (char)tolower((unsigned char)*p);
     }
     return s;
+}
+
+// ---- sdist --------------------------------------------------------------------------------------
+//
+// The "optimal string alignment" distance (Levenshtein's, plus swapping two neighbours, the
+// typing mistake people make most). It fills in a table where row i, column j is the distance
+// between the first i characters of a and the first j of b:
+//
+//              ""  d  e  l          each cell is the cheapest of:
+//         ""    0  1  2  3            the cell above + 1      (take a character of a away)
+//         d     1  0  1  2            the cell to the left + 1 (add a character of b)
+//         l     2  1  1  1            the cell above left, + 1 unless the characters match
+//         e     3  2  1  1            two up and two left + 1, if the last two are swapped round
+//
+// and the answer is the bottom right cell. Only the last three rows are ever needed, so only
+// three are kept.
+// https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance
+
+#define SDIST_LONGEST 32
+
+static int smallest(int a, int b) {
+    return a < b ? a : b;
+}
+
+static bool same_letter(char a, char b) {
+    return tolower((unsigned char)a) == tolower((unsigned char)b);
+}
+
+int sdist(const char* a, const char* b) {
+    size_t a_length = slen(a);
+    size_t b_length = slen(b);
+    if (a_length >= SDIST_LONGEST || b_length >= SDIST_LONGEST) {
+        return 99;
+    }
+
+    int two_up[SDIST_LONGEST + 1];   // row i - 2
+    int above[SDIST_LONGEST + 1];    // row i - 1
+    int row[SDIST_LONGEST + 1];      // row i, being filled in
+    for (size_t j = 0; j <= b_length; j++) {
+        above[j] = (int)j;           // "" -> the first j characters of b: add j
+    }
+
+    for (size_t i = 1; i <= a_length; i++) {
+        row[0] = (int)i;             // the first i characters of a -> "": take i away
+        for (size_t j = 1; j <= b_length; j++) {
+            int change = same_letter(a[i - 1], b[j - 1]) ? 0 : 1;
+            int best = smallest(above[j] + 1, row[j - 1] + 1);
+            best = smallest(best, above[j - 1] + change);
+            bool swapped = i > 1 && j > 1 && same_letter(a[i - 1], b[j - 2]) && same_letter(a[i - 2], b[j - 1]);
+            if (swapped) {
+                best = smallest(best, two_up[j - 2] + 1);
+            }
+            row[j] = best;
+        }
+        memcpy(two_up, above, sizeof(above));
+        memcpy(above, row, sizeof(row));
+    }
+    return above[b_length];
 }

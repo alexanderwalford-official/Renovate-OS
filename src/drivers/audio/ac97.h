@@ -50,4 +50,20 @@ void ac97_stop (void);
 // returns false if the card stopped responding
 bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void));
 
+// STREAMING: for sound that is made as it plays (a mixer, a video's soundtrack). The driver
+// keeps a few small blocks queued on the card, and asks the fill function for each new block:
+// fill(frames, count) must write count stereo frames (2 * count samples) at AC97_STREAM_RATE.
+// ac97_stream_service() does the asking. It is meant to be called from the timer interrupt every
+// couple of milliseconds (sys/mixer.c does that), so the fill function runs inside an interrupt:
+// it must be quick and must not wait for anything.
+// ac97_play, ac97_start and ac97_stop all end streaming, as the card plays one thing at a time
+#define AC97_STREAM_RATE 48000 // every card can play this rate
+typedef void (*ac97_fill_fn)(int16_t* frames, uint32_t count);
+bool ac97_stream_start (ac97_fill_fn fill); // false if there is no card
+void ac97_stream_service (void);
+void ac97_stream_stop (void);
+bool ac97_streaming (void);
+// roughly how many frames are queued on the card ahead of what is being heard (about 90ms)
+uint32_t ac97_stream_delay (void);
+
 #endif /* AC97_H */

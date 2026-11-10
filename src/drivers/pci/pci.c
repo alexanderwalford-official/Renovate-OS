@@ -24,6 +24,7 @@
 #define PCI_DATA    0xCFC
 
 #define PCI_COMMAND_IO         0x0001
+#define PCI_COMMAND_MEMORY     0x0002
 #define PCI_COMMAND_BUS_MASTER 0x0004
 
 static uint32_t pci_read (uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset) {
@@ -98,4 +99,18 @@ void pci_enable_io_and_dma (const pci_device_t* dev) {
     uint32_t command = pci_read(dev->bus, dev->slot, dev->function, 0x04);
     // the top 16 bits are the status register, writing 1s there would clear its flags, so leave them 0
     pci_write(dev, 0x04, (command & 0xFFFF) | PCI_COMMAND_IO | PCI_COMMAND_BUS_MASTER);
+}
+
+uint32_t pci_mem_bar (const pci_device_t* dev, int bar) {
+    uint32_t value = pci_read(dev->bus, dev->slot, dev->function, (uint8_t)(0x10 + bar * 4));
+    // bit 0 clear means memory; bits 1-2 say how wide the address is (0 = 32 bits), and the low
+    // 4 bits are flags, not part of the address
+    bool memory = (value & 1) == 0;
+    bool bits32 = ((value >> 1) & 3) == 0;
+    return memory && bits32 ? (value & 0xFFFFFFF0u) : 0;
+}
+
+void pci_enable_memory_and_dma (const pci_device_t* dev) {
+    uint32_t command = pci_read(dev->bus, dev->slot, dev->function, 0x04);
+    pci_write(dev, 0x04, (command & 0xFFFF) | PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER);
 }

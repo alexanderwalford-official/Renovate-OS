@@ -26,6 +26,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // the 16 colours of the standard VGA text palette (inherited from CGA)
 // bit 3 is the "intensity" bit: colours 8-15 are the bright versions of colours 0-7
@@ -206,5 +207,15 @@ void console_view_live(void);
 
 // forget every scrolled off line (on logout, so the next user can't read them)
 void console_forget_scrollback(void);
+
+// capturing: between console_capture_begin and console_capture_end, everything written to the
+// console goes into `buffer` instead of onto the screen (a '\0' always follows it, and what
+// doesn't fit is dropped). Clearing the screen and backspaces don't happen either. While it
+// lasts the keyboard counts as unplugged (getk gives 0), as nobody can see what is being asked.
+// AerLang's cmd() uses this to give back what a command prints (sys/terminal/t_int.c)
+void console_capture_begin(char* buffer, size_t size);
+// stop capturing, returns how many characters were captured
+size_t console_capture_end(void);
+bool console_capturing(void);
 
 #endif /* VGA_LINEAR_H */

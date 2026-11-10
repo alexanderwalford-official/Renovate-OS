@@ -4,10 +4,12 @@
 
 | Folder | Holds |
 | --- | --- |
-| `/acc/` | the accounts file, `users` |
+| `/acc/` | the accounts file, `users`, and what programs may always do, `perms` |
 | `/bin/` | the apps: `hello.aer`, `read.aer`, pictures... |
 | `/docs/` | this manual |
 | `/home/<name>/` | each user's own folder, where the prompt starts |
+| `/home/<name>/versions/` | the [old versions](versions.md) of the files in it |
+| `/src/` | AerOS's own source code, read only ([more](why.md)) |
 | `/sys/` | system files, like `startup.wav` and `apps.lst` |
 | `/sys/cache/`, `/sys/tmp/` | room for the system to work in |
 | `/conf.aer` | settings (not used much yet) |
@@ -40,6 +42,12 @@ and not `sample.html`. Longer names written by another computer can still be rea
 
 On a disk, names are not case sensitive: `Notes.txt` and `NOTES.TXT` are the same file.
 Without a disk (VFS and DEMO mode) they are, so keep to one way of writing each name.
+
+## Old versions
+
+Before a file in your home folder is changed or deleted, AerOS keeps a copy of it.
+`vers notes.txt` lists them, `rd notes.txt@1` reads the newest, and `undo notes.txt` brings
+it back. See [Files remember](versions.md).
 
 ## Saving safely
 

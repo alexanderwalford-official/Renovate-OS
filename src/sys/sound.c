@@ -154,8 +154,10 @@ static int resample (pcm_t* pcm, uint32_t rate) {
     return SOUND_OK;
 }
 
-// a WAV or MP3 file's contents -> 16 bit stereo at a rate the card plays (it is told the rate too)
-static int decode (const uint8_t* data, uint32_t size, pcm_t* pcm) {
+// a WAV or MP3 file's contents -> 16 bit stereo.
+// rate = the rate it has to end up at, or 0 for "whatever the card can play": the card is then
+// asked for the sound's own rate, and the sound converted only if the card can't do that one
+static int decode (const uint8_t* data, uint32_t size, pcm_t* pcm, uint32_t rate) {
     int result = SOUND_ERR_FORMAT;
     if (wav_detect(data, size)) {
         result = wav_decode(data, size, pcm);
@@ -163,11 +165,14 @@ static int decode (const uint8_t* data, uint32_t size, pcm_t* pcm) {
         pcm->frames = mp3_decode(data, size, &pcm->count, &pcm->rate);
         result = pcm->frames ? SOUND_OK : SOUND_ERR_FORMAT;
     }
-    if (result == SOUND_OK) {
-        uint32_t rate = ac97_set_rate(pcm->rate);
-        if (rate != pcm->rate) {
-            result = resample(pcm, rate);
-        }
+    if (result != SOUND_OK) {
+        return result;
+    }
+    if (rate == 0) {
+        rate = ac97_set_rate(pcm->rate);
+    }
+    if (rate != pcm->rate) {
+        result = resample(pcm, rate);
     }
     return result;
 }
@@ -197,7 +202,7 @@ int sound_play_file (const char* path, bool (*should_stop)(void)) {
 
     stop_background(); // one sound at a time
     pcm_t pcm = { 0, 0, 0 };
-    int result = decode(data, size, &pcm);
+    int result = decode(data, size, &pcm, 0);
     free(data);
     if (result == SOUND_OK && !ac97_play(pcm.frames, pcm.count, should_stop)) {
         result = SOUND_ERR_CARD;
@@ -222,7 +227,7 @@ void sound_startup (void) {
 
     // an empty (or any other unplayable) file just means no sound
     pcm_t pcm = { 0, 0, 0 };
-    if (data && decode(data, size, &pcm) == SOUND_OK) {
+    if (data && decode(data, size, &pcm, 0) == SOUND_OK) {
         stop_background();
         background = pcm.frames;
         ac97_start(pcm.frames, pcm.count);
@@ -230,6 +235,33 @@ void sound_startup (void) {
         free(pcm.frames);
     }
     free(file);
+}
+
+void sound_stop (void) {
+    stop_background();
+}
+
+int sound_load (const char* path, int16_t** frames, uint32_t* count) {
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    if (!fs_split_path(path, dir, sizeof(dir), name, sizeof(name)) || !fs_file_exists(dir, name)) {
+        return SOUND_ERR_NOT_FOUND;
+    }
+    uint32_t size = 0;
+    uint8_t* data = (uint8_t*)fs_read_bytes(dir, name, &size);
+    if (data == 0) {
+        return SOUND_ERR_NO_MEMORY;
+    }
+    // always at the mixer's rate, without touching the card (it may be busy playing others)
+    pcm_t pcm = { 0, 0, 0 };
+    int result = decode(data, size, &pcm, AC97_STREAM_RATE);
+    free(data);
+    if (result != SOUND_OK) {
+        free(pcm.frames);
+        return result;
+    }
+    *frames = pcm.frames;
+    *count = pcm.count;
+    return SOUND_OK;
 }
 
 const char* sound_strerror (int error) {

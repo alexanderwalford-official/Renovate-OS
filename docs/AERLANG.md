@@ -10,9 +10,47 @@ The interpreter runs inside the kernel, so a program can use the screen, keyboar
 | `hello` | runs `hello.aer` from the current directory, or from `/bin/` |
 | `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
 | `run hello.aer` | runs it through the process manager like any other AerLang instruction |
-| `aer` | the AerLang prompt: type code and see the result straight away, `exit` to leave |
+| `let x = 5`, `x * 2` | AerLang right at the terminal's prompt (see "At the prompt" below) |
+| `aer` | a prompt where every line is code, even one that looks like a command, `exit` to leave |
 
 Press **Ctrl+C** to stop a program that is stuck in a loop.
+
+### At the prompt
+
+A line typed at the terminal that isn't a command or an app is run as AerLang, in one session
+that lasts until you log out, so variables and functions are kept from line to line. The value
+of an expression is shown:
+
+```
+alex@0//home/alex/: let price = 12
+alex@0//home/alex/: price * 3
+36
+alex@0//home/alex/: func twice(n)
+   ... return n * 2
+   ... end
+alex@0//home/alex/: twice(price)
+24
+```
+
+A line that opens a block (`if`, `for`, `while` or `func` without its `end`) carries on over
+more lines, with `...` as the prompt, until the block is closed (an empty line gives up). The
+first word decides what a line is: a command first, then an app, then code. A plain word that
+AerLang doesn't know (`frob`, `dle notes.txt`) is taken for a mistyped command and gets a
+suggestion, `Did you mean DEL?`. So a variable named like a command (`out`) is shown with
+`print(out)`, not by typing its name.
+
+Only at the prompt, `cmd(line)` runs a terminal command and gives back what it printed as a
+list of lines, instead of showing it: `len(cmd("la"))`, `cmd("mem")[0]`. The keyboard counts
+as unplugged while it runs, so a question the command asks gets no answer (a yes / no question
+is a no). Programs can't use `cmd()`: they have to ask before they touch your files, and a
+terminal command wouldn't.
+
+### Mistakes
+
+An unknown name gets a suggestion, from the names the program has: `unknown name 'prnt' (did
+you mean print?)`. `why` after an error explains it and shows the lines around it, and
+`why <function>` (`why gopen`) explains a built-in from the comment above the C code behind
+it. `src gopen` shows that code.
 
 AerLang used to be called RenLang, and its programs ended in `.ren`. Those still run if you
 type the name with its extension (`old.ren`), and the editor still colours them in.
@@ -131,6 +169,31 @@ encrypted file and `gopen` opens the graphics screen.
 `apf(path, text)` · `isf(path)` · `delf(path)` ·
 `la(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
 
+`rdf("notes.txt@2")` (and `rdb`, `isf`) reach an old version of a file in a home folder (see
+VERS in the manual). A program asks the person at the keyboard before it reads anything
+outside `/bin/`, `/docs/`, `/src/`, `/sys/`, its own folder and the files named on its
+command line, and before it changes any file at all. If the answer is no, the function fails
+as if the file wasn't there (nil or false), and `/acc/` is never allowed. The rules are in
+`src/sys/perm.h`.
+
+**At the prompt only**
+`cmd(line)` runs a terminal command and gives back what it printed, as a list of lines
+
+**App mode** (src/sys/appmode.h)
+Before a program runs, the whole file is read, so AerOS knows every part of itself the program
+can use: built-ins are only reached by name, every name is in the source, and there is no eval.
+From the names it works out the program's profile (graphics, sound, video, files, network) and
+puts away what the program won't use. At the moment that is the network card's buffers, about
+82 KB, as everything else is only in memory while it is used anyway. It happens for every
+program, however new, and a part that was put away starts again the next time it is used.
+`appmode()` gives back `[parts used, KB put away, KB free]`, e.g.
+`[["graphics", "files"], 82, 257990]`, and puts away again anything started since. At the
+prompt it puts away everything it can. `MEM` shows what app mode did for the last program.
+
+**Network** (sealed messages, to and from computers the firewall allows: see NETWORK.md)
+`nsend(host, port, text)` true if it was sent (host is an address, or a name a rule was made
+for) · `nrecv(port, ms)` wait up to ms milliseconds: the message, or nil
+
 **Encrypted files** (AES-256 with a password, the file keeps its name)
 `enc(path, password)` · `dec(path, password)` (both true if it worked) ·
 `isenc(path)` · `rdenc(path, password)` the contents, without changing the file
@@ -138,7 +201,11 @@ encrypted file and `gopen` opens the graphics screen.
 
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
-`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()` ·
+`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) ·
+`video(path)` play an .mpg video full screen with its sound, until it ends or Esc is pressed
+(Space pauses, Left / Right skip 5 seconds); true if it played. It takes the whole screen and
+gives it back to the terminal, so a program drawing graphics calls `gopen()` again after it
+(see [VIDEO.md](VIDEO.md)) · `exit()` ·
 `queue(line)` add a program to the queue the `GO` command runs, e.g. `queue("hello.aer a b")`
 or `queue("s:some text")`; returns how many are queued (-1 if the process stack is full) ·
 `sysinfo()` everything AerOS knows about the computer, as a list of `[group, name, value]`
@@ -189,6 +256,50 @@ image(picture, 0, 0)
 text(10, 320, "Press a key", 0xFFFFFF, 2)
 key()
 ```
+
+**For games** (smooth movement, keys held down, sounds that overlap)
+`gbuf(on)` with `true`, draw into a back buffer (a copy of the screen in memory) instead of
+the screen, so nothing shows until `gshow()` · `gshow()` put the finished frame on the screen
+in one go, so it never flickers · `keydown(key)` is the key held down right now? A character
+(`"a"`, `" "`) or `KEY_LEFT`, `KEY_SPACE`, `KEY_SHIFT`, `KEY_CTRL`, `KEY_ALT`... It doesn't wait
+(unlike `key()`) and any number of keys can be down at once ·
+`sload(path)` load a WAV or MP3 into memory, ready to play (nil if it can't) ·
+`splay(sound, loop, volume)` start it and carry on straight away; `loop` plays it round and round,
+`volume` is 0 to 100. Up to 8 sounds play at once, mixed together. Returns a number for:
+`sstop(n)` stop it (`sstop()` stops every sound) · `isply(n)` is it still playing?
+Sounds stop when the program ends.
+
+Two ways to read keys, for two jobs: `keydown()` for things that last while a key is held
+(moving), and `haskey()` / `key()` for single presses (jumping, firing). `keydown()` only
+sees the moment it is asked, so a quick tap between two frames can slip past it, while every
+press waits for `key()` until it is read.
+
+```
+gopen()
+gbuf(true)
+let jump = sload("/sys/startup.wav")
+let x = 100
+while not keydown(KEY_ESCAPE) do
+    if keydown(KEY_LEFT) then
+        x = x - 4
+    end
+    if keydown(KEY_RIGHT) then
+        x = x + 4
+    end
+    if haskey() and key() == ord(" ") then
+        splay(jump)
+    end
+    gclear(0)
+    rect(x, 200, 40, 40, 0xFF7F00)
+    gshow()
+    frame(60)                # 60 frames a second
+end
+```
+
+`/bin/move.aer` is a small example of all of these. How they work: the back buffer is in
+`src/drivers/video/gfx.c`, held keys in `src/drivers/input/IO.c`, and the mixer in
+`src/sys/mixer.c`, which feeds the sound card from the timer interrupt so sound keeps playing
+smoothly whatever the program is doing.
 
 `/bin/viewer.aer` is a complete app built from these: a picture picker and viewer that zooms
 (`+` / `-`, `0` to fit) by drawing the picture bigger than the screen and moving it around.

@@ -13,6 +13,7 @@
 #define T_INT_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 // true while the terminal is running
 extern bool cli_active;
@@ -35,7 +36,18 @@ int cli_rend_main (void);
 void cli_prompt (void);
 
 // run one line typed by the user: the first word picks the command, the rest is its arguments.
+// A line that isn't a command or an app is AerLang (see "The shell" in lang/aer_interp.c).
 // Note: `in` is changed (trimmed and split up) while it runs
 void HandleInput (char* in);
+
+// run a line like HandleInput, but keep what it prints in `out` (size bytes, always ended with
+// a '\0') instead of showing it. While it runs the keyboard counts as unplugged, so a question
+// the command asks gets no answer. For AerLang's cmd() (lang/aer_builtins.c)
+void cli_capture (const char* line, char* out, size_t size);
+
+// the name (in capitals) of the command that runs a C function: "cli_list" -> "LA". NULL if no
+// command does. Lets text elsewhere (sys/explain.c) name commands without hard-coding them, so
+// renaming a command in the table renames it everywhere
+const char* cli_command_called (const char* function);
 
 #endif /* T_INT_H */

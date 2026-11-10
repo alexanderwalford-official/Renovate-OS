@@ -500,9 +500,47 @@ void console_get_cursor(uint8_t* x, uint8_t* y) {
     *y = console_y;
 }
 
+// ---- capturing (see console_capture_begin in VGA_linear.h) -------------------------------------
+
+static struct {
+    char* buffer;  // where captured characters go, NULL when not capturing
+    size_t size;
+    size_t used;   // how many are in it so far (a '\0' always follows them)
+} capture;
+
+// keep one character, if there is room (one place is always kept for the '\0')
+static void capture_add(char c) {
+    if (capture.used + 1 < capture.size) {
+        capture.buffer[capture.used++] = c;
+        capture.buffer[capture.used] = '\0';
+    }
+}
+
+void console_capture_begin(char* buffer, size_t size) {
+    capture.buffer = buffer;
+    capture.size = size;
+    capture.used = 0;
+    if (size > 0) {
+        buffer[0] = '\0';
+    }
+}
+
+size_t console_capture_end(void) {
+    size_t used = capture.used;
+    capture.buffer = NULL;
+    return used;
+}
+
+bool console_capturing(void) {
+    return capture.buffer != NULL;
+}
+
 // blank the screen in the console colours and send the cursor to the top left corner
 // unlike clear() this keeps the cursor visible and doesn't count as a full screen takeover
 void console_clear(void) {
+    if (console_capturing()) {
+        return; // (see console_capture_begin: a captured command doesn't touch the screen)
+    }
     LIVE_SCREEN();
     vga_fill(VGA_ENTRY(' ', console_fg, console_bg));
     if (fb_mode) {
@@ -536,6 +574,10 @@ static void console_scroll(void) {
 // of a line, scroll at the bottom of the screen and copy the character to the serial port
 // it deliberately does not move the hardware cursor (4 slow port writes), callers do that once
 void console_putchar_raw(char c) {
+    if (capture.buffer != NULL) {
+        capture_add(c);
+        return;
+    }
     LIVE_SCREEN();
     switch (c) {
         // newline: back to column 0 of the next row (scrolling is handled below)
@@ -611,6 +653,9 @@ void console_write(const char* s) {
 // cursor there. The serial side gets the classic "\b \b" (back, overwrite with a space, back again)
 // that terminals use to rub out a character.
 void console_backspace(void) {
+    if (console_capturing()) {
+        return;
+    }
     console_putchar_raw('\b');
     putc(console_x, console_y, console_fg, console_bg, ' ');
     serial_write("\b \b");

@@ -96,6 +96,30 @@ int fs_write_bytes (const char* f_path, const char* f_name, const void* data, ui
 // read a whole file and its length (binary safe), NULL if missing; free() the result
 char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size);
 
+// READING A FILE A PIECE AT A TIME, for files too big to read whole (a video):
+//
+//     fs_file_t file;
+//     if (fs_open("/bin/sample.mpg", &file)) {
+//         int32_t got = fs_read_at(&file, 4096, buffer, 512);   // 512 bytes from byte 4096
+//     }
+//
+// Nothing is allocated, so there is nothing to close. The file shouldn't be changed or deleted
+// while it is being read like this
+typedef struct {
+    uint32_t size;        // the file's length in bytes
+    const char* built_in; // a file built into AerOS (one in /src/): its bytes. NULL for the others
+    bool on_disk;         // which of the two below is in use
+    fat_file_t fat;       // DISK mode: where the driver is in the file's clusters
+    int vfs_slot;         // VFS mode: the file's place in the memory file table
+} fs_file_t;
+
+// open a file (a path as typed: "notes.txt", "/bin/x.mpg"), false if there is no such file
+bool fs_open (const char* path, fs_file_t* file);
+
+// read up to `length` bytes from `offset`. Returns how many were read (fewer at the end of the
+// file, 0 past it), or -1 on a disk error
+int32_t fs_read_at (fs_file_t* file, uint32_t offset, void* out, uint32_t length);
+
 // call fn(name, is_dir, size, ctx) for every entry in d_path, returns the count (-1 if missing)
 int fs_list (const char* d_path, fs_list_fn fn, void* ctx);
 // delete a file
