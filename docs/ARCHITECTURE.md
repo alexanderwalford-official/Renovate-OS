@@ -81,6 +81,7 @@ src/
     firewall.c            the firewall's rules, everything blocked until FW ALLOW
     netseal.c             sealed messages: the only thing ever sent over the network
     appmode.c             app mode: a program gets the memory of the parts of AerOS it doesn't use
+    rt.c                  RT mode (boot option 6, experimental): real-time tasks from the timer
     explain.c             WHY and SRC: the last problem, its explanation, and reading the source
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
@@ -373,6 +374,28 @@ Put the file in `src/apps/` (or `src/docs/` for a manual page), then add two lin
 `src/sys/apps.c`: `EMBEDDED(apps_name_ext)` and a `FILE_ENTRY` saying which folder it goes in
 and whether to refresh it when it changes. The Makefile links it into the kernel automatically.
 On a disk, new names must fit 8.3 (`sample.htm`, not `sample.html`).
+
+### Add a real-time task (RT mode)
+
+RT mode (boot option 6, `src/sys/rt.h`) runs a few C functions from the timer interrupt, each
+every `period` milliseconds and within a `budget` of microseconds:
+
+```c
+// blink: toggle a pin (or a counter) every 20ms, never more than 30us a run
+static void blink (void) {
+    blinks++;
+}
+...
+rt_add("blink", 20, 30, blink);   // after rt_start(), e.g. at the end of rt_start itself
+```
+
+`rt_add` refuses a task if the tasks together could miss a deadline (the rate monotonic
+bound: the sum of budget / period must stay under n * (2^(1/n) - 1)). Every run is timed with
+the processor's cycle counter, and after `RT_OVERRUNS_MAX` runs over budget the watchdog stops
+the task. `RT` lists them all with their worst time. A task runs inside the timer interrupt:
+it must be short, must not allocate memory or wait for anything, and must always return
+(the watchdog can't stop a run that never ends). Tasks don't interrupt each other: each
+millisecond the due ones run in order, shortest period first.
 
 ### Add a driver
 

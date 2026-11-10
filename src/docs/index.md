@@ -24,6 +24,7 @@ in `/docs/` on your computer and is shown by the reader app, `/bin/read.aer`.
 - [AerLang](aerlang.md): the built-in programming language
 - [The editor](editor.md): writing files and programs with EDT
 - [The reader](reader.md): this app, and the Markdown and HTML it understands
+- [How text works](text.md): the screen grid, printing, big text and text in graphics
 
 ## Features
 
@@ -31,6 +32,7 @@ in `/docs/` on your computer and is shown by the reader app, `/bin/read.aer`.
 - [Sound](sound.md): playing WAV and MP3 files, and the startup sound
 - [Video](video.md): playing .mpg videos, and making them
 - [The network](network.md): sealed messages, and a firewall that starts with everything blocked
+- [RT mode](rt.md): real-time tasks that always run on time (experimental, from the boot options)
 - [How AerOS works](inside.md): what happens inside, for the curious
 
 ## Reading other files

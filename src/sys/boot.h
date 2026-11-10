@@ -23,6 +23,7 @@
 #define BOOT_OPT_NORMAL 0 // look for a AEROS disk (VFS if there isn't one) and show the boot log for a moment
 #define BOOT_OPT_FAST   1 // skip the boot log delay
 #define BOOT_OPT_DEMO   2 // VFS mode, the disks are never touched
+#define BOOT_OPT_RT     3 // a normal boot, plus the real-time tasks of RT mode (experimental, sys/rt.h)
 
 extern int boot_option; // one of the BOOT_OPT_ values, BOOT_OPT_NORMAL unless the menu changed it
 extern bool boot_options_requested; // set by the splash screen when X is pressed, kernel.c then opens the menu

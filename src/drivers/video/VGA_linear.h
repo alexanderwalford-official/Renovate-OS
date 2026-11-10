@@ -162,6 +162,14 @@ void clear(enum color bg);
 #define BIG_TEXT_ROWS 7
 int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text);
 
+// the same, at `percent` of that size (75 is three quarters), drawn in real pixels so any size
+// works. Only on a framebuffer (every boot through GRUB): on the VGA text screen it is drawn
+// full size with big_text. Returns how many columns wide it is, and *rows (may be NULL) gets how
+// many rows tall, both rounded up to whole cells, so the cursor can be put below it.
+// Gotcha: it is drawn over the cells, not into them, so it vanishes if those cells are redrawn
+// (the screen scrolling, Page Up). Fine for a banner or a title screen
+int big_text_sized(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text, int percent, uint8_t* rows);
+
 // console: a scrolling terminal that keeps track of the cursor (and mirrors to the serial port)
 
 // change the colours used for everything the console writes from now on (existing text keeps its colour)

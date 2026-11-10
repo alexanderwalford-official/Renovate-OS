@@ -116,6 +116,7 @@ See [The network](network.md).
 | `clk` | the date and time |
 | `up` | how long since it started |
 | `mem` | memory use |
+| `rt [stress]` | [RT mode](rt.md)'s real-time tasks (experimental, picked in the boot options) |
 | `drv` | the disks AerOS can see |
 | `rbt` | restart |
 | `off` | turn off |
