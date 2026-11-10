@@ -4,7 +4,9 @@
  ![alt text](media/thumb.png)
  
 ## What is AerOS?
-It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "AerLang". 
+It's an opensource operating system and its design is remarkably simple considering the feature set. That's one of the major selling points.
+
+Like many other operating systems, apps that shape the user experience can be edited in realtime. If you don't like how the text editor works, change it using said editor and save your changes. Then reload the app to test said changes immediately. No recompiling needed.
 
 ## What makes it different
 - **It explains itself.** Type `why` after anything goes wrong and AerOS tells you what happened, why, and what to do. `why del` explains a command from the comments in its own source code, `src del` shows that code, and the whole source is built in as the read-only `/src/` folder.
