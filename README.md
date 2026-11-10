@@ -6,9 +6,16 @@
 ## What is AerOS?
 It's an opensource operating system that can execute RenGets both natively and remotely on an external server. The final goal is to have an easy to use programming interface that incoperates functionality from the programming language "AerLang". 
 
+## What makes it different
+- **It explains itself.** Type `why` after anything goes wrong and AerOS tells you what happened, why, and what to do. `why del` explains a command from the comments in its own source code, `src del` shows that code, and the whole source is built in as the read-only `/src/` folder.
+- **The prompt is a programming language.** Anything that isn't a command runs as AerLang: `let x = 2`, `x * 10`, `for f in la() do print(f) end`. `cmd("la")` turns a command's output into data.
+- **Apps ask before they touch your files.** Programs read AerOS's own files freely, but ask before reading yours or changing anything (yes, always, or no).
+- **Files remember their past.** Changing or deleting a file in your home folder keeps the old version: `vers notes.txt`, `rd notes.txt@2`, `undo notes.txt`.
+
 ## Documentation
 AerOS is written to be read. Every source file starts with an explanation of what it does and how, and these guides tie it all together:
 
+- [What makes AerOS different](docs/DIFFERENT.md): how WHY and SRC, AerLang at the prompt, permissions and file versions work inside
 - [How AerOS works](docs/ARCHITECTURE.md): the source tree, the boot sequence, memory, interrupts, files, and recipes for adding commands, functions and drivers
 - [AerLang](docs/AERLANG.md): the built-in programming language
 - [Security](docs/SECURITY.md): user accounts, password hashing and file encryption, with every algorithm explained
@@ -54,5 +61,9 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Scrollback. (Page Up / Page Down in the terminal look back through the last 400 lines of output)
 - [x] Games groundwork. (a back buffer for smooth drawing, held keys, and a mixer playing up to 8 sounds at once)
 - [x] Video. (PLY plays MPEG-1 .mpg videos full screen with their sound in step, using pl_mpeg; see docs/VIDEO.md)
+- [x] An OS that explains itself. (WHY explains problems, commands and functions, SRC shows the code, /src/ holds it all)
+- [x] AerLang at the prompt. (variables, sums and code right in the terminal, "did you mean", and cmd() for a command's output)
+- [x] Programs ask first. (apps ask before reading your files or changing any, PERM remembers the answers)
+- [x] File versions. (the last 10 versions of every file in a home folder: VERS, file@N and UNDO)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

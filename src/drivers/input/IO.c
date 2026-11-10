@@ -330,6 +330,9 @@ int getk(void) {
     if (!keyboard_ready || !interrupts_enabled()) {
         return 0; // no keyboard interrupts, waiting would hang forever
     }
+    if (console_capturing()) {
+        return 0; // a command run by AerLang's cmd(): nobody can see what it is asking
+    }
     // a key could arrive just after the check and just before the hlt, in which case we sleep
     // through it. That's harmless here: the 1000 Hz timer interrupt wakes us within a millisecond
     // and the loop sees the key then.

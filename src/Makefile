@@ -19,7 +19,18 @@ SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
 # the disk when the OS starts: apps/ (the apps and their files) into /bin/, and docs/ (the
 # documentation the DOCS command shows) into /docs/
 BUILTIN_FILES = $(wildcard apps/* docs/*)
-OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(BUILTIN_FILES))
+
+# AerOS's own source code is linked in too, the same way, and shows up as the read-only folder
+# /src/ (see sys/source.h): every .c and .h file AerOS was built from, plus the files that
+# build and boot it. Left out: other people's code (lib/minimp3, lib/pl_mpeg, which the
+# wildcards don't reach) and two big files that are only data (the logo and the font)
+HEADERS = $(wildcard *.h lib/*.h lib/shim/*.h sys/*.h sys/*/*.h drivers/*/*.h lang/*.h)
+SOURCE_CODE = $(sort $(filter-out sys/splash_logo.c drivers/video/font8x16.c, \
+                $(SOURCES) $(HEADERS)) entry.asm linker.ld Makefile iso/boot/grub/grub.cfg)
+SOURCE_OBJECTS = $(patsubst %,obj/source/%.o,$(SOURCE_CODE)) obj/source_index.o
+
+OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(BUILTIN_FILES)) \
+          $(SOURCE_OBJECTS)
 
 QEMU = qemu-system-i386
 
@@ -34,7 +45,7 @@ QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
 AUDIO = pa
 QEMU_AUDIO = -audiodev $(AUDIO),id=snd0 -device AC97,audiodev=snd0
 
-.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev FORCE
 
 all: main.iso
 
@@ -66,6 +77,38 @@ obj/apps/%.o: apps/%
 obj/docs/%.o: docs/%
 	@mkdir -p obj/docs
 	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
+
+# a source file for /src/: obj/source/sys/fat.c.o holds sys/fat.c, between the symbols
+# _binary_sys_fat_c_start and _end (ld turns every character that isn't a letter or digit into _)
+obj/source/%.o: %
+	@mkdir -p '$(dir $@)'
+	@$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
+
+# the table of them that sys/source.c looks through, one line per file:
+#     { "sys/fat.c", _binary_sys_fat_c_start, _binary_sys_fat_c_end },
+# It is written fresh every time, but only replaces the old one when something is different
+# (a file was added or removed), so it is only compiled again when it needs to be
+source_symbol = _binary_$(subst /,_,$(subst .,_,$(subst -,_,$(1))))
+
+obj/source_index.c: FORCE
+	@mkdir -p obj
+	@{ \
+	  echo '/* written by the Makefile: the source files built into AerOS, see sys/source.h */'; \
+	  echo '#include "../sys/source.h"'; \
+	  echo; \
+	  $(foreach f,$(SOURCE_CODE),echo 'extern const char $(call source_symbol,$(f))_start[], $(call source_symbol,$(f))_end[];';) \
+	  echo; \
+	  echo 'const source_file_t source_files[] = {'; \
+	  $(foreach f,$(SOURCE_CODE),echo '    { "$(f)", $(call source_symbol,$(f))_start, $(call source_symbol,$(f))_end },';) \
+	  echo '};'; \
+	  echo 'const int source_file_count = sizeof(source_files) / sizeof(source_files[0]);'; \
+	} > '$@.new'
+	@if cmp -s '$@.new' '$@'; then rm -f '$@.new'; else mv '$@.new' '$@'; fi
+
+obj/source_index.o: obj/source_index.c
+	$(CC) $(CFLAGS) -c '$<' -o '$@'
+
+FORCE:
 
 # the MP3 and MPEG decoders include <string.h> and <stdlib.h>: point those at AerOS's own
 # versions (lib/shim), for these two files only

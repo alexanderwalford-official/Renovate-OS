@@ -95,7 +95,13 @@ match. A file that has been changed doesn't match either. Both say "wrong passwo
 file has been changed".
 
 After encrypting, the old unscrambled contents are overwritten with zeros on the disk, not
-just marked as free space.
+just marked as free space. Any [old versions](versions.md) AerOS kept of the file are zeroed
+and deleted too: they are exactly the copies the encryption is there to protect.
+
+## Programs ask first
+
+An app can't read your files, or change any file, without asking you first, and no app can
+ever touch `/acc/`. See [Programs ask first](perms.md).
 
 ## The algorithms
 
@@ -112,12 +118,15 @@ random numbers with the exact timing of key presses and timer ticks.
 
 ## What it doesn't protect
 
-- **No file permissions yet**: anyone who can log in can read or delete any file, including
-  `/acc/users`. Encrypted files stay safe, because they have their own passwords.
+- **No permissions between users**: anyone who can log in can read or delete any file with
+  the terminal's commands, including `/acc/users` and other people's home folders. (Apps are
+  different: they ask first.) Encrypted files stay safe, because they have their own
+  passwords.
 - **The disk isn't encrypted**: on another computer, file names, sizes and unencrypted files
   can be read. Use long passwords, because the hashes in `/acc/users` can be guessed at.
 - **Older copies**: files saved many times before being encrypted can leave old copies in
-  free space on the disk. Encrypt secrets early.
+  free space on the disk (the versions AerOS keeps are zeroed, the free space isn't).
+  Encrypt secrets early.
 - **No administrators**: every user can add and delete users.
 - **The warning shows real names**: only real accounts get the "1 of 3" warning, so the
   login screen shows which user names exist.

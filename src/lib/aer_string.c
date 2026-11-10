@@ -26,6 +26,7 @@
 #include "aer_string.h"
 #include "aer_ctype.h"
 #include <stdint.h>
+#include <stdbool.h>
 
 // memset and memcpy use the CPU's own "string" instructions, which repeat one step ECX times:
 //
@@ -436,4 +437,62 @@ char* strlwr(char* s) {
         *p = (char)tolower((unsigned char)*p);
     }
     return s;
+}
+
+// ---- sdist --------------------------------------------------------------------------------------
+//
+// The "optimal string alignment" distance (Levenshtein's, plus swapping two neighbours, the
+// typing mistake people make most). It fills in a table where row i, column j is the distance
+// between the first i characters of a and the first j of b:
+//
+//              ""  d  e  l          each cell is the cheapest of:
+//         ""    0  1  2  3            the cell above + 1      (take a character of a away)
+//         d     1  0  1  2            the cell to the left + 1 (add a character of b)
+//         l     2  1  1  1            the cell above left, + 1 unless the characters match
+//         e     3  2  1  1            two up and two left + 1, if the last two are swapped round
+//
+// and the answer is the bottom right cell. Only the last three rows are ever needed, so only
+// three are kept.
+// https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance
+
+#define SDIST_LONGEST 32
+
+static int smallest(int a, int b) {
+    return a < b ? a : b;
+}
+
+static bool same_letter(char a, char b) {
+    return tolower((unsigned char)a) == tolower((unsigned char)b);
+}
+
+int sdist(const char* a, const char* b) {
+    size_t a_length = slen(a);
+    size_t b_length = slen(b);
+    if (a_length >= SDIST_LONGEST || b_length >= SDIST_LONGEST) {
+        return 99;
+    }
+
+    int two_up[SDIST_LONGEST + 1];   // row i - 2
+    int above[SDIST_LONGEST + 1];    // row i - 1
+    int row[SDIST_LONGEST + 1];      // row i, being filled in
+    for (size_t j = 0; j <= b_length; j++) {
+        above[j] = (int)j;           // "" -> the first j characters of b: add j
+    }
+
+    for (size_t i = 1; i <= a_length; i++) {
+        row[0] = (int)i;             // the first i characters of a -> "": take i away
+        for (size_t j = 1; j <= b_length; j++) {
+            int change = same_letter(a[i - 1], b[j - 1]) ? 0 : 1;
+            int best = smallest(above[j] + 1, row[j - 1] + 1);
+            best = smallest(best, above[j - 1] + change);
+            bool swapped = i > 1 && j > 1 && same_letter(a[i - 1], b[j - 2]) && same_letter(a[i - 2], b[j - 1]);
+            if (swapped) {
+                best = smallest(best, two_up[j - 2] + 1);
+            }
+            row[j] = best;
+        }
+        memcpy(two_up, above, sizeof(above));
+        memcpy(above, row, sizeof(row));
+    }
+    return above[b_length];
 }

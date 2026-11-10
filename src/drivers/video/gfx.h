@@ -56,4 +56,17 @@ bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h);
 // in on: only the part that lands on the screen is drawn. False if it isn't a BMP we can show.
 bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, int max_h);
 
+// Draw over the screen for a moment, without spoiling what a program has drawn:
+//
+//     gfx_overlay_t* overlay = gfx_overlay_begin(x, y, w, h);  // keeps what is under it
+//     gfx_rect(...); gfx_text(...);                            // drawn straight on the screen
+//     gfx_overlay_end(overlay);                                // and the screen is as it was
+//
+// Drawing goes straight to the screen in between, even when the program has a back buffer (its
+// half drawn frame isn't shown). Used for the question a program asks before it touches your
+// files (sys/perm.c). NULL if there isn't enough memory to keep the area, or no graphics
+typedef struct gfx_overlay gfx_overlay_t;
+gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h);
+void gfx_overlay_end(gfx_overlay_t* overlay);
+
 #endif /* GFX_H */

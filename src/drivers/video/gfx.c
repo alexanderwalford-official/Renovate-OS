@@ -505,3 +505,65 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
     }
     return true;
 }
+
+// ---- overlays (see gfx_overlay_begin in gfx.h) --------------------------------------------------
+
+struct gfx_overlay {
+    int x, y, w, h;          // the area kept, already cut to fit on the screen
+    uint8_t* old_target;     // where drawing went before (the screen, or the back buffer)
+    uint32_t old_pitch;
+    uint8_t pixels[];        // the area's pixels as they were, w * fb_bytes bytes a row
+};
+
+gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h) {
+    if (!active) {
+        return NULL;
+    }
+    // only the part that is on the screen
+    if (x < 0) { w += x; x = 0; }
+    if (y < 0) { h += y; y = 0; }
+    if (x + w > (int)fb.width) { w = (int)fb.width - x; }
+    if (y + h > (int)fb.height) { h = (int)fb.height - y; }
+    if (w <= 0 || h <= 0) {
+        return NULL;
+    }
+
+    uint32_t row_bytes = (uint32_t)w * fb_bytes;
+    gfx_overlay_t* overlay = malloc(sizeof(gfx_overlay_t) + row_bytes * (uint32_t)h);
+    if (overlay == NULL) {
+        return NULL;
+    }
+    overlay->x = x;
+    overlay->y = y;
+    overlay->w = w;
+    overlay->h = h;
+
+    // keep what the screen shows there now
+    uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
+    for (int row = 0; row < h; row++) {
+        memcpy(overlay->pixels + (uint32_t)row * row_bytes,
+               screen + (uint32_t)(y + row) * fb.pitch + (uint32_t)x * fb_bytes, row_bytes);
+    }
+
+    // and draw straight onto the screen until the overlay ends
+    overlay->old_target = target;
+    overlay->old_pitch = target_pitch;
+    target = screen;
+    target_pitch = fb.pitch;
+    return overlay;
+}
+
+void gfx_overlay_end(gfx_overlay_t* overlay) {
+    if (overlay == NULL) {
+        return;
+    }
+    uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
+    uint32_t row_bytes = (uint32_t)overlay->w * fb_bytes;
+    for (int row = 0; row < overlay->h; row++) {
+        memcpy(screen + (uint32_t)(overlay->y + row) * fb.pitch + (uint32_t)overlay->x * fb_bytes,
+               overlay->pixels + (uint32_t)row * row_bytes, row_bytes);
+    }
+    target = overlay->old_target;
+    target_pitch = overlay->old_pitch;
+    free(overlay);
+}

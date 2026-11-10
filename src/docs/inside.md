@@ -7,7 +7,7 @@ so little. It leaves out what bigger systems need for many programs at once:
 | --- | --- | --- |
 | virtual memory | every address is a real one | nothing to set up or look up |
 | multitasking | one thing at a time, to the end | no switching, no locks |
-| loadable drivers | every driver is built in | the OS is one ~430 KB file |
+| loadable drivers | every driver is built in | the OS is one file, about 1.8 MB |
 
 The cost: a bug anywhere can stop everything. That is a fair trade for a system meant for
 learning and building on.
@@ -60,10 +60,17 @@ almost no power sitting at the prompt.
 | the terminal and its commands | `src/sys/terminal/t_int.c` |
 | files: disk (FAT) or memory | `src/sys/f_sys.c`, `src/sys/fat.c` |
 | accounts and encryption | `src/sys/accounts/`, `src/sys/fcrypt.c` |
-| AerLang | `src/lang/` |
+| AerLang, and AerLang at the prompt | `src/lang/` |
+| WHY and SRC, and the `/src/` folder | `src/sys/explain.c`, `src/sys/source.c` |
+| old versions of files | `src/sys/versions.c` |
+| programs asking first | `src/sys/perm.c` |
 | drivers | `src/drivers/` |
 | apps and this manual | `src/apps/`, `src/docs/` |
 
-Every source file starts with an explanation of what it does. The full guide, with recipes
-for adding commands, AerLang functions and drivers, is `docs/ARCHITECTURE.md` in the AerOS
-source.
+Every source file starts with an explanation of what it does, and every one of them is on
+your computer too, in `/src/` (about half of that 1.8 MB is AerOS's own source code). So
+`read /src/sys/fat.c` reads the disk driver, `src del` shows the code that runs a command,
+and `why fs_list` explains a function from the comment above it: see
+[Ask AerOS why](why.md). The full guide, with recipes for adding commands, AerLang functions
+and drivers, is `docs/ARCHITECTURE.md` in the AerOS repository (the guides sit next to the
+source code there, so they aren't in `/src/`).

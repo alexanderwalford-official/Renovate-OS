@@ -106,10 +106,11 @@ char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size);
 // Nothing is allocated, so there is nothing to close. The file shouldn't be changed or deleted
 // while it is being read like this
 typedef struct {
-    uint32_t size;     // the file's length in bytes
-    bool on_disk;      // which of the two below is in use
-    fat_file_t fat;    // DISK mode: where the driver is in the file's clusters
-    int vfs_slot;      // VFS mode: the file's place in the memory file table
+    uint32_t size;        // the file's length in bytes
+    const char* built_in; // a file built into AerOS (one in /src/): its bytes. NULL for the others
+    bool on_disk;         // which of the two below is in use
+    fat_file_t fat;       // DISK mode: where the driver is in the file's clusters
+    int vfs_slot;         // VFS mode: the file's place in the memory file table
 } fs_file_t;
 
 // open a file (a path as typed: "notes.txt", "/bin/x.mpg"), false if there is no such file

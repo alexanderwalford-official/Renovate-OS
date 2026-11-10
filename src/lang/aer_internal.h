@@ -151,10 +151,12 @@ typedef struct {
 typedef struct {
     jmp_buf error;        // aer_error jumps back here
     const char* name;     // the file name, for error messages
+    const char* source;   // the code being run, so an error can be shown in it (see aer_error)
     aer_scope_t globals;
     aer_scope_t* locals;  // the running function's variables, NULL at the top level
     value_t return_value; // set by "return", picked up by the call
     bool repl;            // typed at the prompt: show the value of expressions
+    bool shell;           // the terminal's own session (see "The shell" in aer_interp.c): cmd() works
     bool graphics;        // the program switched to graphics, switch back when it ends
 } aer_state_t;
 
@@ -200,6 +202,7 @@ typedef struct {
     aer_native_t fn;
     int min_args;
     int max_args;
+    const char* function; // fn's name, "bi_print" (for WHY and SRC, see aer_builtin_function)
 } aer_builtin_t;
 
 extern const aer_builtin_t aer_builtins[];
@@ -207,5 +210,9 @@ extern const int aer_builtin_count;
 void aer_define_constants (void);       // KEY_UP, BLACK ... as global variables
 void aer_define_global (const char* name, value_t value);
 void aer_builtins_finish (void);       // tidy up after a program (e.g. leave graphics mode)
+void aer_give_screen_back (void);      // leave graphics mode, if the code switched to it
+
+// is this word (length characters) one of AerLang's keywords? (aer_lexer.c)
+bool aer_is_keyword (const char* word, size_t length);
 
 #endif /* AER_INTERNAL_H */

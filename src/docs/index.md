@@ -12,6 +12,13 @@ in `/docs/` on your computer and is shown by the reader app, `/bin/read.aer`.
 - [Terminal commands](commands.md): everything you can type at the prompt
 - [Files and folders](files.md): where things are kept, paths and file names
 
+## What makes AerOS different
+
+- [Ask AerOS why](why.md): WHY explains what went wrong, SRC shows the code behind anything
+- [The prompt speaks AerLang](shell.md): variables, sums and code right at the prompt
+- [Files remember](versions.md): old versions of your files, and UNDO
+- [Programs ask first](perms.md): no app touches your files without asking you
+
 ## Making things
 
 - [AerLang](aerlang.md): the built-in programming language

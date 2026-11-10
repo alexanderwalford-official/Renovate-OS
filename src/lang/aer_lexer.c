@@ -235,3 +235,61 @@ token_t* aer_lex (const char* src, int* count) {
     *count = list.count;
     return list.tokens;
 }
+
+bool aer_is_keyword (const char* word, size_t length) {
+    for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
+        if (slen(keywords[k].word) == length && strncmp(keywords[k].word, word, length) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Count the blocks code opens and doesn't close. Every if, while, for and func needs an end
+// (elif and else carry on the if's block rather than opening one of their own), so it is the
+// number of those words less the number of ends. Strings and comments are skipped, so the
+// "end" in print("the end") doesn't count
+int aer_open_blocks (const char* code) {
+    int open = 0;
+    const char* p = code;
+    while (*p) {
+        if (*p == '#') {
+            while (*p && *p != '\n') {
+                p++; // a comment, to the end of the line
+            }
+            continue;
+        }
+        if (*p == '"') {
+            p++;
+            while (*p && *p != '"' && *p != '\n') {
+                p += (*p == '\\' && p[1]) ? 2 : 1; // a backslash escapes the next character
+            }
+            if (*p == '"') {
+                p++;
+            }
+            continue;
+        }
+        if (!isalpha((unsigned char)*p) && *p != '_') {
+            p++;
+            continue;
+        }
+
+        // a word: is it one that opens or closes a block?
+        const char* word = p;
+        while (isalnum((unsigned char)*p) || *p == '_') {
+            p++;
+        }
+        size_t length = (size_t)(p - word);
+        bool opens = (length == 2 && strncmp(word, "if", 2) == 0)
+                     || (length == 5 && strncmp(word, "while", 5) == 0)
+                     || (length == 3 && strncmp(word, "for", 3) == 0)
+                     || (length == 4 && strncmp(word, "func", 4) == 0);
+        bool closes = length == 3 && strncmp(word, "end", 3) == 0;
+        if (opens) {
+            open++;
+        } else if (closes) {
+            open--;
+        }
+    }
+    return open;
+}

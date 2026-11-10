@@ -65,6 +65,7 @@
 #define FS_ERR_IO        -6  // the drive reported a read or write error
 #define FS_ERR_BUSY      -7  // tried to delete the current directory (or one of its parents)
 #define FS_ERR_NO_MEMORY -8  // malloc / realloc failed
+#define FS_ERR_READ_ONLY -9  // tried to change something that can only be read (AerOS's source in /src/)
 
 // the volume label a disk must have before we dare to write to it (compared ignoring case)
 // format one with "mformat -v AEROS" (the Makefile does this for disk.img)

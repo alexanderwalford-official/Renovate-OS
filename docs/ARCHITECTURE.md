@@ -6,6 +6,8 @@ in more detail. This document is the map that ties them together.
 
 The other guides go deeper into one area each:
 
+* [DIFFERENT.md](DIFFERENT.md): what sets AerOS apart (WHY and SRC, AerLang at the prompt,
+  apps that ask first, files that remember), and how each one works
 * [AERLANG.md](AERLANG.md): the AerLang programming language and its built-in functions
 * [SECURITY.md](SECURITY.md): user accounts, password hashing and file encryption
 * [AUDIO.md](AUDIO.md): the sound card driver, WAV / MP3 playback and the mixer
@@ -22,12 +24,22 @@ users at once:
 | paging / virtual memory | every pointer is a physical address | no page tables, no TLB misses, nothing to set up |
 | multitasking and context switches | one thing runs at a time, to completion | no scheduler overhead, no locks |
 | a kernel / user split | everything runs in ring 0 | no system call overhead, drivers are ordinary functions |
-| loadable drivers and modules | every driver is compiled in | the whole OS is one ~430 KB file |
+| loadable drivers and modules | every driver is compiled in | the whole OS is one ~1.8 MB file (half of it its own source code, for `/src/`) |
 | a C library | `src/lib` has just what the kernel uses | no unused code (`--gc-sections` removes the rest) |
 
 The cost is just as clear. A bug anywhere can crash everything, and there is no protection
 between programs. AerOS treats this as a fair trade for a system meant to be read, learned
 from and modified.
+
+Four things set it apart from the usual design (each is described in full in
+[DIFFERENT.md](DIFFERENT.md)):
+
+| Idea | What you see | The code |
+| --- | --- | --- |
+| it explains itself | `why` after a problem, `why del`, `src del`, the read-only `/src/` folder | `sys/explain.c`, `sys/source.c` |
+| the prompt is AerLang | `let x = 2`, `x * 10`, `cmd("la")` at the terminal's prompt | "The shell" in `lang/aer_interp.c` |
+| apps ask first | "viewer.aer wants to read files in /home/alex/" | `sys/perm.c` |
+| files remember | `vers notes.txt`, `rd notes.txt@2`, `undo notes.txt` | `sys/versions.c` |
 
 ## The source tree
 
@@ -59,6 +71,10 @@ src/
     p_man.c               the process manager (a queue of one-line jobs)
     f_sys.c               the file system front end: DISK mode or the in-memory VFS
     fat.c                 the FAT16 / FAT32 driver
+    source.c              the read-only /src/ folder: AerOS's own source, built into it
+    versions.c            old versions of the files in home folders (VERS, UNDO, notes.txt@2)
+    perm.c                programs ask before they touch your files (PERM)
+    explain.c             WHY and SRC: the last problem, its explanation, and reading the source
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
     mixer.c               up to 8 sounds at once, in the background (games, a video's sound track)
@@ -74,7 +90,7 @@ src/
     terminal/editor.c     the text editor (EDT)
 
   lib/                  the kernel's own small C library
-    aer_string.c          memcpy, slen, strtok_r...      aer_stdlib.c  malloc / free, itoa, qsort...
+    aer_string.c          memcpy, slen, strtok_r, sdist  aer_stdlib.c  malloc / free, itoa, qsort...
     aer_stdio.c           prtf, sfmt                 aer_ctype.h   isdigit, toupper...
     aer_setjmp.c          setjmp / longjmp (AerLang errors) primary_definitions.c  seq, split, trim
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
@@ -88,7 +104,7 @@ src/
   lang/                 the AerLang interpreter
     aer_lexer.c           source text -> tokens
     aer_parser.c          tokens -> syntax tree
-    aer_interp.c          walks the tree; memory, values, variables
+    aer_interp.c          walks the tree; memory, values, variables; the shell's session
     aer_builtins.c        print, rdf, play, gfx_... (every function a program can call)
 
   apps/                 built-in apps and files, linked into the kernel and copied to /bin/ or /sys/
@@ -185,8 +201,21 @@ them into that form. On disk, new names must fit 8.3 (`NOTES.TXT`). Existing lon
 read.
 
 Each user's home folder is `/home/<name>/`, made with the account. The folders made at every
-boot are `/acc/` (accounts), `/bin/` (apps), `/docs/` (the manual),
-`/sys/` (system files: `startup.wav`, `cache/`, `tmp/`) and `/conf.aer`.
+boot are `/acc/` (accounts, and `perms`, what programs may always do), `/bin/` (apps), `/docs/`
+(the manual), `/sys/` (system files: `startup.wav`, `cache/`, `tmp/`) and `/conf.aer`.
+
+Three things are layered on top, all inside `f_sys.c`'s public functions, so every command
+and every AerLang function gets them without doing anything:
+
+* **`/src/`** is neither on the disk nor in memory: each function checks `source_in()` first
+  and hands the path to `sys/source.c`, which serves AerOS's own source files from the kernel.
+  Anything that would change one gets `FS_ERR_READ_ONLY`.
+* **Versions**: before a file in a home folder is changed or deleted, `versions_keep()`
+  (`sys/versions.c`) copies it into `/home/<name>/versions/`. A name like `notes.txt@2` that
+  isn't a real file is read from there instead. Writing with `wipe_old` (encryption) deletes
+  a file's versions, and `fs_empty_dir` pauses versions while it works.
+* **Permissions** aren't in `f_sys.c`: they are checked one level up, by AerLang's file
+  functions, so the terminal (which is you) never asks. See `sys/perm.h`.
 
 ## The manual inside AerOS
 
@@ -212,16 +241,26 @@ add one, also add it to the table in `src/sys/apps.c` and link to it from `index
 
 ```
 loop forever:
-    auth_login()          (DISK mode only)
+    auth_login()          (DISK mode only), then start the shell's AerLang session
     draw the banner
     until OUT (log out):
-        prompt "alex@0//: "  ->  read a line  ->  look the first word up in commands[]
-                                                  or run it as /bin/<word>.aer
+        prompt "alex@0//: "  ->  read a line  ->  the first word is:
+                                                    a command in commands[]    run it
+                                                    an app, /bin/<word>.aer    run that
+                                                    anything that looks like code: AerLang
+                                                    anything else: "Did you mean DEL?"
 ```
 
 Everything about a command's name comes from that one table: `HLP` (help) lists it, Tab
-completion offers it, and its "Usage:" message is built from it. So a new command only needs
-one table line, and renaming a command means changing one word. The line is read with
+completion offers it, its "Usage:" message is built from it, and `WHY` / `SRC` find its code
+through it (each row keeps its function's name as a string, see the `COMMAND` macro). So a new
+command only needs one table line, and renaming a command means changing one word. Text in
+other files that names a command (`sys/explain.c`) writes `@cli_list` and gets the current
+name from `cli_command_called()`.
+
+Commands report problems with `explain_say()` / `explain_say_fs()` (`sys/explain.h`) rather
+than a plain `prtf`: the message looks the same, but AerOS remembers it, so `WHY` can explain
+it afterwards. The line is read with
 `GetLine()` (in `drivers/input/IO.c`), which hands Tab to `cli_complete()`. That completes
 the first word from the command table and the `.aer` programs in `/bin/` and the current
 folder, and later words from the file system.
@@ -238,6 +277,12 @@ The interpreter tracks every allocation, so when a program ends, normally or thr
 everything it used is freed at once. Errors `longjmp` straight back to the start of the run.
 See [AERLANG.md](AERLANG.md) for the language and the comments at the top of each `lang/` file
 for the details.
+
+The terminal's prompt has an AerLang session of its own, "the shell", which lasts from logging
+in to logging out. Only one session can be the running one, so when a program starts, the
+shell's session is copied aside and copied back when the program ends ("The shell" in
+`aer_interp.c`). Programs go through `aer_run_file()`, which also tells `sys/perm.c` which
+program is running, so its file functions ask before they touch your files.
 
 ## Building and testing
 
@@ -277,25 +322,41 @@ and one line in `commands[]`: the name you type, what goes after it (for help an
 message, "" if nothing), the description help shows, and the function:
 
 ```c
-    { "ver",      "",           "PRINT THE AEROS VERSION",                                    cli_version },
+    COMMAND("ver",  "",           "PRINT THE AEROS VERSION",                                    cli_version),
 ```
 
 A command that needs something after it can call `show_usage(NULL)` when it is missing, which
-prints e.g. `Usage: VER` built from the table.
+prints e.g. `Usage: VER` built from the table. When something goes wrong, say so with
+`explain_say(PROBLEM_..., subject, "Couldn't ...")`, or `explain_say_fs(result, subject,
+"Couldn't ...")` for a file system result code, so `WHY` can explain it. The comment above the
+function is what `WHY VER` shows, so write it for the person typing the command.
+
+### Explain a new kind of problem
+
+Add a `PROBLEM_` to the list in `src/sys/explain.h`, and its explanation to the table in
+`src/sys/explain.c`: what happened, why AerOS works that way, what to do about it, and the C
+function that makes the decision (for `SRC`). Write commands as `@cli_function` so they are
+named whatever the command is called today.
 
 ### Add an AerLang function
 
 In `src/lang/aer_builtins.c`, write the function in the right section:
 
 ```c
+// twice(n): n times two
 static value_t bi_twice (int argc, value_t* argv, int line) {
     (void)argc;
     return aer_int(int_arg(argv, 0, line, "twice") * 2);  // int_arg reports a wrong type for you
 }
 ```
 
-then add `{ "twice", bi_twice, 1, 1 },` to `aer_builtins[]` (name, function, fewest and most
-arguments), and list it in [AERLANG.md](AERLANG.md).
+then add `BUILTIN("twice", bi_twice, 1, 1),` to `aer_builtins[]` (name, function, fewest and
+most arguments), and list it in [AERLANG.md](AERLANG.md). The comment above it, starting with
+how it is called, is what `WHY TWICE` shows.
+
+A function that takes a file's path gets it with `file_arg(..., PERM_READ or PERM_CHANGE, ...)`
+(or `allowed_path`), which asks the person at the keyboard if the program needs permission,
+and fails the same way as a missing file if the answer is no.
 
 ### Add a built-in app or file
 
@@ -317,6 +378,9 @@ On a disk, new names must fit 8.3 (`sample.htm`, not `sample.html`).
 ### Style
 
 * Every file starts with a comment saying what it is for and how it works.
+* Every function has a comment right above it (no blank line in between): `WHY` reads them,
+  so they are the explanation people see inside AerOS. A function's definition starts at
+  column 0 with its return type, `int fs_list (...) {`, which is how `SRC` finds it.
 * Comments explain **why**, and anything that isn't obvious from the code: the hardware's rules,
   the edge cases, the reasons for a choice.
 * Functions return a value or an `*_OK` / `*_ERR_*` code with a matching `*_strerror()` message.

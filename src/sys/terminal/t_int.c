@@ -25,13 +25,22 @@
         the function to call     cli_delete
 
     If the word isn't in the table, it is tried as the name of an AerLang app ("hello" runs
-    /bin/hello.aer).
+    /bin/hello.aer), and then the whole line as AerLang code ("let x = 2", "x * 10"), which
+    runs in the shell's session (lang/aer_interp.c, "The shell"). A word that is none of those
+    gets "Did you mean ...?" with the closest command or app.
+
+    WHEN SOMETHING GOES WRONG
+
+    Commands report problems with explain_say() (sys/explain.h) rather than a plain prtf, so
+    AerOS remembers the problem and WHY can explain it afterwards. WHY DEL and SRC DEL explain
+    and show the code of a command, read from AerOS's own source in /src/.
 
     ADDING OR RENAMING A COMMAND
 
-    Everything about a command's name comes from that one table: HELP, Tab completion and the
-    "Usage:" messages all read it. So to rename a command, change its name in the table and
-    nothing else. To add one, write a function like this and add a line to the table:
+    Everything about a command's name comes from that one table: HELP, Tab completion, the
+    "Usage:" messages and WHY's explanations all read it. So to rename a command, change its
+    name in the table and nothing else. To add one, write a function like this and add a line
+    to the table:
 
         static void cli_hello (char* arguments) {
             prtf("Hello, %s!\n", arguments);
@@ -74,6 +83,10 @@
 #include "../sound.h"
 #include "../video.h"
 #include "../ui.h"
+#include "../explain.h"
+#include "../source.h"
+#include "../versions.h"
+#include "../perm.h"
 
 // the longest line the user can type, counting the '\0' that ends it
 #define CLI_INPUT_MAX 128
@@ -106,7 +119,12 @@ typedef struct {
     const char* arguments;     // what goes after it, for HELP and "Usage:": "<NAME>", or "" for nothing
     const char* description;   // the line HELP shows for it
     void (*run)(char* arguments);
+    const char* function;      // run's name, "cli_delete", for WHY and SRC to find its code
 } command_t;
+
+// One row of the table. #run turns the function into its name as a string ("cli_delete"):
+// C can't find a function's name from a pointer to it, so the table keeps both
+#define COMMAND(name, arguments, description, run) { name, arguments, description, run, #run }
 
 // the command that is running right now, so show_usage() knows which one to explain
 static const command_t* running_command = NULL;
@@ -123,6 +141,11 @@ static void cli_resolution (char* arguments);
 static void cli_docs (char* arguments);
 static void cli_queue (char* arguments);
 static void cli_go (char* arguments);
+static void cli_list (char* arguments);
+static void cli_versions (char* arguments);
+static void cli_undo (char* arguments);
+static void cli_permissions (char* arguments);
+static const command_t* find_command (const char* name);
 
 
 // =================================================================================================
@@ -219,6 +242,7 @@ int cli_init (int ask_login) {
             auth_login(); // comes back once someone has logged in
         }
         cli_logged_in = true;
+        aer_shell_start(); // the prompt's own AerLang variables, kept until logging out
         cli_rend_main();
 
         while (cli_active && cli_logged_in) {
@@ -301,7 +325,7 @@ static bool refuse_if_encrypted (const char* path) {
     if (!fcrypt_file_is_encrypted(path)) {
         return false;
     }
-    prtf("%s is encrypted, %s it first.\n", path, command_name(cli_decrypt));
+    explain_say(PROBLEM_ENCRYPTED, path, "%s is encrypted, %s it first.", path, command_name(cli_decrypt));
     return true;
 }
 
@@ -319,7 +343,8 @@ static void read_encrypted_file (const char* path) {
     wipe(password, sizeof(password)); // never leave a password lying around in memory
 
     if (result != FCRYPT_OK) {
-        prtf("Can't read %s: %s\n", path, fcrypt_strerror(result));
+        explain_say(explain_fcrypt_problem(result), path,
+                    "Can't read %s: %s", path, fcrypt_strerror(result));
         return;
     }
     print_text_block((char*)contents, length);
@@ -340,7 +365,7 @@ static void cli_encrypt (char* arguments) {
     bool found = fs_split_path(arguments, folder, sizeof(folder), name, sizeof(name))
                  && fs_file_exists(folder, name);
     if (!found) {
-        prtf("File not found: %s\n", arguments);
+        explain_say(PROBLEM_NOT_FOUND, arguments, "File not found: %s", arguments);
         return;
     }
     if (fcrypt_file_is_encrypted(arguments)) {
@@ -363,7 +388,8 @@ static void cli_encrypt (char* arguments) {
         if (result == FCRYPT_OK) {
             prtf("Encrypted %s. Don't lose the password, there is no way back without it.\n", arguments);
         } else {
-            prtf("Couldn't encrypt %s: %s\n", arguments, fcrypt_strerror(result));
+            explain_say(explain_fcrypt_problem(result), arguments,
+                        "Couldn't encrypt %s: %s", arguments, fcrypt_strerror(result));
         }
     }
 
@@ -393,7 +419,8 @@ static void cli_decrypt (char* arguments) {
     if (result == FCRYPT_OK) {
         prtf("Decrypted %s.\n", arguments);
     } else {
-        prtf("Couldn't decrypt %s: %s\n", arguments, fcrypt_strerror(result));
+        explain_say(explain_fcrypt_problem(result), arguments,
+                    "Couldn't decrypt %s: %s", arguments, fcrypt_strerror(result));
     }
 }
 
@@ -432,7 +459,7 @@ static void cli_set_directory (char* arguments) {
         return;
     }
     if (fs_set_cd(arguments) != 0) {
-        prtf("Directory not found: %s\n", arguments);
+        explain_say(PROBLEM_NOT_FOUND, arguments, "Directory not found: %s", arguments);
     }
 }
 
@@ -455,7 +482,7 @@ static void cli_read_file (char* arguments) {
     // fs_read_f gives back its own copy of the contents, which has to be freed afterwards
     char* contents = fs_read_f(folder, name);
     if (contents == NULL) {
-        prtf("File not found: %s\n", arguments);
+        explain_say(PROBLEM_NOT_FOUND, arguments, "File not found: %s", arguments);
         return;
     }
     print_text_block(contents, slen(contents));
@@ -477,7 +504,7 @@ static void cli_make_file (char* arguments) {
     // fails if the file is already there, the folder isn't, or the disk is full
     int result = fs_create_f(folder, name, text);
     if (result != FS_OK) {
-        prtf("Could not create %s: %s\n", file, fs_strerror(result));
+        explain_say_fs(result, file, "Could not create %s", file);
     }
 }
 
@@ -500,7 +527,7 @@ static void cli_write_file (char* arguments) {
     // read the file first: to check it is there, and to see whether it is empty
     char* existing = fs_read_f(folder, name);
     if (existing == NULL) {
-        prtf("File not found: %s\n", file);
+        explain_say(PROBLEM_NOT_FOUND, file, "File not found: %s", file);
         return;
     }
     bool file_is_empty = existing[0] == '\0';
@@ -511,7 +538,7 @@ static void cli_write_file (char* arguments) {
     size_t line_size = slen(text) + 2; // room for the '\n' and the '\0'
     char* line = malloc(line_size);
     if (line == NULL) {
-        prtf("Out of memory.\n");
+        explain_say(PROBLEM_NO_MEMORY, NULL, "Out of memory.");
         return;
     }
     if (file_is_empty) {
@@ -526,7 +553,7 @@ static void cli_write_file (char* arguments) {
     free(line);
 
     if (result != FS_OK) {
-        prtf("Could not write %s: %s\n", file, fs_strerror(result));
+        explain_say_fs(result, file, "Could not write %s", file);
     }
 }
 
@@ -553,7 +580,7 @@ static void cli_make_directory (char* arguments) {
 
     int result = fs_create_d(path, name);
     if (result != FS_OK) {
-        prtf("Could not create %s: %s\n", path, fs_strerror(result));
+        explain_say_fs(result, path, "Could not create %s", path);
     }
 }
 
@@ -594,7 +621,7 @@ static void delete_file (const char* typed, const char* folder, const char* name
     if (result == FS_OK) {
         prtf("Deleted %s.\n", name);
     } else {
-        prtf("Can't delete %s: %s\n", typed, fs_strerror(result));
+        explain_say_fs(result, typed, "Can't delete %s", typed);
     }
 }
 
@@ -607,9 +634,13 @@ static void delete_folder (const char* path) {
         prtf("The top folder, /, can't be deleted.\n");
         return;
     }
+    if (source_in(path)) {
+        explain_say_fs(FS_ERR_READ_ONLY, path, "Can't delete %s", path);
+        return;
+    }
     bool standing_in_it = strncmp(cd, path, slen(path)) == 0;
     if (standing_in_it) {
-        prtf("Can't delete %s: you are in it (%s somewhere else first).\n", path,
+        explain_say(PROBLEM_IN_USE, path, "Can't delete %s: you are in it (%s somewhere else first).", path,
              command_name(cli_set_directory));
         return;
     }
@@ -650,7 +681,7 @@ static void delete_folder (const char* path) {
     if (result == FS_OK) {
         prtf("Deleted %s.\n", path);
     } else {
-        prtf("Can't delete %s: %s\n", path, fs_strerror(result));
+        explain_say_fs(result, path, "Can't delete %s", path);
     }
 }
 
@@ -678,7 +709,109 @@ static void cli_delete (char* arguments) {
         return;
     }
 
-    prtf("Not found: %s\n", arguments);
+    explain_say(PROBLEM_NOT_FOUND, arguments, "Not found: %s", arguments);
+}
+
+// ---- VERS and UNDO: a file's past (how versions are kept: sys/versions.h) -----------------------
+
+// versions_each_file() calls this for every file that has versions
+static void print_versioned_file (const char* path, int count, void* context) {
+    (void)context;
+    prtf("  %-48s %2d version%s\n", path, count, count == 1 ? "" : "s");
+}
+
+// "10-11-26--14:30:05" (how versions.c keeps the time) -> "10-11-26 14:30:05"
+static void readable_time (const char* saved, char* out, size_t size) {
+    scpy(out, saved, size);
+    char* dashes = strstr(out, "--");
+    if (dashes != NULL) {
+        dashes[0] = ' ';
+        memmove(dashes + 1, dashes + 2, slen(dashes + 2) + 1);
+    }
+}
+
+// VERS [FILE]: a file's old versions, newest first. On its own: every file in your home folder
+// that has any
+static void cli_versions (char* arguments) {
+    if (arguments[0] == '\0') {
+        char home[FS_PATH_MAX];
+        if (!auth_home(auth_user, home, sizeof(home))) {
+            return;
+        }
+        int files = versions_each_file(home, print_versioned_file, NULL);
+        if (files == 0) {
+            prtf("No file in %s has an old version yet.\n", home);
+        } else {
+            prtf("%s <FILE> lists a file's versions.\n", command_name(cli_versions));
+        }
+        return;
+    }
+
+    char folder[FS_PATH_MAX];
+    char name[FS_NAME_MAX];
+    if (!fs_split_path(arguments, folder, sizeof(folder), name, sizeof(name))) {
+        show_usage(NULL);
+        return;
+    }
+    version_t list[VERSIONS_KEPT];
+    int count = versions_list(folder, name, list);
+    if (count == 0) {
+        explain_say(PROBLEM_NO_VERSIONS, arguments, "%s has no old versions.", arguments);
+        return;
+    }
+
+    prtf("Versions of %s%s, newest first:\n", folder, name);
+    for (int i = 0; i < count; i++) {
+        char when[20];
+        readable_time(list[i].saved, when, sizeof(when));
+        prtf("  %s@%-3d  %s  %8u bytes\n", name, list[i].number, when, list[i].size);
+    }
+    if (!fs_file_exists(folder, name)) {
+        prtf("%s was deleted: %s %s brings it back.\n", name, command_name(cli_undo), arguments);
+    }
+    prtf("%s %s@1 shows one, %s %s 2 brings @2 back.\n",
+         command_name(cli_read_file), arguments, command_name(cli_undo), arguments);
+}
+
+// UNDO <FILE> [N]: bring back version N of a file (1, the newest, without N). What it replaces
+// is kept as a version first, so another UNDO puts it back
+static void cli_undo (char* arguments) {
+    char* number_text;
+    char* file = split_first_word(arguments, &number_text);
+    int number = number_text[0] != '\0' ? atoi(number_text) : 1;
+
+    char folder[FS_PATH_MAX];
+    char name[FS_NAME_MAX];
+    if (number < 1 || !fs_split_path(file, folder, sizeof(folder), name, sizeof(name))) {
+        show_usage("e.g. UNDO notes.txt, or UNDO notes.txt 2 for the one before");
+        return;
+    }
+
+    // when the version was kept, to say so afterwards
+    version_t list[VERSIONS_KEPT];
+    int count = versions_list(folder, name, list);
+    if (number > count) {
+        if (count == 0) {
+            explain_say(PROBLEM_NO_VERSIONS, file, "%s has no old versions.", file);
+        } else {
+            explain_say(PROBLEM_NO_VERSIONS, file, "%s has %d version(s), not %d (%s %s lists them).",
+                        file, count, number, command_name(cli_versions), file);
+        }
+        return;
+    }
+    bool was_there = fs_file_exists(folder, name);
+    char when[20];
+    readable_time(list[number - 1].saved, when, sizeof(when));
+
+    int result = versions_restore(folder, name, number);
+    if (result != FS_OK) {
+        explain_say_fs(result, file, "Couldn't bring back %s", file);
+        return;
+    }
+    prtf("%s is back as it was at %s.\n", file, when);
+    if (was_there) {
+        prtf("(What it replaced is %s@1 now, %s %s puts that back.)\n", file, command_name(cli_undo), file);
+    }
 }
 
 
@@ -951,7 +1084,8 @@ static void cli_play (char* arguments) {
     if (video_is_video(arguments)) {
         int result = video_play_file(arguments);
         if (result != VIDEO_OK) {
-            prtf("Can't play %s: %s\n", arguments, video_strerror(result));
+            explain_say(explain_video_problem(result), arguments,
+                        "Can't play %s: %s", arguments, video_strerror(result));
         }
         return;
     }
@@ -970,7 +1104,8 @@ static void cli_play (char* arguments) {
         ui_busy_end();
     }
     if (result != SOUND_OK) {
-        prtf("Can't play %s: %s\n", arguments, sound_strerror(result));
+        explain_say(explain_sound_problem(result), arguments,
+                    "Can't play %s: %s", arguments, sound_strerror(result));
     }
 }
 
@@ -1009,6 +1144,140 @@ static void cli_docs (char* arguments) {
         sfmt(path, sizeof(path), "/docs/%s.md", arguments);  // "docs sound"
     }
     aer_run_file("/bin/read.aer", path);
+}
+
+
+// =================================================================================================
+//  WHY and SRC: AerOS explains itself (the explaining is done in sys/explain.c)
+// =================================================================================================
+
+// The C function behind a name someone typed after WHY or SRC:
+//     a command           "del"     ->  "cli_delete"    (*command is set to it)
+//     an AerLang function "gopen"   ->  "bi_gfx_open"
+//     anything else       "fs_list" ->  "fs_list", taken to be a C function's name
+// The function's name is written into `out`
+static void code_behind (const char* name, char* out, size_t size, const command_t** command) {
+    *command = find_command(name);
+    const char* builtin = aer_builtin_function(name);
+    if (*command != NULL) {
+        scpy(out, (*command)->function, size);
+    } else if (builtin != NULL) {
+        scpy(out, builtin, size);
+    } else {
+        scpy(out, name, size);
+    }
+}
+
+// C is case sensitive, but commands aren't: so if "FS_LIST" isn't a C function, try "fs_list"
+static void lower_case_if_unknown (char* function) {
+    source_place_t place;
+    if (!source_find_function(function, &place)) {
+        strlwr(function);
+    }
+}
+
+// WHY [NAME]: on its own, explain the last thing that went wrong. With a name, explain that
+// instead: a command (WHY DEL), an AerLang function (WHY GOPEN) or a C function (WHY FS_LIST),
+// from the comments written above them in AerOS's own source code
+static void cli_why (char* arguments) {
+    if (arguments[0] == '\0') {
+        explain_last();
+        return;
+    }
+    char function[64];
+    const command_t* command;
+    code_behind(arguments, function, sizeof(function), &command);
+    lower_case_if_unknown(function);
+
+    source_place_t place;
+    if (!source_find_function(function, &place)) {
+        prtf("AerOS has no command, AerLang function or C function called %s.\n", arguments);
+        return;
+    }
+
+    // say what the name is first, then let explain_function() take over
+    if (command != NULL) {
+        char usage[64];
+        command_usage(command, usage, sizeof(usage));
+        colour(YELLOW, console_bg);
+        prtf("%s - %s\n", usage, command->description);
+        colour(BRIGHT, console_bg);
+        prtf("The command runs ");
+    } else if (aer_builtin_function(arguments) != NULL) {
+        colour(YELLOW, console_bg);
+        prtf("%s() is a built-in AerLang function.\n", arguments);
+        colour(BRIGHT, console_bg);
+        prtf("It is ");
+    }
+    explain_function(function);
+}
+
+// SRC <NAME>: show the code behind a command (SRC DEL), an AerLang function (SRC GOPEN) or a
+// C function (SRC FS_LIST), with its line numbers. Or open a whole source file in the reader
+// (SRC FAT.C, SRC SYS/FAT.C)
+static void cli_src (char* arguments) {
+    if (arguments[0] == '\0') {
+        show_usage("e.g. SRC DEL, SRC FS_LIST or SRC FAT.C");
+        return;
+    }
+    char function[64];
+    const command_t* command;
+    code_behind(arguments, function, sizeof(function), &command);
+    lower_case_if_unknown(function);
+    if (explain_show_code(function)) {
+        return;
+    }
+
+    // not a function: a file?
+    const source_file_t* file = source_search(arguments);
+    if (file != NULL) {
+        char path[FS_PATH_MAX];
+        sfmt(path, sizeof(path), "%s%s", SOURCE_FOLDER, file->path);
+        aer_run_file("/bin/read.aer", path);
+        return;
+    }
+    prtf("AerOS has no command, function or source file called %s.\n", arguments);
+    prtf("(%s /src/ then %s lists the source files.)\n", command_name(cli_set_directory), command_name(cli_list));
+}
+
+// ---- PERM: what programs may always do with your files (the rules: sys/perm.h) ---------------------
+
+// perm_each() calls this for every "always" answer
+static void print_permission (int number, const char* program, perm_kind_t kind, const char* folder, void* context) {
+    (void)context;
+    prtf("  %2d. %-26s may %-6s files in %s\n", number, program, kind == PERM_CHANGE ? "change" : "read", folder);
+}
+
+// PERM [DEL <N>]: list the programs you answered A (always) for when they asked to use your
+// files. PERM DEL 2 forgets the second answer, PERM DEL ALL forgets them all
+static void cli_permissions (char* arguments) {
+    char* rest;
+    char* word = split_first_word(arguments, &rest);
+
+    if (word[0] == '\0') {
+        prtf("Programs you have always allowed:\n");
+        if (perm_each(print_permission, NULL) == 0) {
+            prtf("  none yet. Programs ask before they read your files or change any file,\n"
+                 "  and the ones you answer A (always) are listed here.\n");
+        } else {
+            prtf("%s DEL <number> forgets one, %s DEL ALL forgets them all.\n",
+                 command_name(cli_permissions), command_name(cli_permissions));
+        }
+        return;
+    }
+
+    bool all = strcasecmp(rest, "all") == 0;
+    int number = all ? 0 : atoi(rest);
+    if (strcasecmp(word, "del") != 0 || (!all && number < 1)) {
+        show_usage("e.g. PERM DEL 2, or PERM DEL ALL");
+        return;
+    }
+    int forgotten = perm_forget(number);
+    if (forgotten == 0) {
+        prtf("There is no answer %s to forget (%s lists them).\n", rest, command_name(cli_permissions));
+    } else {
+        prtf("Forgot %d answer(s): those programs will ask again.\n", forgotten);
+    }
 }
 
 // run some AerLang code as a process of its own, then remove the process again.
@@ -1124,7 +1393,7 @@ static void cli_queue (char* arguments) {
         char* program_arguments;
         char* program = split_first_word(arguments, &program_arguments);
         if (!make_program_line(program, program_arguments, line, sizeof(line))) {
-            prtf("There is no program called %s to queue.\n", program);
+            explain_say(PROBLEM_NOT_FOUND, program, "There is no program called %s to queue.", program);
             return;
         }
     }
@@ -1344,9 +1613,12 @@ static void cli_logout (char* arguments) {
         return;
     }
     // the next person shouldn't be able to see what this one did: forget the commands for
-    // the up arrow and the output for Page Up, and start them in the top folder
+    // the up arrow, the output for Page Up, the last problem (WHY) and the AerLang variables
+    // made at the prompt, and start them in the top folder
     ClearInputHistory();
     console_forget_scrollback();
+    explain_forget();
+    aer_shell_stop();
     scpy(cd, "/", sizeof(cd));
     cli_logged_in = false; // ends the inner loop in cli_init()
 }
@@ -1365,40 +1637,45 @@ static void cli_logout (char* arguments) {
 // (AerLang's built-in functions use the same pieces: rdf, wrf, isf...)
 
 static const command_t commands[] = {
-    { "hlp",  "",           "THIS COMMAND (HELP)",                                         cli_help },
-    { "la",   "",           "LIST ALL FILES AND DIRECTORIES IN THE CURRENT DIRECTORY",     cli_list },
-    { "sd",   "<DIR>",      "SET THE CURRENT DIRECTORY (e.g. SD /sys, SD .., SD /)",       cli_set_directory },
-    { "clk",  "",           "PRINTS THE SYSTEM TIME (CLOCK)",                              cli_clock },
-    { "up",   "",           "PRINTS THE TIME SINCE BOOT (UPTIME)",                         cli_uptime },
-    { "pm",   "",           "PRINTS THE PROCESS STACK (PROCESS MANAGER)",                  cli_pman },
-    { "que",  "[PROGRAM]",  "QUEUE A PROGRAM FOR GO, OR LIST THE QUEUE (QUE CLEAR)",       cli_queue },
-    { "go",   "",           "RUN EVERYTHING IN THE QUEUE, IN ORDER (CTRL+C STOPS IT)",     cli_go },
-    { "run",  "<CODE>",     "RUN CODE AS A PROCESS (e.g. run print_stack, run s:hi)",      cli_run },
-    { "rd",   "<FILE>",     "READ A FILE",                                                 cli_read_file },
-    { "mkf",  "<FILE> [T]", "MAKE A FILE, WITH OPTIONAL TEXT",                             cli_make_file },
-    { "wr",   "<FILE> <T>", "WRITE A LINE OF TEXT ON THE END OF A FILE",                   cli_write_file },
-    { "mkd",  "<DIR>",      "MAKE A DIRECTORY",                                            cli_make_directory },
-    { "del",  "<NAME>",     "DELETE A FILE, OR A DIRECTORY AND ALL IN IT (ASKS FIRST)",    cli_delete },
-    { "ech",  "<TEXT>",     "PRINT TEXT (ECHO)",                                           cli_echo },
-    { "cls",  "",           "CLEAR THE SCREEN",                                            cli_clear },
-    { "mem",  "",           "MEMORY USAGE",                                                cli_memory },
-    { "drv",  "",           "LIST IDE / ATA DRIVES",                                       cli_drives },
-    { "bp",   "[HZ]",       "BEEP THE PC SPEAKER",                                         cli_beep },
-    { "ply",  "<FILE>",     "PLAY A .WAV, .MP3 OR .MPG VIDEO (ESC TO STOP)",               cli_play },
-    { "rbt",  "",           "RESTART THE COMPUTER (REBOOT)",                               cli_reboot },
-    { "off",  "",           "TURN OFF THE COMPUTER (SHUT DOWN)",                           cli_shutdown },
-    { "res",  "[WxH]",      "SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)",    cli_resolution },
-    { "edt",  "<FILE>",     "EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .AER, CTRL+Q QUIT)",   cli_edit },
-    { "aer",  "",           "THE AERLANG PROMPT, TYPE CODE TO RUN IT",                     cli_aer },
-    { "doc",  "[TOPIC]",    "READ THE MANUAL (e.g. DOC SOUND), READ <FILE> FOR ANY FILE",  cli_docs },
-    { "enc",  "<FILE>",     "ENCRYPT A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW IT)",  cli_encrypt },
-    { "dec",  "<FILE>",     "DECRYPT AN ENCRYPTED FILE",                                   cli_decrypt },
-    { "me",   "",           "PRINT WHO IS LOGGED IN",                                      cli_whoami },
-    { "usrs", "",           "LIST THE USER ACCOUNTS",                                      cli_users },
-    { "mku",  "<NAME>",     "MAKE A NEW USER ACCOUNT",                                     cli_add_user },
-    { "delu", "<NAME>",     "DELETE A USER ACCOUNT",                                       cli_delete_user },
-    { "pw",   "",           "CHANGE YOUR PASSWORD",                                        cli_password },
-    { "out",  "",           "LOG OUT, BACK TO THE LOGIN SCREEN",                           cli_logout },
+    COMMAND("hlp",  "",           "THIS COMMAND (HELP)",                                         cli_help),
+    COMMAND("la",   "",           "LIST ALL FILES AND DIRECTORIES IN THE CURRENT DIRECTORY",     cli_list),
+    COMMAND("sd",   "<DIR>",      "SET THE CURRENT DIRECTORY (e.g. SD /sys, SD .., SD /)",       cli_set_directory),
+    COMMAND("clk",  "",           "PRINTS THE SYSTEM TIME (CLOCK)",                              cli_clock),
+    COMMAND("up",   "",           "PRINTS THE TIME SINCE BOOT (UPTIME)",                         cli_uptime),
+    COMMAND("pm",   "",           "PRINTS THE PROCESS STACK (PROCESS MANAGER)",                  cli_pman),
+    COMMAND("que",  "[PROGRAM]",  "QUEUE A PROGRAM FOR GO, OR LIST THE QUEUE (QUE CLEAR)",       cli_queue),
+    COMMAND("go",   "",           "RUN EVERYTHING IN THE QUEUE, IN ORDER (CTRL+C STOPS IT)",     cli_go),
+    COMMAND("run",  "<CODE>",     "RUN CODE AS A PROCESS (e.g. run print_stack, run s:hi)",      cli_run),
+    COMMAND("rd",   "<FILE>",     "READ A FILE",                                                 cli_read_file),
+    COMMAND("mkf",  "<FILE> [T]", "MAKE A FILE, WITH OPTIONAL TEXT",                             cli_make_file),
+    COMMAND("wr",   "<FILE> <T>", "WRITE A LINE OF TEXT ON THE END OF A FILE",                   cli_write_file),
+    COMMAND("mkd",  "<DIR>",      "MAKE A DIRECTORY",                                            cli_make_directory),
+    COMMAND("del",  "<NAME>",     "DELETE A FILE, OR A DIRECTORY AND ALL IN IT (ASKS FIRST)",    cli_delete),
+    COMMAND("vers", "[FILE]",     "LIST A FILE'S OLD VERSIONS (RD NOTES.TXT@1 SHOWS ONE)",       cli_versions),
+    COMMAND("undo", "<FILE> [N]", "BRING A FILE BACK AS IT WAS BEFORE ITS LAST CHANGE",          cli_undo),
+    COMMAND("ech",  "<TEXT>",     "PRINT TEXT (ECHO)",                                           cli_echo),
+    COMMAND("cls",  "",           "CLEAR THE SCREEN",                                            cli_clear),
+    COMMAND("mem",  "",           "MEMORY USAGE",                                                cli_memory),
+    COMMAND("drv",  "",           "LIST IDE / ATA DRIVES",                                       cli_drives),
+    COMMAND("bp",   "[HZ]",       "BEEP THE PC SPEAKER",                                         cli_beep),
+    COMMAND("ply",  "<FILE>",     "PLAY A .WAV, .MP3 OR .MPG VIDEO (ESC TO STOP)",               cli_play),
+    COMMAND("rbt",  "",           "RESTART THE COMPUTER (REBOOT)",                               cli_reboot),
+    COMMAND("off",  "",           "TURN OFF THE COMPUTER (SHUT DOWN)",                           cli_shutdown),
+    COMMAND("res",  "[WxH]",      "SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)",    cli_resolution),
+    COMMAND("edt",  "<FILE>",     "EDIT A FILE (CTRL+S SAVE, CTRL+R RUN A .AER, CTRL+Q QUIT)",   cli_edit),
+    COMMAND("aer",  "",           "THE AERLANG PROMPT, TYPE CODE TO RUN IT",                     cli_aer),
+    COMMAND("doc",  "[TOPIC]",    "READ THE MANUAL (e.g. DOC SOUND), READ <FILE> FOR ANY FILE",  cli_docs),
+    COMMAND("why",  "[NAME]",     "EXPLAIN THE LAST PROBLEM, OR A COMMAND OR FUNCTION (WHY DEL)", cli_why),
+    COMMAND("src",  "<NAME>",     "SHOW THE CODE BEHIND A COMMAND OR FUNCTION (e.g. SRC DEL)",   cli_src),
+    COMMAND("perm", "[DEL <N>]",  "LIST OR FORGET WHAT PROGRAMS MAY ALWAYS DO TO YOUR FILES",    cli_permissions),
+    COMMAND("enc",  "<FILE>",     "ENCRYPT A FILE WITH A PASSWORD (RD ASKS FOR IT TO SHOW IT)",  cli_encrypt),
+    COMMAND("dec",  "<FILE>",     "DECRYPT AN ENCRYPTED FILE",                                   cli_decrypt),
+    COMMAND("me",   "",           "PRINT WHO IS LOGGED IN",                                      cli_whoami),
+    COMMAND("usrs", "",           "LIST THE USER ACCOUNTS",                                      cli_users),
+    COMMAND("mku",  "<NAME>",     "MAKE A NEW USER ACCOUNT",                                     cli_add_user),
+    COMMAND("delu", "<NAME>",     "DELETE A USER ACCOUNT",                                       cli_delete_user),
+    COMMAND("pw",   "",           "CHANGE YOUR PASSWORD",                                        cli_password),
+    COMMAND("out",  "",           "LOG OUT, BACK TO THE LOGIN SCREEN",                           cli_logout),
 };
 
 // how many commands there are: the size of the whole table divided by the size of one entry
@@ -1432,6 +1709,16 @@ static const char* command_name (void (*run)(char* arguments)) {
     scpy(name, command->name, sizeof(names[0]));
     strupr(name);
     return name;
+}
+
+// the same, found by the function's name instead: "cli_list" -> "LA" (see t_int.h)
+const char* cli_command_called (const char* function) {
+    for (size_t i = 0; i < command_count; i++) {
+        if (seq(commands[i].function, function)) {
+            return command_name(commands[i].run);
+        }
+    }
+    return NULL;
 }
 
 // how wide the first column of HELP is ("DEL <NAME>" padded out to this many characters)
@@ -1579,6 +1866,11 @@ static void gather_files (const char* word, const char* command) {
     const command_t* change_folder = command_running(cli_set_directory);
     completion.folders_only = change_folder != NULL && strcasecmp(command, change_folder->name) == 0;
     fs_list(folder, add_completion_entry, NULL);
+
+    // /src/ is built in rather than kept on the disk, so listing "/" doesn't include it
+    if (seq(folder, "/")) {
+        add_completion_entry("src", true, 0, NULL);
+    }
 }
 
 // how many characters all the gathered names have in common (they all start with what was
@@ -1705,14 +1997,103 @@ static int cli_complete (char* line, int length, int size) {
 //  Running a line
 // =================================================================================================
 
-// run one line the user typed:
-//     "  mkf notes.txt hello there "   ->   command "mkf", arguments "notes.txt hello there"
+// the most code that can be typed in one go, over several lines (see run_code)
+#define CODE_MAX 1024
+
+// AerLang typed at the prompt (lang/aer_interp.c, "The shell"). A line that opens a block,
+// like "for f in la() do", carries on: more lines are read, with "..." as their prompt, until
+// every block has its end. An empty line stops waiting (and the code reports its missing end)
+static void run_code (const char* first_line) {
+    char code[CODE_MAX];
+    scpy(code, first_line, sizeof(code));
+
+    while (aer_open_blocks(code) > 0) {
+        colour(DARK_GRAY, BLACK);
+        prtf("   ... ");
+        colour(BRIGHT, BLACK);
+        char more[CLI_INPUT_MAX];
+        GetLine(more, sizeof(more), NULL);
+        if (trim(more)[0] == '\0') {
+            break;
+        }
+        scat(code, "\n", sizeof(code));
+        scat(code, more, sizeof(code));
+    }
+    aer_shell_run(code);
+}
+
+// ---- "Did you mean DEL?" -------------------------------------------------------------------------
+
+// the closest name to what was typed, found so far
+typedef struct {
+    const char* typed;
+    char best[FS_NAME_MAX];
+    bool best_is_command;   // commands are shown in capitals, apps as they are
+    int distance;           // how far best is from typed (see sdist)
+} suggestion_t;
+
+static void consider (suggestion_t* suggestion, const char* name, bool is_command) {
+    int distance = sdist(name, suggestion->typed);
+    if (distance < suggestion->distance) {
+        suggestion->distance = distance;
+        scpy(suggestion->best, name, sizeof(suggestion->best));
+        suggestion->best_is_command = is_command;
+    }
+}
+
+// fs_list() calls this for each file in /bin/: an app is a name to consider too, without its
+// ".aer" ("hello.aer" -> "hello")
+static void consider_app (const char* name, bool is_dir, uint32_t size, void* context) {
+    (void)size;
+    size_t length = slen(name);
+    if (is_dir || !aer_is_program_name(name, length) || length - 4 >= FS_NAME_MAX) {
+        return;
+    }
+    char app[FS_NAME_MAX];
+    memcpy(app, name, length - 4);
+    app[length - 4] = '\0';
+    consider(context, app, false);
+}
+
+// The first word isn't a command, an app or AerLang: say so, and suggest the command or app it
+// is most like, if one is close (one letter out for a short name of 3 letters or fewer, two
+// for a longer one). "dle" -> "Did you mean DEL?"
+static void unknown_command (const char* word) {
+    int allowed = slen(word) <= 3 ? 1 : 2;
+    suggestion_t suggestion = { word, "", false, allowed + 1 };
+    for (size_t i = 0; i < command_count; i++) {
+        consider(&suggestion, commands[i].name, true);
+    }
+    fs_list("/bin/", consider_app, &suggestion);
+
+    if (suggestion.best[0] == '\0') {
+        explain_say(PROBLEM_UNKNOWN_COMMAND, word, "Unrecognised command: %s", word);
+        return;
+    }
+    if (suggestion.best_is_command) {
+        strupr(suggestion.best);
+    }
+    explain_say(PROBLEM_UNKNOWN_COMMAND, word, "Unrecognised command: %s. Did you mean %s?",
+                word, suggestion.best);
+}
+
+// ---- running a line -------------------------------------------------------------------------------
+
+// run one line the user typed. The first word decides what it is, in this order:
+//     a command         "mkf notes.txt hello there"  ->  MKF, with "notes.txt hello there"
+//     an app            "hello"                      ->  /bin/hello.aer
+//     AerLang           "let x = 2", "x * 10"        ->  run in the shell (lang/aer_interp.c)
+// and anything else is an unknown command
 void HandleInput (char* in) {
     // drop the spaces at both ends, so "  la  " works too
     char* line = trim(in);
     if (line[0] == '\0') {
         return; // an empty line: nothing to do
     }
+
+    // a copy of the whole line, in case it is AerLang: splitting off the first word cuts it up
+    char whole_line[CLI_INPUT_MAX];
+    scpy(whole_line, line, sizeof(whole_line));
 
     char* arguments;
     char* command_name = split_first_word(line, &arguments);
@@ -1727,9 +2108,10 @@ void HandleInput (char* in) {
         running_command = NULL;
     } else if (run_program(command_name, arguments)) {
         // it was an app, e.g. "hello" ran /bin/hello.aer
+    } else if (aer_shell_wants(whole_line)) {
+        run_code(whole_line);
     } else {
-        prtf("> %s\n", command_name);
-        prtf("Unrecognised command, please try again.\n");
+        unknown_command(command_name);
     }
 
     // A program drew over the whole screen (the editor, the error screen...): bring the terminal
@@ -1737,4 +2119,12 @@ void HandleInput (char* in) {
     if (vga_clear_count != clears_before) {
         cli_rend_main();
     }
+}
+
+void cli_capture (const char* line, char* out, size_t size) {
+    char copy[CLI_INPUT_MAX];
+    scpy(copy, line, sizeof(copy)); // HandleInput cuts the line up, and `line` is the caller's
+    console_capture_begin(out, size);
+    HandleInput(copy);
+    console_capture_end();
 }

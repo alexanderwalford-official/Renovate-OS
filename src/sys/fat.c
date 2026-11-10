@@ -192,6 +192,7 @@ const char* fs_strerror (int error) {
         case FS_ERR_IO: return "disk read / write error";
         case FS_ERR_BUSY: return "it is the current directory";
         case FS_ERR_NO_MEMORY: return "out of memory";
+        case FS_ERR_READ_ONLY: return "it can be read but not changed";
         default: return "unknown error";
     }
 }

@@ -10,9 +10,47 @@ The interpreter runs inside the kernel, so a program can use the screen, keyboar
 | `hello` | runs `hello.aer` from the current directory, or from `/bin/` |
 | `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
 | `run hello.aer` | runs it through the process manager like any other AerLang instruction |
-| `aer` | the AerLang prompt: type code and see the result straight away, `exit` to leave |
+| `let x = 5`, `x * 2` | AerLang right at the terminal's prompt (see "At the prompt" below) |
+| `aer` | a prompt where every line is code, even one that looks like a command, `exit` to leave |
 
 Press **Ctrl+C** to stop a program that is stuck in a loop.
+
+### At the prompt
+
+A line typed at the terminal that isn't a command or an app is run as AerLang, in one session
+that lasts until you log out, so variables and functions are kept from line to line. The value
+of an expression is shown:
+
+```
+alex@0//home/alex/: let price = 12
+alex@0//home/alex/: price * 3
+36
+alex@0//home/alex/: func twice(n)
+   ... return n * 2
+   ... end
+alex@0//home/alex/: twice(price)
+24
+```
+
+A line that opens a block (`if`, `for`, `while` or `func` without its `end`) carries on over
+more lines, with `...` as the prompt, until the block is closed (an empty line gives up). The
+first word decides what a line is: a command first, then an app, then code. A plain word that
+AerLang doesn't know (`frob`, `dle notes.txt`) is taken for a mistyped command and gets a
+suggestion, `Did you mean DEL?`. So a variable named like a command (`out`) is shown with
+`print(out)`, not by typing its name.
+
+Only at the prompt, `cmd(line)` runs a terminal command and gives back what it printed as a
+list of lines, instead of showing it: `len(cmd("la"))`, `cmd("mem")[0]`. The keyboard counts
+as unplugged while it runs, so a question the command asks gets no answer (a yes / no question
+is a no). Programs can't use `cmd()`: they have to ask before they touch your files, and a
+terminal command wouldn't.
+
+### Mistakes
+
+An unknown name gets a suggestion, from the names the program has: `unknown name 'prnt' (did
+you mean print?)`. `why` after an error explains it and shows the lines around it, and
+`why <function>` (`why gopen`) explains a built-in from the comment above the C code behind
+it. `src gopen` shows that code.
 
 AerLang used to be called RenLang, and its programs ended in `.ren`. Those still run if you
 type the name with its extension (`old.ren`), and the editor still colours them in.
@@ -130,6 +168,16 @@ encrypted file and `gopen` opens the graphics screen.
 `rdf(path)` (nil if missing) · `rdb(path)` · `wrf(path, text)` ·
 `apf(path, text)` · `isf(path)` · `delf(path)` ·
 `la(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
+
+`rdf("notes.txt@2")` (and `rdb`, `isf`) reach an old version of a file in a home folder (see
+VERS in the manual). A program asks the person at the keyboard before it reads anything
+outside `/bin/`, `/docs/`, `/src/`, `/sys/`, its own folder and the files named on its
+command line, and before it changes any file at all. If the answer is no, the function fails
+as if the file wasn't there (nil or false), and `/acc/` is never allowed. The rules are in
+`src/sys/perm.h`.
+
+**At the prompt only**
+`cmd(line)` runs a terminal command and gives back what it printed, as a list of lines
 
 **Encrypted files** (AES-256 with a password, the file keeps its name)
 `enc(path, password)` · `dec(path, password)` (both true if it worked) ·

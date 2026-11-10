@@ -10,7 +10,8 @@ AerLang is the programming language built into AerOS. A program is a text file e
 | --- | --- |
 | `hello` | run `hello.aer` from here, or from `/bin/` |
 | `hello.aer a b` | the same, with `args` set to `["a", "b"]` |
-| `aer` | the prompt: type code and see the result, `exit` to leave |
+| `2 + 2`, `let x = 5` | right at the terminal's prompt: see [The prompt speaks AerLang](shell.md) |
+| `aer` | a prompt where every line is code, `exit` to leave |
 | `edt app.aer` then Ctrl+R | write a program and run it |
 
 **Ctrl+C** stops a program that is stuck.
@@ -96,7 +97,9 @@ orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`
 
 **Files:** `rdf(path)` (nil if missing), `rdb(path)`, `wrf(path, text)`,
 `apf(path, text)`, `isf(path)`, `delf(path)`, `la(dir)`,
-`cwd()`.
+`cwd()`. A program [asks you first](perms.md) before it reads your files or changes any
+file, and if you say no the function fails as if the file wasn't there. `rdf("notes.txt@2")`
+reads an [old version](versions.md) of a file.
 
 The names are built like the terminal's commands: `rd` read, `wr` write, `ap` append,
 `del` delete, `is` "is there one?", then `f` file or `b` bytes. So `rdf` reads a file and
@@ -111,7 +114,12 @@ The names are built like the terminal's commands: `rd` read, `wr` write, `ap` ap
 `sysinfo()` gives everything AerOS knows about the computer as a list of
 `[group, name, value]`, e.g. `["Processor", "Speed", "about 2400 MHz"]`.
 `queue("hello.aer")` adds a program (with its arguments) to the queue that `go` runs, and
-gives back how many are queued.
+gives back how many are queued. At the prompt only, `cmd("la")` runs a terminal command and
+gives back what it printed, as a list of lines.
+
+When a name isn't known, the error suggests the closest one that is:
+`unknown name 'prnt' (did you mean print?)`. `why` after an error shows the lines around it,
+and `why gopen` (or any built-in's name) explains a function from the C code behind it.
 
 **Animation:** `progress(x, y, width, done, total, colour)` draws a bar like
 `[#####.....]  50%`, `spinner(x, y, style, colour)` draws a spinner as it should look right

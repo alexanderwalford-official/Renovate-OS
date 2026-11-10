@@ -23,7 +23,12 @@
 
     Errors. aer_error() longjmps back to the setjmp in run_program(), straight out of however
     deep the program was. Everything it allocated is in the aer_alloc list and freed in one go
-    by session_end(), so nothing leaks however the program ends.
+    by session_end(), so nothing leaks however the program ends. WHY can explain the error
+    afterwards (aer_error hands it to sys/explain.c).
+
+    The shell. The terminal's prompt runs AerLang too, in a session of its own that lasts from
+    logging in to logging out, and is put aside while a program runs: see "The shell" near the
+    end of this file.
 */
 
 #include "aer_internal.h"
@@ -36,6 +41,8 @@
 #include "../drivers/video/VGA_linear.h"
 #include "../drivers/input/IO.h"
 #include "../sys/f_sys.h"
+#include "../sys/explain.h"
+#include "../sys/perm.h"
 
 #define STACK_RESERVE (32 * 1024) // stop a runaway program before it uses the last 32KB of stack
 
@@ -144,21 +151,39 @@ const char* aer_intern (const char* text, size_t length) {
 
 // ---- errors -----------------------------------------------------------------------------------
 
-// print "Error in <file> on line <n>: <message>" in red, then jump out of the program
+// print "Error in <file> on line <n>: <message>" in red, then jump out of the program.
+// WHY can explain it afterwards: it is handed to explain_program() (sys/explain.c) with the
+// program's code, so WHY can show the lines around the error
 void aer_error (int line, const char* format, ...) {
+    char message[160];
     va_list ap;
+    va_start(ap, format);
+    vsnprintf(message, sizeof(message), format, ap);
+    va_end(ap);
+
     enum color old_fg = console_fg;
     colour(LIGHT_RED, console_bg);
-    if (line > 0) {
-        prtf("Error in %s on line %d: ", aer->name, line);
+    if (aer->shell) {
+        // code typed at the prompt: it is right there on the screen, so no name is needed
+        if (line > 1) {
+            prtf("Error on line %d: %s\n", line, message);
+        } else {
+            prtf("Error: %s\n", message);
+        }
+    } else if (line > 0) {
+        prtf("Error in %s on line %d: %s\n", aer->name, line, message);
     } else {
-        prtf("Error in %s: ", aer->name);
+        prtf("Error in %s: %s\n", aer->name, message);
     }
-    va_start(ap, format);
-    vprtf(format, ap);
-    va_end(ap);
-    prtf("\n");
     colour(old_fg, console_bg);
+
+    // WHY shows the code around the error, except for a single line typed at the prompt
+    // (it's the line just typed, so there's nothing to add)
+    const char* code = aer->source;
+    if (aer->shell && code != NULL && strchr(code, '\n') == NULL) {
+        code = NULL;
+    }
+    explain_program(aer->shell ? NULL : aer->name, line, message, code);
     longjmp(aer->error, 1);
 }
 
@@ -448,11 +473,43 @@ static void declare (const char* name, value_t value) {
     scope_set(aer->locals ? aer->locals : &aer->globals, name, value);
 }
 
+// the closest name in a scope to `name`, if it is closer than *best_distance (see closest_name)
+static void closest_in (const aer_scope_t* scope, const char* name, const char** best, int* best_distance) {
+    for (int i = 0; i < scope->count; i++) {
+        int distance = sdist(scope->vars[i].name, name);
+        if (distance < *best_distance) {
+            *best = scope->vars[i].name;
+            *best_distance = distance;
+        }
+    }
+}
+
+// For an "unknown name" error: the name the program does have (a variable, a function or a
+// built-in) that is most like the one it used, so the error can ask "did you mean print?".
+// Writes " (did you mean print?)" into `out`, or "" if no name is close: one character out for
+// a short name (3 letters or fewer), two for a longer one
+static void did_you_mean (const char* name, char* out, size_t size) {
+    int allowed = slen(name) <= 3 ? 1 : 2;
+    int best_distance = allowed + 1;
+    const char* best = NULL;
+    if (aer->locals) {
+        closest_in(aer->locals, name, &best, &best_distance);
+    }
+    closest_in(&aer->globals, name, &best, &best_distance);
+    if (best != NULL) {
+        sfmt(out, size, " (did you mean %s?)", best);
+    } else {
+        out[0] = '\0';
+    }
+}
+
 // the value of a variable, retained because the caller gets its own reference
 static value_t lookup (const char* name, int line) {
     aer_var_t* var = find_variable(name);
     if (var == 0) {
-        aer_error(line, "unknown name '%s'", name);
+        char hint[48];
+        did_you_mean(name, hint, sizeof(hint));
+        aer_error(line, "unknown name '%s'%s", name, hint);
     }
     aer_retain(var->value);
     return var->value;
@@ -692,7 +749,12 @@ static void assign (aer_node_t* target, value_t value) {
         aer_var_t* var = find_variable(target->name);
         if (var == 0) {
             aer_release(value);
-            aer_error(target->line, "unknown variable '%s' (make it with let)", target->name);
+            char hint[48];
+            did_you_mean(target->name, hint, sizeof(hint));
+            if (hint[0] == '\0') {
+                scpy(hint, " (make it with let)", sizeof(hint));
+            }
+            aer_error(target->line, "unknown variable '%s'%s", target->name, hint);
         }
         aer_release(var->value);
         var->value = value;
@@ -880,9 +942,47 @@ static void define_functions (aer_node_t* program) {
 
 static aer_state_t state;
 
+// ---- the shell's session, put away while a program runs ----------------------------------------
+//
+// The terminal runs lines that aren't commands as AerLang, all in one session that lasts from
+// logging in to logging out (see "The shell" below). But only one session can be the running
+// one: `state`, `names` and `blocks` above. So when a program starts, the shell's session is
+// copied out of them into shell_copy, and copied back when the program ends. The program gets a
+// clean slate and the shell's variables are all still there afterwards.
+//
+// (A program can't start another program, so one copy is all that's ever needed.)
+
+typedef struct {
+    aer_state_t state;
+    name_entry_t* names[NAME_BUCKETS];
+    aer_block_t* blocks;
+} session_copy_t;
+
+static bool shell_started = false;    // someone is logged in, and the shell has a session
+static bool shell_put_away = false;   // a program is running: the shell's session is in shell_copy
+static session_copy_t shell_copy;
+
+static void put_shell_away (void) {
+    shell_copy.state = state;
+    memcpy(shell_copy.names, names, sizeof(names));
+    shell_copy.blocks = blocks;
+    shell_put_away = true;
+}
+
+static void bring_shell_back (void) {
+    state = shell_copy.state;
+    memcpy(names, shell_copy.names, sizeof(names));
+    blocks = shell_copy.blocks;
+    aer = &state;
+    shell_put_away = false;
+}
+
 // a clean slate for a program: no variables, no allocations, then the builtins, the constants
 // and args (the words typed after the program's name)
 static void session_begin (const char* name, const char* args) {
+    if (shell_started && !shell_put_away) {
+        put_shell_away();
+    }
     memset(&state, 0, sizeof(state));
     memset(names, 0, sizeof(names));
     blocks = 0;
@@ -919,11 +1019,15 @@ static void session_begin (const char* name, const char* args) {
     aer_define_global("args", list);
 }
 
-// leave graphics mode if the program used it, and free everything it allocated
+// leave graphics mode if the program used it, and free everything it allocated. Then the
+// shell's session (if it was put away for the program) is the running one again
 static void session_end (void) {
     aer_builtins_finish();
     aer_free_all();
     aer = 0;
+    if (shell_put_away) {
+        bring_shell_back();
+    }
 }
 
 // lex, parse and run source. Kept out of run_program (noinline) so none of its local variables
@@ -939,6 +1043,7 @@ __attribute__((noinline)) static void parse_and_run (const char* source) {
 // run source in the current session. setjmp returns 0 the first time, then 1 if aer_error()
 // jumps back here, or 2 if the program called exit()
 static int run_program (const char* source) {
+    aer->source = source;
     int jumped = setjmp(aer->error);
     if (jumped == 0) {
         parse_and_run(source);
@@ -961,8 +1066,9 @@ bool aer_is_program_name (const char* name, size_t length) {
     return strncasecmp(extension, ".aer", 4) == 0 || strncasecmp(extension, ".ren", 4) == 0;
 }
 
-// look for a program: as given, then with ".aer" added, in the current directory and then /bin/
-static char* find_program (const char* path, char* name_out, size_t name_size) {
+// look for a program: as given, then with ".aer" added, in the current directory and then /bin/.
+// Its source code (free() it), or NULL. folder_out and name_out get where it was found
+static char* find_program (const char* path, char* folder_out, size_t folder_size, char* name_out, size_t name_size) {
     char dir[FS_PATH_MAX];
     char name[FS_NAME_MAX];
     const char* folders[2] = { 0, "/bin/" };
@@ -982,6 +1088,7 @@ static char* find_program (const char* path, char* name_out, size_t name_size) {
             const char* folder = folders[f] ? folders[f] : dir;
             char* source = fs_read_f(folder, name);
             if (source) {
+                scpy(folder_out, folder, folder_size);
                 scpy(name_out, name, name_size);
                 return source;
             }
@@ -991,24 +1098,161 @@ static char* find_program (const char* path, char* name_out, size_t name_size) {
 }
 
 int aer_run_file (const char* path, const char* args) {
+    char folder[FS_PATH_MAX];
     char name[FS_NAME_MAX];
-    char* source = find_program(path, name, sizeof(name));
+    char* source = find_program(path, folder, sizeof(folder), name, sizeof(name));
     if (source == 0) {
-        prtf("Program not found: %s\n", path);
+        explain_say(PROBLEM_NOT_FOUND, path, "Program not found: %s", path);
         return -1;
     }
+    // while it runs, it has to ask before it touches your files (sys/perm.h)
+    perm_program_started(folder, name, args);
     int result = aer_run_source(source, name, args);
+    perm_program_ended();
     free(source);
     return result;
 }
 
-// the "aer" prompt: one session for the whole time, so variables and functions typed on one
-// line are still there on the next
+
+// ---- the shell: AerLang at the terminal's prompt -----------------------------------------------
+//
+// A line typed at the prompt that isn't a command or an app is AerLang, run in the shell's
+// session, which lasts until logging out. So the terminal is a programming language too:
+//
+//     guest@0//: let notes = 0
+//     guest@0//: for f in la() do if find(f, ".txt") >= 0 then notes = notes + 1 end end
+//     guest@0//: notes
+//     3
+//
+// The value of an expression is shown (like "notes" above). A line that opens a block (an if,
+// for, while or func without its end) carries on over more lines, see aer_open_blocks.
+//
+// Every line's code is kept until logging out (a function made on one line is used on later
+// ones), so a very long session slowly fills memory: logging out and in again empties it.
+
+void aer_shell_start (void) {
+    if (shell_started) {
+        return;
+    }
+    session_begin("prompt", 0);
+    aer->repl = true;    // show the value of an expression
+    aer->shell = true;   // cmd() works (see aer_builtins.c)
+    shell_started = true;
+}
+
+// how many lines of shell code are running right now (more than one when cmd() runs code), and
+// whether logging out asked for the session to end meanwhile
+static int shell_lines_running = 0;
+static bool shell_stop_wanted = false;
+
+void aer_shell_stop (void) {
+    if (!shell_started || shell_put_away) {
+        return; // (not while a program is running: its session is the running one)
+    }
+    if (shell_lines_running > 0) {
+        // cmd("out") logs out from inside a line of code: the session can't be freed under the
+        // line's feet, so it ends once the line is done (see aer_shell_run)
+        shell_stop_wanted = true;
+        return;
+    }
+    shell_started = false;
+    shell_stop_wanted = false;
+    session_end();
+}
+
+// the global variable called text (length characters, not interned), or NULL
+static aer_var_t* global_named (const char* text, size_t length) {
+    for (int i = 0; i < aer->globals.count; i++) {
+        const char* name = aer->globals.vars[i].name;
+        if (strncmp(name, text, length) == 0 && name[length] == '\0') {
+            return &aer->globals.vars[i];
+        }
+    }
+    return NULL;
+}
+
+// can this character be in a word that looks like part of a command ("notes.txt", "/bin")?
+static bool command_word_character (char c) {
+    return isalnum((unsigned char)c) || c == '_' || c == '.' || c == '/';
+}
+
+bool aer_shell_wants (const char* line) {
+    if (!shell_started || shell_put_away) {
+        return false; // (while a program runs, its session is the running one)
+    }
+    while (*line == ' ') {
+        line++;
+    }
+    // a line that starts with anything but a letter (a number, a quote, a bracket) is code
+    if (!isalpha((unsigned char)*line) && *line != '_') {
+        return true;
+    }
+
+    // the first word, and what comes after it
+    const char* word = line;
+    const char* p = line;
+    while (command_word_character(*p)) {
+        p++;
+    }
+    size_t length = (size_t)(p - word);
+    while (*p == ' ') {
+        p++;
+    }
+
+    // "x = 1", "f(2)", "list[0]": the word is followed by something only code has
+    bool next_could_be_a_command = *p == '\0' || command_word_character(*p) || *p == '"' || *p == '-';
+    if (!next_could_be_a_command) {
+        return true;
+    }
+    // It looks like a command: "frob", "dle notes.txt". It is still code if the word is one
+    // AerLang knows: a keyword ("let x = 1", "for ...") or a variable made at the prompt ("x").
+    // Not a function though: "print hello" is more likely a mistake than code
+    if (aer_is_keyword(word, length)) {
+        return true;
+    }
+    aer_var_t* variable = global_named(word, length);
+    return variable != NULL && variable->value.type != V_FUNC && variable->value.type != V_NATIVE;
+}
+
+void aer_shell_run (const char* code) {
+    if (!shell_started || shell_put_away) {
+        return;
+    }
+    // Code at the prompt can run more code at the prompt: cmd("1 + 1") runs a terminal command,
+    // which is AerLang. So whatever was running is put back afterwards: where an error jumps to,
+    // the code, and the function that was running (if any)
+    jmp_buf outer_error;
+    memcpy(outer_error, aer->error, sizeof(jmp_buf));
+    const char* outer_source = aer->source;
+    aer_scope_t* outer_locals = aer->locals;
+
+    aer->locals = 0;     // a line typed at the prompt runs at the top level
+    shell_lines_running++;
+    run_program(code);   // (exit() at the prompt has nothing to end, so it is the same as an error)
+    shell_lines_running--;
+
+    memcpy(aer->error, outer_error, sizeof(jmp_buf));
+    aer->source = outer_source;
+    aer->locals = outer_locals;
+    aer_give_screen_back(); // a line that used graphics gives the screen back when it is done
+
+    if (shell_stop_wanted && shell_lines_running == 0) {
+        aer_shell_stop();
+    }
+}
+
+// AER: a prompt where every line is AerLang, even one that looks like a command. It uses the
+// shell's session, so the variables are the same ones the terminal's prompt sees
 void aer_repl (void) {
+    if (console_capturing()) {
+        return; // run by cmd(), where nothing can be typed: it would wait for ever
+    }
     char line[256];
     prtf("AerLang - type code to run it, \"exit\" to leave.\n");
-    session_begin("prompt", 0);
-    aer->repl = true;
+    bool own_session = !shell_started; // (only if the terminal hasn't started the shell)
+    if (own_session) {
+        aer_shell_start();
+    }
     for (;;) {
         // if the last line ended without a newline (write() does that), start a fresh one
         uint8_t x, y;
@@ -1023,8 +1267,9 @@ void aer_repl (void) {
         if (scmp(trim(line), "exit") == 0) {
             break;
         }
-        run_program(line);
-        aer->locals = 0; // in case an error happened inside a function
+        aer_shell_run(line);
     }
-    session_end();
+    if (own_session) {
+        aer_shell_stop();
+    }
 }
