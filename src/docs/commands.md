@@ -95,6 +95,20 @@ go
 | `cls` | clear the screen |
 | `ech <text>` | print some text |
 
+## The network
+
+| Command | Does |
+| --- | --- |
+| `net` | the card, the address, and what was sent and kept out |
+| `net ip <address> <gateway> <dns>` | set AerOS's address: `net ip 10.0.2.15/24 10.0.2.2 10.0.2.3` |
+| `fw` | what the firewall allows (nothing, to start with) |
+| `fw allow <address or name> <port>` | allow one computer on one port, with a shared password |
+| `fw del <n>` | block it again |
+| `msg <address> <port> <text>` | send a sealed message |
+| `lsn <port>` | show the messages that arrive on a port, until Esc |
+
+See [The network](network.md).
+
 ## The computer
 
 | Command | Does |

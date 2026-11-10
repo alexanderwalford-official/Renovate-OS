@@ -117,6 +117,10 @@ The names are built like the terminal's commands: `rd` read, `wr` write, `ap` ap
 gives back how many are queued. At the prompt only, `cmd("la")` runs a terminal command and
 gives back what it printed, as a list of lines.
 
+**Network:** `nsend(host, port, text)` sends a sealed message to a computer the firewall
+allows (true if it was sent), and `nrecv(port, ms)` waits up to `ms` milliseconds for one:
+the message, or nil. See [The network](network.md).
+
 When a name isn't known, the error suggests the closest one that is:
 `unknown name 'prnt' (did you mean print?)`. `why` after an error shows the lines around it,
 and `why gopen` (or any built-in's name) explains a function from the C code behind it.

@@ -37,4 +37,11 @@ uint16_t pci_io_bar (const pci_device_t* dev, int bar);
 // let the device answer on its I/O ports and read / write memory by itself (bus mastering, for DMA)
 void pci_enable_io_and_dma (const pci_device_t* dev);
 
+// the memory address a device's base address register points at (its registers appear there,
+// "memory mapped I/O"), 0 if it isn't a 32 bit memory BAR
+uint32_t pci_mem_bar (const pci_device_t* dev, int bar);
+
+// let the device answer at its memory address and do DMA (for memory mapped cards like the e1000)
+void pci_enable_memory_and_dma (const pci_device_t* dev);
+
 #endif /* PCI_H */

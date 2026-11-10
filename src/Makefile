@@ -45,6 +45,10 @@ QEMU_DISK = -drive file=$(DISK),format=raw,if=ide,index=0
 AUDIO = pa
 QEMU_AUDIO = -audiodev $(AUDIO),id=snd0 -device AC97,audiodev=snd0
 
+# an Intel e1000 network card on QEMU's own little network, where this computer is 10.0.2.2.
+# UDP port 5001 here is passed on to AerOS's port 5000, so tools/aernet.py can send to it
+QEMU_NET = -nic user,model=e1000,hostfwd=udp::5001-:5000
+
 .PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev FORCE
 
 all: main.iso
@@ -146,20 +150,20 @@ disk-put: $(DISK)
 # boot the ISO through GRUB with the disk attached (terminal output is mirrored to this console via the serial port)
 # -boot d starts from the CD, otherwise the BIOS would try the (non bootable) disk first
 run: main.iso $(DISK)
-	$(QEMU) -cdrom main.iso $(QEMU_DISK) -boot d -smp 1 -serial stdio $(QEMU_AUDIO)
+	$(QEMU) -cdrom main.iso $(QEMU_DISK) -boot d -smp 1 -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot the kernel directly with the disk attached, skipping GRUB
 run-kernel: main.elf $(DISK)
-	$(QEMU) -kernel main.elf $(QEMU_DISK) -serial stdio $(QEMU_AUDIO)
+	$(QEMU) -kernel main.elf $(QEMU_DISK) -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot without a disk (temporary VFS mode)
 run-vfs: main.iso
-	$(QEMU) -cdrom main.iso -smp 1 -serial stdio $(QEMU_AUDIO)
+	$(QEMU) -cdrom main.iso -smp 1 -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot the ISO like a modern UEFI PC (OVMF firmware). The ISO only contains UEFI boot files when
 # grub-efi-amd64-bin is installed (make setup-dev), and the 64 bit firmware needs the 64 bit QEMU
 run-uefi: main.iso $(DISK)
-	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom main.iso $(QEMU_DISK) -m 256 -serial stdio $(QEMU_AUDIO)
+	qemu-system-x86_64 -bios /usr/share/ovmf/OVMF.fd -cdrom main.iso $(QEMU_DISK) -m 256 -serial stdio $(QEMU_AUDIO) $(QEMU_NET)
 
 # boot the ISO as a hard drive image
 run-img: main.iso

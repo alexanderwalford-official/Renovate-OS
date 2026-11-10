@@ -69,6 +69,7 @@ EMBEDDED(docs_why_md)
 EMBEDDED(docs_shell_md)
 EMBEDDED(docs_versions_md)
 EMBEDDED(docs_perms_md)
+EMBEDDED(docs_network_md)
 EMBEDDED(docs_sample_htm)
 
 static const struct {
@@ -104,6 +105,7 @@ static const struct {
     FILE_ENTRY("/docs/", "shell.md", docs_shell_md, true),
     FILE_ENTRY("/docs/", "versions.md", docs_versions_md, true),
     FILE_ENTRY("/docs/", "perms.md", docs_perms_md, true),
+    FILE_ENTRY("/docs/", "network.md", docs_network_md, true),
     FILE_ENTRY("/docs/", "sample.htm", docs_sample_htm, true),
 };
 

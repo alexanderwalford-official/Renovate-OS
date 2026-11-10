@@ -36,6 +36,7 @@
 #include "apps.h"
 #include "../lib/crypto.h"
 #include "../drivers/audio/ac97.h"
+#include "net.h"
 
 // the value a multiboot bootloader leaves in eax (not the same as the 0x1BADB002 in our header)
 #define MULTIBOOT_BOOTLOADER_MAGIC 0x2BADB002
@@ -208,9 +209,15 @@ int init_boot (void) {
     prtf("%s Crypto self-test (SHA-256, HMAC, PBKDF2, AES-256)\n", crypto_selftest() ? "[ OK ]" : "[FAIL]");
     // a missing sound card isn't a problem, only PLY needs one
     if (ac97_init()) {
-        prtf("[ OK ] Sound: %s\n\n", ac97_name());
+        prtf("[ OK ] Sound: %s\n", ac97_name());
     } else {
-        prtf("[WARN] No sound card found (AerOS supports AC'97), PLY won't work\n\n");
+        prtf("[WARN] No sound card found (AerOS supports AC'97), PLY won't work\n");
+    }
+    // the firewall is always on: nothing is sent or let in that a rule (FW ALLOW) doesn't allow
+    if (net_init()) {
+        prtf("[ OK ] Network: %s, firewall on\n\n", net_card_name());
+    } else {
+        prtf("[INFO] No network card found (AerOS supports the Intel e1000)\n\n");
     }
 
     // initialise the file system (the disk, or the temporary one if there is no disk)

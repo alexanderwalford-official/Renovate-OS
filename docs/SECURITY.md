@@ -364,6 +364,10 @@ Being clear about the limits is part of good security:
   the next boot ask for a new first account, which means anyone who can log in, or who can
   write to the disk, can take the computer over. Encrypted files stay safe, because their keys
   come from their own passwords, not from the accounts.
+* **Network messages can be replayed.** Sealed messages ([NETWORK.md](NETWORK.md)) can't be
+  read or changed, but one recorded on the way and sent again is accepted again, and the
+  firewall's keys are kept in `/acc/firewall`, which programs can't read but anyone at the
+  terminal can.
 * **Program permissions are by path.** An "always" answer in `/acc/perms` is for a program's
   path, so another program saved in its place gets the same permission. No program can write
   to `/acc/`, but anyone at the terminal can.

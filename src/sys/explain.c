@@ -26,6 +26,7 @@
 #include "fcrypt.h"
 #include "sound.h"
 #include "video.h"
+#include "net.h"
 #include "terminal/t_int.h"
 #include "../lib/primary_definitions.h"
 
@@ -184,6 +185,42 @@ static const explanation_t explanations[PROBLEM_COUNT] = {
         "@cli_versions on its own lists the files in your home folder that have versions.",
         "versions_keep", NULL,
     },
+    [PROBLEM_NO_NETWORK] = {
+        "There is no network card AerOS can use.",
+        "AerOS has a driver for the Intel e1000 (drivers/net/e1000.c): the card QEMU gives a PC "
+        "unless told otherwise, and one VirtualBox can pretend to be. It is looked for on the "
+        "PCI bus as AerOS starts.",
+        "In QEMU, add one: -nic user,model=e1000 (make run does). In VirtualBox, pick an Intel "
+        "PRO/1000 adapter.",
+        "e1000_init", NULL,
+    },
+    [PROBLEM_BLOCKED] = {
+        "The firewall blocks that: it has no rule for that address and port.",
+        "The firewall is always on, and starts with everything blocked both ways. Nothing is "
+        "sent to a computer, or let in from it, until you allow its address (or name) and port "
+        "yourself, and even then only messages sealed with the password you gave are let in.",
+        "@cli_firewall ALLOW <address> <port> allows a computer (it asks for the password both "
+        "ends will use). @cli_firewall lists what is allowed, and @cli_network shows the last "
+        "thing that was blocked.",
+        "net_send", NULL,
+    },
+    [PROBLEM_NO_ANSWER] = {
+        "Nothing answered.",
+        "Before sending to an address, AerOS asks (ARP) which network card has it, or which has "
+        "the gateway's, for a computer on another network. For a name, it asks the DNS server. "
+        "Nothing answered in time: an address may be wrong, or the computer off.",
+        "@cli_network shows AerOS's address, gateway and DNS server, and @cli_network IP changes "
+        "them. In QEMU they are usually 10.0.2.15, 10.0.2.2 and 10.0.2.3.",
+        "find_mac", NULL,
+    },
+    [PROBLEM_UNKNOWN_HOST] = {
+        "The DNS server doesn't know that name.",
+        "A name like example.com is turned into an address by asking a DNS server (@cli_network "
+        "shows which). It said there is no such name, or gave no IPv4 address for it.",
+        "Check the spelling, or allow the computer by its address instead: @cli_firewall ALLOW "
+        "10.0.2.2 5000.",
+        "net_lookup", NULL,
+    },
     [PROBLEM_PROGRAM] = {
         NULL, // the error message itself is shown instead
         "AerLang stops a program at the first thing it can't do, and says which line it was on.",
@@ -233,6 +270,16 @@ problem_t explain_video_problem (int video_error) {
         case VIDEO_ERR_NO_SCREEN: return PROBLEM_NO_SCREEN;
         case VIDEO_ERR_NO_MEMORY: return PROBLEM_NO_MEMORY;
         default:                  return PROBLEM_OTHER;
+    }
+}
+
+problem_t explain_net_problem (int net_error) {
+    switch (net_error) {
+        case NET_ERR_NO_CARD:   return PROBLEM_NO_NETWORK;
+        case NET_ERR_BLOCKED:   return PROBLEM_BLOCKED;
+        case NET_ERR_NO_ANSWER: return PROBLEM_NO_ANSWER;
+        case NET_ERR_NO_NAME:   return PROBLEM_UNKNOWN_HOST;
+        default:                return PROBLEM_OTHER;
     }
 }
 

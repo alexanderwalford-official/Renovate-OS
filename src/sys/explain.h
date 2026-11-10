@@ -55,6 +55,10 @@ typedef enum {
     PROBLEM_NO_SOUND_CARD,
     PROBLEM_NOT_PLAYABLE,     // PLY on a file it can't play
     PROBLEM_NO_VERSIONS,      // VERS or UNDO on a file with no old versions
+    PROBLEM_NO_NETWORK,       // no network card
+    PROBLEM_BLOCKED,          // the firewall has no rule for an address and port
+    PROBLEM_NO_ANSWER,        // nobody answered (ARP or DNS)
+    PROBLEM_UNKNOWN_HOST,     // the DNS server knows no such name
     PROBLEM_PROGRAM,          // an AerLang program stopped with an error
     PROBLEM_TYPED_CODE,       // AerLang typed at the prompt stopped with an error
     PROBLEM_OTHER,            // something WHY has no explanation for (yet)
@@ -77,6 +81,7 @@ void explain_say_fs (int fs_error, const char* subject, const char* format, ...)
 problem_t explain_fcrypt_problem (int fcrypt_error);
 problem_t explain_sound_problem (int sound_error);
 problem_t explain_video_problem (int video_error);
+problem_t explain_net_problem (int net_error);     // and NET_ERR_ (sys/net.h)
 
 // remember that an AerLang program stopped: its name (NULL for code typed at the prompt), the
 // line (0 if not known), the error message, and its source code (NULL if there is none worth

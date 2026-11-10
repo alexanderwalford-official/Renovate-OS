@@ -98,6 +98,12 @@ After encrypting, the old unscrambled contents are overwritten with zeros on the
 just marked as free space. Any [old versions](versions.md) AerOS kept of the file are zeroed
 and deleted too: they are exactly the copies the encryption is there to protect.
 
+## The network
+
+Everything AerOS sends over a network is sealed the same way, with a password both ends know,
+and the firewall blocks everything until you allow a computer yourself. See
+[The network](network.md).
+
 ## Programs ask first
 
 An app can't read your files, or change any file, without asking you first, and no app can

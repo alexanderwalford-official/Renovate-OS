@@ -179,6 +179,10 @@ as if the file wasn't there (nil or false), and `/acc/` is never allowed. The ru
 **At the prompt only**
 `cmd(line)` runs a terminal command and gives back what it printed, as a list of lines
 
+**Network** (sealed messages, to and from computers the firewall allows: see NETWORK.md)
+`nsend(host, port, text)` true if it was sent (host is an address, or a name a rule was made
+for) · `nrecv(port, ms)` wait up to ms milliseconds: the message, or nil
+
 **Encrypted files** (AES-256 with a password, the file keeps its name)
 `enc(path, password)` · `dec(path, password)` (both true if it worked) ·
 `isenc(path)` · `rdenc(path, password)` the contents, without changing the file

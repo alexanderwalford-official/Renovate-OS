@@ -6,6 +6,8 @@ in more detail. This document is the map that ties them together.
 
 The other guides go deeper into one area each:
 
+* [NETWORK.md](NETWORK.md): the network card, the firewall, and the sealed messages that are
+  all AerOS will send
 * [DIFFERENT.md](DIFFERENT.md): what sets AerOS apart (WHY and SRC, AerLang at the prompt,
   apps that ask first, files that remember), and how each one works
 * [AERLANG.md](AERLANG.md): the AerLang programming language and its built-in functions
@@ -63,6 +65,7 @@ src/
     audio/    ac97.c      the AC'97 sound card (whole sounds, or a stream topped up from the timer)
               tone.c      the PC speaker (BP)
     serial/   serial.c    COM1: everything printed on screen is copied here, for debugging
+    net/      e1000.c     the Intel e1000 network card: Ethernet frames in and out (polled)
 
   sys/                  the operating system proper
     boot.c                reads GRUB's multiboot info, prints the boot log
@@ -74,6 +77,9 @@ src/
     source.c              the read-only /src/ folder: AerOS's own source, built into it
     versions.c            old versions of the files in home folders (VERS, UNDO, notes.txt@2)
     perm.c                programs ask before they touch your files (PERM)
+    net.c                 the network stack: ARP, IPv4, UDP, DNS lookups (NET, MSG, LSN)
+    firewall.c            the firewall's rules, everything blocked until FW ALLOW
+    netseal.c             sealed messages: the only thing ever sent over the network
     explain.c             WHY and SRC: the last problem, its explanation, and reading the source
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
