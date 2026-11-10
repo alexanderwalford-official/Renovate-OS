@@ -42,6 +42,11 @@ void gfx_line(int x0, int y0, int x1, int y1, uint32_t rgb);
 // text with the built-in 8x16 font, each font pixel drawn as a scale x scale square
 void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale);
 
+// draw a block of pixels, each 0x00RRGGBB (the top 8 bits are ignored), scaled to out_w x out_h
+// with its top left corner at x, y. The block is w x h pixels, and `stride` pixels apart from one
+// row to the next (usually just w). Used for video frames, and handy for sprites
+void gfx_draw_pixels(const uint32_t* pixels, int w, int h, int stride, int x, int y, int out_w, int out_h);
+
 // the size of a BMP picture, false if the data isn't a BMP we can show (8, 24 or 32 bit, uncompressed)
 bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h);
 

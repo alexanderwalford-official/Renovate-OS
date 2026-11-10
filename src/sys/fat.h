@@ -124,6 +124,24 @@ bool fat_file_exists (const char* f_path, const char* name);
 // size (optional, may be NULL) receives the file's length in bytes
 char* fat_read_file (const char* f_path, const char* name, uint32_t* size);
 
+// READING A FILE A PIECE AT A TIME, for files too big to read whole (a video). fat_open fills in
+// a fat_file_t, then fat_read_at reads any part of it. The file's clusters form a chain, so to
+// read from the middle the chain has to be followed from the start; fat_file_t remembers the
+// cluster it last read, so reading on from there (the usual case) costs nothing extra
+typedef struct {
+    uint32_t first_cluster;   // where the file starts
+    uint32_t size;            // its length in bytes
+    uint32_t cluster;         // the cluster read last...
+    uint32_t cluster_index;   // ...and which one of the file's clusters that is (0 = the first)
+} fat_file_t;
+
+// find a file and get it ready for fat_read_at, false if there is no such file
+bool fat_open (const char* f_path, const char* name, fat_file_t* file);
+
+// read up to `length` bytes from `offset` into out. Returns how many were read: fewer than
+// length at the end of the file, 0 past it, and -1 on a disk error
+int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t length);
+
 // create a new file holding contents, name must fit the 8.3 format (FS_ERR_BAD_NAME otherwise)
 int fat_create_file (const char* f_path, const char* name, const char* contents, uint32_t length);
 

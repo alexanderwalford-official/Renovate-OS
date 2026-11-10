@@ -29,6 +29,7 @@
 #include "../sys/fcrypt.h"
 #include "../sys/sound.h"
 #include "../sys/mixer.h"
+#include "../sys/video.h"
 #include "../sys/sysinfo.h"
 #include "../sys/ui.h"
 #include "../sys/p_man.h"
@@ -808,6 +809,20 @@ static value_t bi_image_size (int argc, value_t* argv, int line) {
     return size;
 }
 
+// video(path): play an .mpg video full screen with its sound, until it ends or Esc is pressed
+// (Space pauses, Left / Right skip 5 seconds). Gives back true if it played. A video takes the
+// whole screen and hands it back to the terminal at the end, so a program drawing graphics calls
+// gopen() again afterwards
+static value_t bi_video (int argc, value_t* argv, int line) {
+    (void)argc;
+    const char* path = str_arg(argv, 0, line, "video")->data.chars;
+    if (aer->graphics) {
+        gfx_end();
+        aer->graphics = false;
+    }
+    return aer_bool(video_play_file(path) == VIDEO_OK);
+}
+
 // ---- for games: smooth drawing, held keys, and sounds that mix --------------------------------
 
 // gbuf(on): true draws everything into a back buffer, out of sight, until gshow() puts the
@@ -975,6 +990,7 @@ const aer_builtin_t aer_builtins[] = {
     { "splay", bi_splay, 1, 3 },
     { "sstop", bi_sstop, 0, 1 },
     { "isply", bi_isply, 1, 1 },
+    { "video", bi_video, 1, 1 },
 };
 
 const int aer_builtin_count = sizeof(aer_builtins) / sizeof(aer_builtins[0]);

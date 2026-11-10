@@ -8,7 +8,8 @@ The other guides go deeper into one area each:
 
 * [AERLANG.md](AERLANG.md): the AerLang programming language and its built-in functions
 * [SECURITY.md](SECURITY.md): user accounts, password hashing and file encryption
-* [AUDIO.md](AUDIO.md): the sound card driver and WAV / MP3 playback
+* [AUDIO.md](AUDIO.md): the sound card driver, WAV / MP3 playback and the mixer
+* [VIDEO.md](VIDEO.md): playing MPEG-1 videos, and keeping picture and sound together
 
 ## The idea
 
@@ -41,12 +42,13 @@ src/
     input/    IO.c        PS/2 keyboard: scancodes -> ring buffer -> getk / getln / GetSecret
               GIO.h       inb / outb port I/O and other one-instruction helpers
     video/    VGA_linear.c  the text console: VGA text mode, or 80x25 cells drawn on a framebuffer
-              gfx.c       pixels, rectangles, lines, text and BMP pictures for apps
+              gfx.c       pixels, rectangles, lines, text, BMP pictures and scaled pixel blocks for
+                          apps, drawn straight to the screen or into a back buffer (gfx_show)
               bga.c       changing resolution on QEMU / Bochs / VirtualBox graphics (RES command)
               font8x16.c  the console font
     storage/  ata.c       IDE / ATA disks, read and write sectors (PIO)
     pci/      pci.c       finding devices on the PCI bus
-    audio/    ac97.c      the AC'97 sound card
+    audio/    ac97.c      the AC'97 sound card (whole sounds, or a stream topped up from the timer)
               tone.c      the PC speaker (BP)
     serial/   serial.c    COM1: everything printed on screen is copied here, for debugging
 
@@ -59,6 +61,8 @@ src/
     fat.c                 the FAT16 / FAT32 driver
     fcrypt.c              password protected files
     sound.c               WAV / MP3 decoding and playback
+    mixer.c               up to 8 sounds at once, in the background (games, a video's sound track)
+    video.c               the .mpg video player (PLY, AerLang's video())
     sysinfo.c             everything known about the computer (CPU, memory, disks, PCI), for SYSINFO
     ui.c                  progress bars and spinners for long jobs (and AerLang's progress / spinner)
     apps.c                the built-in apps and files, copied to the disk at boot
@@ -76,6 +80,9 @@ src/
     crypto.c              SHA-256, HMAC, PBKDF2, AES-256, random numbers
     busy.c                busy(): long loops call it so a spinner can turn (see sys/ui.h)
     mp3.c + minimp3/      MP3 decoding
+    mpg.c + pl_mpeg/      MPEG-1 video and MP2 sound decoding (pl_mpeg, MIT)
+    fpu.c                 switches the x87 FPU on, for the decoders' floats
+    shim/                 <string.h> and <stdlib.h> for the decoders, pointing at the files above
     aer_comp.c            runs a process's line of code (the built-in "instructions")
 
   lang/                 the AerLang interpreter

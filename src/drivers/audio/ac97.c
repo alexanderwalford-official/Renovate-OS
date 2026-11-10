@@ -293,6 +293,11 @@ bool ac97_streaming (void) {
     return streaming;
 }
 
+uint32_t ac97_stream_delay (void) {
+    // the blocks queued ahead of the one playing, plus about half of the one playing
+    return STREAM_AHEAD * STREAM_BLOCK_FRAMES + STREAM_BLOCK_FRAMES / 2;
+}
+
 // play the whole sound, refilling the ring as the card moves along it (see the top of the file)
 bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)) {
     if (!ac97_ready || count == 0) {

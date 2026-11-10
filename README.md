@@ -52,5 +52,7 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Animations. (progress bars and spinners for long jobs like DEL, ENC and PLY, and progress / spinner / frame in AerLang)
 - [x] A program queue. (QUE lines programs up on the process stack and GO runs them one after another)
 - [x] Scrollback. (Page Up / Page Down in the terminal look back through the last 400 lines of output)
+- [x] Games groundwork. (a back buffer for smooth drawing, held keys, and a mixer playing up to 8 sounds at once)
+- [x] Video. (PLY plays MPEG-1 .mpg videos full screen with their sound in step, using pl_mpeg; see docs/VIDEO.md)
 - [ ] Ethernet network driver.
 - [ ] More in the pipeline coming soon..

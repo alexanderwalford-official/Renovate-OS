@@ -587,6 +587,48 @@ char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
     return copy;
 }
 
+bool fs_open (const char* path, fs_file_t* file) {
+    char folder[FS_PATH_MAX];
+    char name[FS_NAME_MAX];
+    if (!fs_split_path(path, folder, sizeof(folder), name, sizeof(name))) {
+        return false;
+    }
+    file->on_disk = on_disk();
+    if (file->on_disk) {
+        if (!fat_open(folder, name, &file->fat)) {
+            return false;
+        }
+        file->size = file->fat.size;
+        return true;
+    }
+    file->vfs_slot = mem_find_file(folder, name);
+    if (file->vfs_slot < 0) {
+        return false;
+    }
+    file->size = (uint32_t)files[file->vfs_slot].f_size;
+    return true;
+}
+
+int32_t fs_read_at (fs_file_t* file, uint32_t offset, void* out, uint32_t length) {
+    if (file->on_disk) {
+        return fat_read_at(&file->fat, offset, out, length);
+    }
+    // in memory the whole file is already there: just copy the part that's wanted
+    const struct file* entry = &files[file->vfs_slot];
+    if (!entry->f_used) {
+        return -1; // deleted since it was opened
+    }
+    uint32_t size = (uint32_t)entry->f_size;
+    if (offset >= size) {
+        return 0;
+    }
+    if (length > size - offset) {
+        length = size - offset;
+    }
+    memcpy(out, entry->f_cont + offset, length);
+    return (int32_t)length;
+}
+
 // call fn for every file and folder in a folder. Returns how many there were, or -1 if
 // the folder isn't there
 int fs_list (const char* d_path, fs_list_fn fn, void* ctx) {

@@ -264,6 +264,92 @@ void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale) {
     }
 }
 
+// ---- drawing a block of pixels, scaled (video frames, sprites) -------------------------------
+//
+// Nearest neighbour scaling: every pixel drawn takes the colour of the source pixel under it.
+// Two things make it quick enough for 25 or 30 video frames a second:
+//
+//   1. Which source column each column on the screen comes from is worked out once per call
+//      (source_column[]), instead of a division for every pixel.
+//   2. When the picture is made bigger, neighbouring screen rows often come from the same source
+//      row. Then the row just drawn is copied with memcpy instead of being worked out again.
+//
+// On the usual kind of screen (32 bits a pixel, red-green-blue in the same order as 0x00RRGGBB)
+// a source pixel can be written straight to the screen; any other kind goes through pack().
+
+#define MOST_COLUMNS 16384
+static uint32_t source_column[MOST_COLUMNS];
+
+// is the screen 32 bit 0x00RRGGBB, the same layout as the pixels handed in?
+static bool screen_is_xrgb (void) {
+    return fb_bytes == 4 && fb.red_pos == 16 && fb.green_pos == 8 && fb.blue_pos == 0 &&
+           fb.red_size == 8 && fb.green_size == 8 && fb.blue_size == 8;
+}
+
+void gfx_draw_pixels(const uint32_t* pixels, int w, int h, int stride, int x, int y, int out_w, int out_h) {
+    if (!active || pixels == NULL || w <= 0 || h <= 0 || out_w <= 0 || out_h <= 0) {
+        return;
+    }
+    if (out_w > MOST_COLUMNS) {
+        out_w = MOST_COLUMNS;
+    }
+
+    // the part of the scaled picture that lands on the screen, in picture coordinates
+    int first_column = 0;
+    int last_column = out_w;      // one past the last
+    int first_row = 0;
+    int last_row = out_h;
+    if (x < 0) {
+        first_column = -x;
+    }
+    if (y < 0) {
+        first_row = -y;
+    }
+    if (x + out_w > (int)fb.width) {
+        last_column = (int)fb.width - x;
+    }
+    if (y + out_h > (int)fb.height) {
+        last_row = (int)fb.height - y;
+    }
+    if (first_column >= last_column || first_row >= last_row) {
+        return; // all of it is off the screen
+    }
+
+    for (int column = first_column; column < last_column; column++) {
+        source_column[column] = (uint32_t)column * (uint32_t)w / (uint32_t)out_w;
+    }
+
+    bool straight = screen_is_xrgb();
+    uint32_t row_bytes = (uint32_t)(last_column - first_column) * fb_bytes;
+    int previous_source_row = -1;
+    uint8_t* previous_row = NULL;
+
+    for (int row = first_row; row < last_row; row++) {
+        int source_row = (int)((uint32_t)row * (uint32_t)h / (uint32_t)out_h);
+        uint8_t* screen_row = target + (uint32_t)(y + row) * target_pitch + (uint32_t)(x + first_column) * fb_bytes;
+
+        if (source_row == previous_source_row) {
+            memcpy(screen_row, previous_row, row_bytes); // the same as the row above
+            continue;
+        }
+
+        const uint32_t* source = pixels + source_row * stride;
+        if (straight) {
+            uint32_t* out = (uint32_t*)screen_row;
+            for (int column = first_column; column < last_column; column++) {
+                *out++ = source[source_column[column]];
+            }
+        } else {
+            for (int column = first_column; column < last_column; column++) {
+                uint32_t pixel = pack(source[source_column[column]]);
+                put((uint32_t)(x + column), (uint32_t)(y + row), pixel);
+            }
+        }
+        previous_source_row = source_row;
+        previous_row = screen_row;
+    }
+}
+
 // ---- BMP pictures -----------------------------------------------------------------------------
 //
 // The header fields read here (all little endian):

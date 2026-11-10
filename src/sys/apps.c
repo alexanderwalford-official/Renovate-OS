@@ -50,6 +50,7 @@ EMBEDDED(apps_read_aer)
 EMBEDDED(apps_sysinfo_aer)
 EMBEDDED(apps_anim_aer)
 EMBEDDED(apps_move_aer)
+EMBEDDED(apps_sample_mpg)
 EMBEDDED(apps_aeros_bmp)
 EMBEDDED(apps_colours_bmp)
 EMBEDDED(apps_startup_wav)
@@ -63,6 +64,7 @@ EMBEDDED(docs_reader_md)
 EMBEDDED(docs_security_md)
 EMBEDDED(docs_sound_md)
 EMBEDDED(docs_inside_md)
+EMBEDDED(docs_video_md)
 EMBEDDED(docs_sample_htm)
 
 static const struct {
@@ -79,6 +81,7 @@ static const struct {
     FILE_ENTRY("/bin/", "sysinfo.aer", apps_sysinfo_aer, false),
     FILE_ENTRY("/bin/", "anim.aer", apps_anim_aer, false),
     FILE_ENTRY("/bin/", "move.aer", apps_move_aer, false),
+    FILE_ENTRY("/bin/", "sample.mpg", apps_sample_mpg, false),
     FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),
     FILE_ENTRY("/bin/", "colours.bmp", apps_colours_bmp, false),
     FILE_ENTRY("/sys/", "startup.wav", apps_startup_wav, false),
@@ -92,6 +95,7 @@ static const struct {
     FILE_ENTRY("/docs/", "security.md", docs_security_md, true),
     FILE_ENTRY("/docs/", "sound.md", docs_sound_md, true),
     FILE_ENTRY("/docs/", "inside.md", docs_inside_md, true),
+    FILE_ENTRY("/docs/", "video.md", docs_video_md, true),
     FILE_ENTRY("/docs/", "sample.htm", docs_sample_htm, true),
 };
 

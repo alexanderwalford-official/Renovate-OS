@@ -15,7 +15,10 @@ ply /sys/startup.wav
 ```
 
 Esc or Ctrl+C stops it. In AerLang, `play("song.mp3")` plays a file and waits until it
-ends (it gives `false` if it couldn't be played).
+ends (it gives `false` if it couldn't be played). `ply` plays [videos](video.md) too.
+
+Games can play several sounds at once, in the background, with `sload` and `splay`: see
+[AerLang](aerlang.md).
 
 | Format | Plays |
 | --- | --- |

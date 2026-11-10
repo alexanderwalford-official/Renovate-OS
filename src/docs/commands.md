@@ -74,7 +74,7 @@ go
 
 | Command | Does |
 | --- | --- |
-| `ply <file>` | play a WAV or MP3 file, Esc stops it |
+| `ply <file>` | play a WAV or MP3 file, or an .mpg [video](video.md); Esc stops it |
 | `bp [hz]` | beep the PC speaker |
 | `res [WxH]` | show or change the resolution: `res 1280x720` |
 | `cls` | clear the screen |

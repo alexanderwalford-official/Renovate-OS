@@ -72,6 +72,7 @@
 #include "../accounts/auth.h"
 #include "../fcrypt.h"
 #include "../sound.h"
+#include "../video.h"
 #include "../ui.h"
 
 // the longest line the user can type, counting the '\0' that ends it
@@ -938,10 +939,20 @@ static bool play_should_stop (void) {
     return kb_haschar() && getk() == KEY_ESCAPE;
 }
 
-// PLY <FILE>: play a WAV or MP3 file on the sound card
+// PLY <FILE>: play a WAV or MP3 file on the sound card, or an .mpg video full screen
 static void cli_play (char* arguments) {
     if (arguments[0] == '\0') {
-        show_usage("a .wav or .mp3 file");
+        show_usage("a .wav, .mp3 or .mpg file");
+        return;
+    }
+
+    // a video plays full screen, with its own controls (sys/video.h). The terminal redraws
+    // itself afterwards, like after any program that took over the screen
+    if (video_is_video(arguments)) {
+        int result = video_play_file(arguments);
+        if (result != VIDEO_OK) {
+            prtf("Can't play %s: %s\n", arguments, video_strerror(result));
+        }
         return;
     }
 
@@ -1373,7 +1384,7 @@ static const command_t commands[] = {
     { "mem",  "",           "MEMORY USAGE",                                                cli_memory },
     { "drv",  "",           "LIST IDE / ATA DRIVES",                                       cli_drives },
     { "bp",   "[HZ]",       "BEEP THE PC SPEAKER",                                         cli_beep },
-    { "ply",  "<FILE>",     "PLAY A .WAV OR .MP3 FILE (ESC TO STOP)",                      cli_play },
+    { "ply",  "<FILE>",     "PLAY A .WAV, .MP3 OR .MPG VIDEO (ESC TO STOP)",               cli_play },
     { "rbt",  "",           "RESTART THE COMPUTER (REBOOT)",                               cli_reboot },
     { "off",  "",           "TURN OFF THE COMPUTER (SHUT DOWN)",                           cli_shutdown },
     { "res",  "[WxH]",      "SHOW OR CHANGE THE SCREEN RESOLUTION (e.g. RES 1280x720)",    cli_resolution },

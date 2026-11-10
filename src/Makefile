@@ -67,8 +67,10 @@ obj/docs/%.o: docs/%
 	@mkdir -p obj/docs
 	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
 
-# minimp3 includes <string.h> and <stdlib.h>, point those at our own versions for this file only
-obj/lib/mp3.o: CFLAGS += -Ilib/minimp3/shim
+# the MP3 and MPEG decoders include <string.h> and <stdlib.h>: point those at AerOS's own
+# versions (lib/shim), for these two files only
+obj/lib/mp3.o: CFLAGS += -Ilib/shim
+obj/lib/mpg.o: CFLAGS += -Ilib/shim
 
 # header dependencies written by -MMD
 -include $(OBJECTS:.o=.d)

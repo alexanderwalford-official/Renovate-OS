@@ -63,5 +63,7 @@ bool ac97_stream_start (ac97_fill_fn fill); // false if there is no card
 void ac97_stream_service (void);
 void ac97_stream_stop (void);
 bool ac97_streaming (void);
+// roughly how many frames are queued on the card ahead of what is being heard (about 90ms)
+uint32_t ac97_stream_delay (void);
 
 #endif /* AC97_H */

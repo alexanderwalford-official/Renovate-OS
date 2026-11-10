@@ -138,7 +138,11 @@ encrypted file and `gopen` opens the graphics screen.
 
 **System**
 `sleep(ms)` · `time()` (milliseconds since boot) · `random(n)` (0 to n - 1) · `beep(hz)` ·
-`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) · `exit()` ·
+`play(path)` play a WAV or MP3 file and wait for it to finish (false if it can't be played) ·
+`video(path)` play an .mpg video full screen with its sound, until it ends or Esc is pressed
+(Space pauses, Left / Right skip 5 seconds); true if it played. It takes the whole screen and
+gives it back to the terminal, so a program drawing graphics calls `gopen()` again after it
+(see [VIDEO.md](VIDEO.md)) · `exit()` ·
 `queue(line)` add a program to the queue the `GO` command runs, e.g. `queue("hello.aer a b")`
 or `queue("s:some text")`; returns how many are queued (-1 if the process stack is full) ·
 `sysinfo()` everything AerOS knows about the computer, as a list of `[group, name, value]`
