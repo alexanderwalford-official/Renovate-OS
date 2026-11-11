@@ -39,14 +39,32 @@
 #include "../sys/firewall.h"
 #include "../sys/appmode.h"
 #include "../lib/crypto.h"
+#include "../lib/aer_math.h"
 
 // argument checks
 
+// a number argument, as a whole number. A decimal is rounded down (towards minus infinity), so
+// a game can keep its positions as decimals and still draw at rect(x, y, ...)
 static int32_t int_arg (value_t* argv, int i, int line, const char* fn) {
+    if (argv[i].type == V_FLOAT) {
+        double whole = floor(argv[i].as.f);
+        if (!(whole > -2147483649.0 && whole < 2147483648.0)) {
+            aer_error(line, "%s() argument %d is too big for a whole number", fn, i + 1);
+        }
+        return (int32_t)whole;
+    }
     if (argv[i].type != V_INT) {
         aer_error(line, "%s() needs a number for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
     }
     return argv[i].as.i;
+}
+
+// a number argument, whole or decimal, as a decimal
+static double real_arg (value_t* argv, int i, int line, const char* fn) {
+    if (!aer_is_number(argv[i])) {
+        aer_error(line, "%s() needs a number for argument %d, not a %s", fn, i + 1, aer_type_name(argv[i]));
+    }
+    return aer_real(argv[i]);
 }
 
 static aer_object_t* str_arg (value_t* argv, int i, int line, const char* fn) {
@@ -185,16 +203,39 @@ static value_t bi_str (int argc, value_t* argv, int line) {
     return aer_to_string(argv[0]);
 }
 
-// int(x): a string (or true / false) as a number: "42" is 42, "0x1F" is 31. nil if it isn't a number
+// a decimal as a whole number, its decimals cut off (2.7 -> 2, -2.7 -> -2). nil if it is too big
+static value_t whole_part (double x) {
+    if (!(x > -2147483649.0 && x < 2147483648.0)) {
+        return aer_nil(); // (nan fails both tests too)
+    }
+    return aer_int((int32_t)x);
+}
+
+// int(x): x as a whole number. A decimal loses its decimals (2.7 is 2, -2.7 is -2; floor()
+// rounds down instead), a string is read as a number ("42" is 42, "0x1F" is 31, "2.5" is 2),
+// and true / false are 1 / 0. nil if it isn't a number
 static value_t bi_int (int argc, value_t* argv, int line) {
     (void)argc; (void)line;
     switch (argv[0].type) {
         case V_INT: return argv[0];
+        case V_FLOAT: return whole_part(argv[0].as.f);
         case V_BOOL: return aer_int(argv[0].as.i);
         case V_STR: {
             char* end;
             const char* text = argv[0].as.obj->data.chars;
             long value = strtol(text, &end, 0);
+            if (*end == '.' || *end == 'e' || *end == 'E') {
+                // a decimal: read it as one, then cut it down
+                double real;
+                const char* real_end;
+                if (parse_real(text, &real, &real_end)) {
+                    end = (char*)real_end;
+                    while (isspace((unsigned char)*end)) {
+                        end++;
+                    }
+                    return *end == '\0' ? whole_part(real) : aer_nil();
+                }
+            }
             while (isspace((unsigned char)*end)) {
                 end++;
             }
@@ -205,6 +246,82 @@ static value_t bi_int (int argc, value_t* argv, int line) {
         }
         default: return aer_nil();
     }
+}
+
+// float(x): x as a decimal number: 3 is 3.0, "2.5" is 2.5. nil if it isn't a number
+static value_t bi_float (int argc, value_t* argv, int line) {
+    (void)argc; (void)line;
+    switch (argv[0].type) {
+        case V_INT:
+        case V_FLOAT: return aer_float(aer_real(argv[0]));
+        case V_BOOL: return aer_float(argv[0].as.i);
+        case V_STR: {
+            const char* text = argv[0].as.obj->data.chars;
+            while (isspace((unsigned char)*text)) {
+                text++;
+            }
+            double real;
+            const char* end;
+            if (!parse_real(text, &real, &end)) {
+                return aer_nil();
+            }
+            while (isspace((unsigned char)*end)) {
+                end++;
+            }
+            return *end == '\0' ? aer_float(real) : aer_nil();
+        }
+        default: return aer_nil();
+    }
+}
+
+// ---- maths -----------------------------------------------------------------------------------------
+//
+// Angles are in radians: a whole turn is 2 * PI. In a game, the x and y of a step in direction
+// `angle` are cos(angle) * speed and sin(angle) * speed
+
+// sqrt(x): the square root of x (nan for a negative x)
+static value_t bi_sqrt (int argc, value_t* argv, int line) {
+    (void)argc;
+    return aer_float(sqrt(real_arg(argv, 0, line, "sqrt")));
+}
+
+// sin(angle): the sine of an angle in radians
+static value_t bi_sin (int argc, value_t* argv, int line) {
+    (void)argc;
+    return aer_float(sin(real_arg(argv, 0, line, "sin")));
+}
+
+// cos(angle): the cosine of an angle in radians
+static value_t bi_cos (int argc, value_t* argv, int line) {
+    (void)argc;
+    return aer_float(cos(real_arg(argv, 0, line, "cos")));
+}
+
+// atan2(y, x): the angle from the origin to the point (x, y), in radians from -PI to PI
+static value_t bi_atan2 (int argc, value_t* argv, int line) {
+    (void)argc;
+    return aer_float(atan2(real_arg(argv, 0, line, "atan2"), real_arg(argv, 1, line, "atan2")));
+}
+
+// floor(x): the whole number at or below x, as a whole number (2.7 is 2, -2.7 is -3)
+static value_t bi_floor (int argc, value_t* argv, int line) {
+    (void)argc;
+    return whole_part(floor(real_arg(argv, 0, line, "floor")));
+}
+
+// round(x): the nearest whole number to x, halves going up (2.5 is 3, -2.5 is -2)
+static value_t bi_round (int argc, value_t* argv, int line) {
+    (void)argc;
+    return whole_part(floor(real_arg(argv, 0, line, "round") + 0.5));
+}
+
+// abs(x): x without its sign, the same kind of number it was (abs(-3) is 3, abs(-2.5) is 2.5)
+static value_t bi_abs (int argc, value_t* argv, int line) {
+    (void)argc;
+    if (argv[0].type == V_INT) {
+        return aer_int(argv[0].as.i < 0 ? -argv[0].as.i : argv[0].as.i);
+    }
+    return aer_float(fabs(real_arg(argv, 0, line, "abs")));
 }
 
 // chr(n): the character with that code, chr(65) is "A"
@@ -1104,6 +1221,14 @@ const aer_builtin_t aer_builtins[] = {
     BUILTIN("len", bi_len, 1, 1),
     BUILTIN("str", bi_str, 1, 1),
     BUILTIN("int", bi_int, 1, 1),
+    BUILTIN("float", bi_float, 1, 1),
+    BUILTIN("sqrt", bi_sqrt, 1, 1),
+    BUILTIN("sin", bi_sin, 1, 1),
+    BUILTIN("cos", bi_cos, 1, 1),
+    BUILTIN("atan2", bi_atan2, 2, 2),
+    BUILTIN("floor", bi_floor, 1, 1),
+    BUILTIN("round", bi_round, 1, 1),
+    BUILTIN("abs", bi_abs, 1, 1),
     BUILTIN("chr", bi_chr, 1, 1),
     BUILTIN("ord", bi_ord, 1, 1),
     BUILTIN("sub", bi_sub, 2, 3),
@@ -1263,6 +1388,7 @@ void aer_define_constants (void) {
     for (size_t i = 0; i < sizeof(constants) / sizeof(constants[0]); i++) {
         aer_define_global(constants[i].name, aer_int(constants[i].value));
     }
+    aer_define_global("PI", aer_float(AER_PI)); // half a turn, in radians
     srand(clkuptms()); // a different random() sequence every run
 }
 

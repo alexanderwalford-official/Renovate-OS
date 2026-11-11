@@ -30,18 +30,21 @@ typedef enum {
     T_STEP, T_IN, T_BREAK, T_CONTINUE, T_AND, T_OR, T_NOT, T_TRUE, T_FALSE, T_NIL,
     // symbols
     T_PLUS, T_MINUS, T_STAR, T_SLASH, T_PERCENT, T_EQ, T_NE, T_LT, T_LE, T_GT, T_GE, T_ASSIGN,
-    T_LPAREN, T_RPAREN, T_LBRACKET, T_RBRACKET, T_COMMA
+    T_LPAREN, T_RPAREN, T_LBRACKET, T_RBRACKET, T_COMMA,
+    T_FLOAT             // a number with a decimal point (or an exponent): 3.14, 2.5e3
 } token_type_t;
 
 typedef struct {
     token_type_t type;
     int line;
     int32_t number;     // T_NUMBER
+    double real;        // T_FLOAT
     const char* text;   // T_NAME: the interned name, T_STRING: the characters
     uint32_t length;    // T_STRING: how many characters
 } token_t;
 
-typedef enum { V_NIL, V_BOOL, V_INT, V_STR, V_LIST, V_BYTES, V_FUNC, V_NATIVE } value_type_t;
+// (V_FLOAT is last, so the others keep their numbers: aer_type_name and is_object rely on them)
+typedef enum { V_NIL, V_BOOL, V_INT, V_STR, V_LIST, V_BYTES, V_FUNC, V_NATIVE, V_FLOAT } value_type_t;
 
 struct aer_object;
 struct aer_node;
@@ -53,6 +56,7 @@ typedef struct {
         int32_t i;              // V_INT, V_BOOL (0 or 1), V_NATIVE (index into the builtin table)
         struct aer_object* obj; // V_STR, V_LIST, V_BYTES
         struct aer_node* func;  // V_FUNC: the "func" statement that defined it
+        double f;               // V_FLOAT: a decimal number
     } as;
 } value_t;
 
@@ -72,7 +76,8 @@ typedef enum {
     N_NUMBER, N_STRING, N_NIL, N_TRUE, N_FALSE, N_NAME, N_LIST, N_INDEX, N_CALL, N_UNARY,
     N_BINARY, N_AND, N_OR,
     N_BLOCK, N_LET, N_ASSIGN, N_EXPR, N_IF, N_WHILE, N_FOR, N_FOR_IN, N_FUNC, N_RETURN,
-    N_BREAK, N_CONTINUE
+    N_BREAK, N_CONTINUE,
+    N_FLOAT                   // a decimal number, 3.14
 } node_type_t;
 
 // One node of the syntax tree: a piece of the program, like "x + 1" or a whole while loop.
@@ -102,6 +107,7 @@ typedef struct aer_node {
     int line;
     token_type_t op;          // N_BINARY / N_UNARY: which operator (T_PLUS, T_MINUS...)
     int32_t number;           // N_NUMBER: its value
+    double real;              // N_FLOAT: its value
     const char* name;         // N_NAME, N_LET, N_FOR, N_FOR_IN, N_FUNC: the variable or function
     value_t value;            // N_STRING: the string, made once when the program is parsed
 
@@ -184,6 +190,12 @@ aer_node_t* aer_parse (token_t* tokens, int count);
 static inline value_t aer_nil (void) { value_t v; v.type = V_NIL; v.as.i = 0; return v; }
 static inline value_t aer_int (int32_t i) { value_t v; v.type = V_INT; v.as.i = i; return v; }
 static inline value_t aer_bool (bool b) { value_t v; v.type = V_BOOL; v.as.i = b ? 1 : 0; return v; }
+static inline value_t aer_float (double f) { value_t v; v.type = V_FLOAT; v.as.f = f; return v; }
+
+// Numbers come in two kinds: whole (V_INT, 32 bits) and decimal (V_FLOAT, a double). These let
+// code take either: is it a number at all, and what is it as a decimal?
+static inline bool aer_is_number (value_t v) { return v.type == V_INT || v.type == V_FLOAT; }
+static inline double aer_real (value_t v) { return v.type == V_FLOAT ? v.as.f : (double)v.as.i; }
 value_t aer_string (const char* chars, uint32_t length);
 value_t aer_list (uint32_t capacity);
 value_t aer_bytes (uint32_t length);

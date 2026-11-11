@@ -157,6 +157,10 @@ static aer_node_t* primary (void) {
             n = new_node(N_NUMBER, t->line);
             n->number = t->number;
             return n;
+        case T_FLOAT:
+            n = new_node(N_FLOAT, t->line);
+            n->real = t->real;
+            return n;
         case T_STRING:
             // the string value is made now, once, and shared by every run of this line
             n = new_node(N_STRING, t->line);

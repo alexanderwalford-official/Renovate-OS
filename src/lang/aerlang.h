@@ -20,6 +20,11 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// the folders an app run by its name is looked for in, after the current folder, in order:
+// "/bin/" (apps), then "/bin/games/" (games). The list ends with NULL. Tab completion and
+// "Did you mean ...?" go through the same list
+extern const char* const aer_app_folders[];
+
 // run a program file (absolute, relative to the current directory, or found in /bin/)
 // args is the rest of the command line, handed to the program as the list "args"
 // returns 0 if it ran to the end, -1 if it wasn't found or stopped with an error

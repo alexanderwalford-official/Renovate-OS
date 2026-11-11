@@ -67,6 +67,7 @@ print(area(3, 4))               # 12
 | Type | Examples | Notes |
 | --- | --- | --- |
 | number | `42`, `-7`, `0xFF` | whole numbers, `/` drops the remainder |
+| decimal | `3.14`, `-0.5`, `2.5e3` | `7 / 2.0` is `3.5`: a decimal on either side gives a decimal |
 | string | `"hi\n"` | `s[0]` is the first character |
 | list | `[1, "two", [3]]` | `l[0] = 5` changes an item |
 | bytes | `bytes(100)` | raw bytes, e.g. from `rdb` |
@@ -75,6 +76,14 @@ print(area(3, 4))               # 12
 
 `nil`, `false` and `0` count as false. `and` / `or` give back one of their sides, so
 `input("Name? ") or "friend"` works. `+` joins strings: `"Score: " + 10`.
+
+Two whole numbers give a whole answer, as always (`7 / 2` is `3`). Decimals print with up to
+six places (`3.141593`), and a built-in that wants a whole number, like a screen position,
+rounds a decimal down, so a game can keep positions as decimals: `rect(x, y, 10, 10, c)`.
+
+**Maths:** `sqrt(x)`, `sin(a)`, `cos(a)` (angles in radians), `atan2(y, x)`, `floor(x)`,
+`round(x)`, `abs(x)`, `float(x)` (`float("2.5")`), and `PI`. A step of `speed` in direction
+`a` is `x = x + cos(a) * speed` and `y = y + sin(a) * speed`.
 
 ## Built-in functions
 
@@ -178,7 +187,7 @@ key is held right now (`"a"`, `KEY_LEFT`, `KEY_SPACE`, `KEY_SHIFT`...), without 
 at once: up to 8 sounds play together. `sstop(n)` stops one, `isply(n)` asks if it still
 plays. Use `keydown` for things that last (moving) and `haskey()` / `key()` for single
 presses (jumping): every press waits there until it is read, so a quick tap is never missed.
-`/bin/move.aer` uses them all.
+`/bin/games/move.aer` uses them all.
 
 ```
 gopen()
@@ -200,9 +209,10 @@ end
 | File | Shows |
 | --- | --- |
 | `/bin/hello.aer` | input, functions, lists, loops |
-| `/bin/guess.aer` | random numbers and a game loop |
+| `/bin/games/guess.aer` | random numbers and a game loop |
 | `/bin/viewer.aer` | graphics, pictures and a menu |
-| `/bin/move.aer` | smooth movement, held keys and mixed sounds |
+| `/bin/games/move.aer` | smooth movement, held keys and mixed sounds |
+| `/bin/games/snake.aer` | a whole game: graphics, a back buffer, held keys and lists |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
 | `/bin/anim.aer` | spinners, progress bars and moving text |

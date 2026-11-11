@@ -1605,7 +1605,8 @@ static void cli_run (char* arguments) {
     run_as_process(arguments);
 }
 
-// is there a program file with this name, in the current folder or (for a plain name) in /bin/?
+// is there a program file with this name, in the current folder or (for a plain name) in one
+// of the app folders, /bin/ and /bin/games/ (aer_app_folders, lang/aerlang.h)?
 static bool program_exists (const char* file) {
     char folder[FS_PATH_MAX];
     char name[FS_NAME_MAX];
@@ -1616,7 +1617,12 @@ static bool program_exists (const char* file) {
         return true;
     }
     bool plain_name = strchr(file, '/') == NULL; // "hello", not "games/hello"
-    return plain_name && fs_file_exists("/bin/", name);
+    for (int f = 0; plain_name && aer_app_folders[f] != NULL; f++) {
+        if (fs_file_exists(aer_app_folders[f], name)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // turn a program name and its arguments into the line its process runs:
@@ -2128,7 +2134,8 @@ static void add_completion_program (const char* name, bool is_dir, uint32_t size
     }
 }
 
-// the first word: every command, and every program in /bin/ and in the current folder
+// the first word: every command, and every program in the app folders (/bin/, /bin/games/)
+// and in the current folder
 static void gather_commands (const char* word) {
     completion.typed = word;
     completion.typed_length = slen(word);
@@ -2136,7 +2143,9 @@ static void gather_commands (const char* word) {
     for (size_t i = 0; i < command_count; i++) {
         add_completion(commands[i].name, slen(commands[i].name));
     }
-    fs_list("/bin/", add_completion_program, NULL);
+    for (int f = 0; aer_app_folders[f] != NULL; f++) {
+        fs_list(aer_app_folders[f], add_completion_program, NULL);
+    }
     fs_list(cd, add_completion_program, NULL);
 }
 
@@ -2369,7 +2378,9 @@ static void unknown_command (const char* word) {
     for (size_t i = 0; i < command_count; i++) {
         consider(&suggestion, commands[i].name, true);
     }
-    fs_list("/bin/", consider_app, &suggestion);
+    for (int f = 0; aer_app_folders[f] != NULL; f++) {
+        fs_list(aer_app_folders[f], consider_app, &suggestion);
+    }
 
     if (suggestion.best[0] == '\0') {
         explain_say(PROBLEM_UNKNOWN_COMMAND, word, "Unrecognised command: %s", word);

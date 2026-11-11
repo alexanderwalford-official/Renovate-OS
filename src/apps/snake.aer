@@ -1,0 +1,297 @@
+# Snake for AerOS
+# Save this file as snake.aer, then run it with:
+#     snake
+#
+# Controls:
+#     Arrow keys  - steer
+#     Escape      - quit during a game
+#     Any key     - start / restart from the title or game-over screen
+#
+# This game uses AerLang's graphics and non-blocking keyboard functions.
+# The board is made from square tiles, so the snake moves one tile per step.
+
+# ---------------------------------------------------------------------------
+# Colours
+# ---------------------------------------------------------------------------
+
+let BLACK = 0x101820
+let WHITE = 0xF2F5F7
+let GREEN = 0x55D66B
+let DARK_GREEN = 0x218C4A
+let RED = 0xFF5C5C
+let GREY = 0x7C8792
+let PANEL = 0x1C2A35
+let GOLD = 0xFFD166
+
+# ---------------------------------------------------------------------------
+# Board layout
+# ---------------------------------------------------------------------------
+
+let TILE = 16
+let MARGIN = 24
+
+# (The board's size is worked out once graphics has started, below: gw() and gh() only know
+# the screen's size after gopen())
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+func same_cell(a, b)
+    # Compare two [x, y] coordinate pairs.
+    return a[0] == b[0] and a[1] == b[1]
+end
+
+func contains_cell(cells, target)
+    # Return true if target appears anywhere in the supplied list.
+    for i = 0 to len(cells) - 1 do
+        if same_cell(cells[i], target) then
+            return true
+        end
+    end
+    return false
+end
+
+func draw_cell(x, y, colour)
+    # Convert board coordinates into pixel coordinates.
+    let px = BOARD_X + x * TILE
+    let py = BOARD_Y + y * TILE
+
+    # Leave a one-pixel gap between tiles to make the grid easier to read.
+    rect(px + 1, py + 1, TILE - 2, TILE - 2, colour)
+end
+
+func centre(y, words, colour)
+    # Write a line of normal sized text in the middle of the screen (each letter is 8 pixels).
+    text((gw() - len(words) * 8) / 2, y, words, colour, 1)
+end
+
+func draw_board()
+    # Draw the background and the playfield border.
+    gclear(BLACK)
+    rect(BOARD_X - 2, BOARD_Y - 2, COLS * TILE + 4, ROWS * TILE + 4, GREY)
+    rect(BOARD_X, BOARD_Y, COLS * TILE, ROWS * TILE, PANEL)
+end
+
+func draw_game(snake, food, score)
+    draw_board()
+
+    # Food is drawn first so the snake is always visually on top.
+    draw_cell(food[0], food[1], RED)
+
+    # Draw the snake body, then its head in a brighter colour.
+    for i = len(snake) - 1 to 1 step -1 do
+        draw_cell(snake[i][0], snake[i][1], DARK_GREEN)
+    end
+    draw_cell(snake[0][0], snake[0][1], GREEN)
+
+    # The score sits above the board.
+    text(BOARD_X, BOARD_Y - 20, "SCORE: " + str(score), WHITE, 1)
+
+    gshow()
+end
+
+func make_food(snake)
+    # Pick a random empty tile. The board is small enough that checking
+    # against the snake for each candidate is inexpensive.
+    let candidate = [random(COLS), random(ROWS)]
+    while contains_cell(snake, candidate) do
+        candidate = [random(COLS), random(ROWS)]
+    end
+    return candidate
+end
+
+func wait_for_start(title, subtitle)
+    # Simple title / game-over screen. Any key continues.
+    gclear(BLACK)
+    text((gw() - len(title) * 32) / 2, gh() / 3, title, GREEN, 4)   # 4 times the font: 32 pixels a letter
+    centre(gh() / 2 + 30, subtitle, WHITE)
+    centre(gh() / 2 + 58, "ARROWS TO MOVE", GREY)
+    centre(gh() / 2 + 76, "ESC TO QUIT", GREY)
+    gshow()
+
+    # Wait for a single key press rather than polling a held key.
+    key()
+end
+
+# ---------------------------------------------------------------------------
+# Start graphics mode
+# ---------------------------------------------------------------------------
+
+if not gopen() then
+    print("Snake needs a graphics screen.")
+    exit()
+end
+
+# Use a back buffer so each frame appears all at once, without flicker.
+gbuf(true)
+
+# Work out how many whole tiles fit on the screen.
+# The small remainder is left as a border around the board.
+let COLS = (gw() - MARGIN * 2) / TILE
+let ROWS = (gh() - MARGIN * 2) / TILE
+
+let BOARD_X = (gw() - COLS * TILE) / 2
+let BOARD_Y = (gh() - ROWS * TILE) / 2
+
+# ---------------------------------------------------------------------------
+# Main game loop
+# ---------------------------------------------------------------------------
+
+let quit_game = false
+
+# Declare game-state variables once. AerLang keeps top-level variables for
+# the lifetime of the program, including across loop iterations.
+let start_x = 0
+let start_y = 0
+let snake = []
+let dx = 1
+let dy = 0
+let old_dx = 1
+let old_dy = 0
+let food = [0, 0]
+let score = 0
+let alive = false
+let head = [0, 0]
+let next_head = [0, 0]
+let eating = false
+let body_limit = 0
+let pressed = 0
+
+while not quit_game do
+    wait_for_start("SNAKE", "Press any key to play")
+
+    # Reset the snake in the middle of the board.
+    start_x = COLS / 2
+    start_y = ROWS / 2
+
+    # The head is always element zero. The tail is the final element.
+    snake = [
+        [start_x, start_y],
+        [start_x - 1, start_y],
+        [start_x - 2, start_y]
+    ]
+
+    # Direction is a one-tile movement vector.
+    dx = 1
+    dy = 0
+
+    # Keep the previous direction so the player cannot reverse directly
+    # into the snake's own neck.
+    old_dx = dx
+    old_dy = dy
+
+    food = make_food(snake)
+    score = 0
+    alive = true
+
+    # Draw one movement step every frame in this loop. frame(9) makes the
+    # game run at roughly nine steps per second, independently of draw time.
+    while alive and not quit_game do
+
+        # -------------------------------------------------------------------
+        # Read movement input
+        # -------------------------------------------------------------------
+        # Use keydown() here because movement should continue while a key is
+        # held. Check each direction against the opposite of the old vector.
+        if keydown(KEY_UP) and old_dy != 1 then
+            dx = 0
+            dy = -1
+        end
+        if keydown(KEY_DOWN) and old_dy != -1 then
+            dx = 0
+            dy = 1
+        end
+        if keydown(KEY_LEFT) and old_dx != 1 then
+            dx = -1
+            dy = 0
+        end
+        if keydown(KEY_RIGHT) and old_dx != -1 then
+            dx = 1
+            dy = 0
+        end
+
+        # Escape exits the current game and the outer loop.
+        if keydown(KEY_ESCAPE) then
+            quit_game = true
+            alive = false
+        end
+
+        if alive then
+            # ----------------------------------------------------------------
+            # Calculate the next head position
+            # ----------------------------------------------------------------
+            head = snake[0]
+            next_head = [head[0] + dx, head[1] + dy]
+
+            # Check whether the new head is outside the board.
+            if next_head[0] < 0 or next_head[0] >= COLS or next_head[1] < 0 or next_head[1] >= ROWS then
+                alive = false
+            end
+
+            # Eating food means the tail does not move this step.
+            eating = same_cell(next_head, food)
+
+            # Check collision with the body. If we are not eating, the last
+            # tail tile will move away this step, so entering that exact tile
+            # is safe. All other body tiles are solid.
+            body_limit = len(snake) - 1
+            if eating then
+                body_limit = len(snake)
+            end
+
+            if alive then
+                for i = 0 to body_limit - 1 do
+                    if same_cell(next_head, snake[i]) then
+                        alive = false
+                    end
+                end
+            end
+
+            if alive then
+                # Add the new head at the front of the list.
+                insert(snake, 0, next_head)
+
+                if eating then
+                    # Keep the tail in place to grow by one tile.
+                    score = score + 10
+                    food = make_food(snake)
+                else
+                    # Remove the old tail so the snake keeps the same length.
+                    remove(snake, len(snake) - 1)
+                end
+
+                # Store the direction used for this step. This prevents a
+                # rapid second key press from reversing into the neck.
+                old_dx = dx
+                old_dy = dy
+
+                draw_game(snake, food, score)
+            end
+        end
+
+        frame(9)
+    end
+
+    if not quit_game then
+        # Game over screen. The outer loop starts a fresh game after a key.
+        gclear(BLACK)
+        text((gw() - 9 * 32) / 2, gh() / 3, "GAME OVER", RED, 4)
+        centre(gh() / 2 + 20, "FINAL SCORE: " + str(score), WHITE)
+        centre(gh() / 2 + 52, "PRESS A KEY TO RETRY", GOLD)
+        centre(gh() / 2 + 76, "ESC DURING GAME TO QUIT", GREY)
+        gshow()
+
+        # key() waits for the next press. Escape is handled by the next game
+        # loop's start screen as well, so check it here to allow a clean exit.
+        pressed = key()
+        if pressed == KEY_ESCAPE then
+            quit_game = true
+        end
+    end
+end
+
+# Give the terminal its screen back. AerOS also does this automatically
+# when a program ends, but closing graphics explicitly is good practice.
+gclose()
+print("Thanks for playing Snake!")

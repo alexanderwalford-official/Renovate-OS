@@ -19,6 +19,7 @@
 #include "aer_internal.h"
 #include "../lib/aer_ctype.h"
 #include "../lib/aer_string.h"
+#include "../lib/aer_math.h"
 
 // the words that mean something to AerLang, and so can't be used as variable names
 static const struct {
@@ -91,7 +92,8 @@ token_t* aer_lex (const char* src, int* count) {
             continue;
         }
 
-        // numbers: decimal (42) or hex (0xFF), 32 bit signed, so at most 2147483647
+        // numbers: whole (42), hex (0xFF), both 32 bit signed so at most 2147483647, or decimal
+        // (3.14, 2.5e3), which become T_FLOAT
         // (a minus sign is a separate T_MINUS token, the parser turns it into a negation)
         if (isdigit((unsigned char)c)) {
             uint32_t value = 0;
@@ -107,10 +109,29 @@ token_t* aer_lex (const char* src, int* count) {
                     value = value * 16 + (uint32_t)hex_value(*p++);
                 }
             } else {
+                // a decimal number has a "." with digits after it, or an exponent (2.5, 1e6):
+                // read it as one, all of it
+                const char* digits_end = p;
+                while (isdigit((unsigned char)*digits_end)) {
+                    digits_end++;
+                }
+                bool has_point = *digits_end == '.' && isdigit((unsigned char)digits_end[1]);
+                bool has_exponent = (*digits_end == 'e' || *digits_end == 'E') &&
+                                    (isdigit((unsigned char)digits_end[1]) ||
+                                     ((digits_end[1] == '-' || digits_end[1] == '+') && isdigit((unsigned char)digits_end[2])));
+                if (has_point || has_exponent) {
+                    double real;
+                    parse_real(p, &real, &p);
+                    if (isalpha((unsigned char)*p) || *p == '_') {
+                        aer_error(line, "bad number"); // e.g. 1.5abc
+                    }
+                    add_token(&list, T_FLOAT, line)->real = real;
+                    continue;
+                }
                 while (isdigit((unsigned char)*p)) {
                     uint32_t digit = (uint32_t)(*p++ - '0');
                     if (value > (0x7FFFFFFFu - digit) / 10) {
-                        aer_error(line, "number is too big");
+                        aer_error(line, "number is too big (a decimal like 3000000000.0 can be bigger)");
                     }
                     value = value * 10 + digit;
                 }

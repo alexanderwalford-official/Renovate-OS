@@ -105,7 +105,8 @@ src/
     busy.c                busy(): long loops call it so a spinner can turn (see sys/ui.h)
     mp3.c + minimp3/      MP3 decoding
     mpg.c + pl_mpeg/      MPEG-1 video and MP2 sound decoding (pl_mpeg, MIT)
-    fpu.c                 switches the x87 FPU on, for the decoders' floats
+    fpu.c                 switches the x87 FPU on, for decimal numbers (AerLang's, the decoders')
+    aer_math.c            sqrt, sin, cos, atan2, floor on the x87, and decimals to text and back
     shim/                 <string.h> and <stdlib.h> for the decoders, pointing at the files above
     aer_comp.c            runs a process's line of code (the built-in "instructions")
 
@@ -370,10 +371,42 @@ and fails the same way as a missing file if the answer is no.
 
 ### Add a built-in app or file
 
-Put the file in `src/apps/` (or `src/docs/` for a manual page), then add two lines to
-`src/sys/apps.c`: `EMBEDDED(apps_name_ext)` and a `FILE_ENTRY` saying which folder it goes in
-and whether to refresh it when it changes. The Makefile links it into the kernel automatically.
-On a disk, new names must fit 8.3 (`sample.htm`, not `sample.html`).
+A built-in app is linked into the kernel and copied into `/bin/` every time AerOS starts, so
+it is there on every computer and every new disk. Using `snake.aer` as the example:
+
+1. **Name it.** On a FAT disk a name must fit 8.3: up to 8 letters or digits, a dot, up to 3
+   more (`snake.aer` is fine, `snakegame.aer` isn't). The name is also how it is run (`snake`),
+   so check it isn't already a command (`HLP` lists them): a command always wins.
+   **Pick its folder:** games go in `/bin/games/`, other apps in `/bin/`. Both are searched
+   when an app is run by its name (`aer_app_folders` in `lang/aerlang.h`, `/bin/` first), and
+   by Tab completion. To add another folder, make it at boot (`make_base_folders` in
+   `sys/f_sys.c`) and add it to `aer_app_folders`. If an app moves to a new folder, the old
+   copy an earlier AerOS left in `/bin/` is deleted on the next boot, unless it was changed.
+2. **Put it in `src/apps/`.** Every file there is picked up by the Makefile (`BUILTIN_FILES`),
+   which wraps it in an object file with `ld -b binary`. That gives two symbols for its first
+   and last byte, named after its path with `/` and `.` turned into `_`:
+   `src/apps/snake.aer` becomes `_binary_apps_snake_aer_start` / `_end`.
+3. **Add two lines to `src/sys/apps.c`**, next to the other apps:
+
+   ```c
+   EMBEDDED(apps_snake_aer)                                   // with the other EMBEDDED lines
+   ...
+       FILE_ENTRY("/bin/games/", "snake.aer", apps_snake_aer, false),   // in the files[] table
+   ```
+
+   `EMBEDDED` declares the two symbols, and `FILE_ENTRY` says where the file goes and whether to
+   *refresh* it. `false` is right for an app: a copy someone has changed on their disk is kept,
+   and only an untouched one is replaced by a newer version (see the top of `sys/apps.c`).
+   `true` replaces it whenever it differs, which is what the manual pages in `src/docs/` use.
+4. **Build:** `make` (in `src/`). A file name that doesn't match its `EMBEDDED` name fails here,
+   with "undefined reference to `_binary_apps_..._start`".
+5. **Run it:** `make run`. The boot log's `APPS` line counts what was added, and then `snake`
+   runs it, Tab completes its name, and `read /bin/games/snake.aer` shows it. On your own disk image
+   it is added on the first boot after the build, because it isn't there yet.
+6. **Optional:** list it in the manual (the app table in `src/docs/aerlang.md`) and in the README.
+
+To try an app on your own disk without building it in, copy it there instead:
+`make disk-put FILE=apps/snake.aer DIR=/bin`. It isn't then on new disks, or in the repository.
 
 ### Add a real-time task (RT mode)
 

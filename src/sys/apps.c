@@ -26,6 +26,10 @@
                                      so there is no way to know): keep it
 
     To go back to the built-in copy of an app you have changed, delete it and restart.
+
+    Apps live in /bin/, and games in /bin/games/ (both are searched when an app is run by its
+    name, see aer_app_folders in lang/aerlang.h). When an app moves into a folder of its own,
+    an untouched old copy left in /bin/ by an older AerOS is deleted (tidy_old_copy).
 */
 
 #include "apps.h"
@@ -74,6 +78,7 @@ EMBEDDED(docs_rt_md)
 EMBEDDED(docs_text_md)
 EMBEDDED(docs_sample_htm)
 EMBEDDED(apps_sleep_aer)
+EMBEDDED(apps_snake_aer)
 
 static const struct {
     const char* dir;
@@ -83,13 +88,14 @@ static const struct {
     bool refresh; // replace the copy on the disk when it differs from the built-in one
 } files[] = {
     FILE_ENTRY("/bin/", "hello.aer", apps_hello_aer, false),
-    FILE_ENTRY("/bin/", "guess.aer", apps_guess_aer, false),
+    FILE_ENTRY("/bin/games/", "guess.aer", apps_guess_aer, false),
     FILE_ENTRY("/bin/", "viewer.aer", apps_viewer_aer, false),
     FILE_ENTRY("/bin/", "read.aer", apps_read_aer, false),
     FILE_ENTRY("/bin/", "sysinfo.aer", apps_sysinfo_aer, false),
     FILE_ENTRY("/bin/", "anim.aer", apps_anim_aer, false),
     FILE_ENTRY("/bin/", "sleep.aer", apps_sleep_aer, false),
-    FILE_ENTRY("/bin/", "move.aer", apps_move_aer, false),
+    FILE_ENTRY("/bin/games/", "snake.aer", apps_snake_aer, false),
+    FILE_ENTRY("/bin/games/", "move.aer", apps_move_aer, false),
     FILE_ENTRY("/bin/", "sample.mpg", apps_sample_mpg, false),
     FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),
     FILE_ENTRY("/bin/", "colours.bmp", apps_colours_bmp, false),
@@ -229,6 +235,34 @@ static void install_app (unsigned int i, const char* record, char keep[HASH_HEX 
     // otherwise it's your own version: kept, and not recorded as one of AerOS's
 }
 
+// An app that has moved into a folder of its own (the games, into /bin/games/) may still have
+// its old copy in /bin/ on a disk from an older AerOS. If that copy is one AerOS put there and
+// nobody has changed (it matches the record, or the built-in one), it goes. One you have
+// changed is yours, so it stays (and, as /bin/ is looked in first, it is the one that runs)
+static void tidy_old_copy (unsigned int i, const char* record) {
+    const char* old_dir = "/bin/";
+    if (seq(files[i].dir, old_dir) || strncmp(files[i].dir, old_dir, slen(old_dir)) != 0) {
+        return; // not an app that moved out of /bin/
+    }
+    uint32_t size = 0;
+    char* data = fs_read_bytes(old_dir, files[i].name, &size);
+    if (data == NULL) {
+        return; // no old copy
+    }
+    char path[RECORD_LINE];
+    char ondisk[HASH_HEX + 1], recorded[HASH_HEX + 1], builtin[HASH_HEX + 1];
+    sprintf(path, "%s%s", old_dir, files[i].name);
+    hash_hex(data, size, ondisk);
+    hash_hex(files[i].start, (uint32_t)(files[i].end - files[i].start), builtin);
+    free(data);
+
+    bool untouched = scmp(ondisk, builtin) == 0
+                     || (recorded_hash(record, path, recorded) && scmp(ondisk, recorded) == 0);
+    if (untouched) {
+        fs_delete_f(old_dir, files[i].name);
+    }
+}
+
 int apps_install (void) {
     int installed = 0;
 
@@ -258,6 +292,7 @@ int apps_install (void) {
 
         char keep[HASH_HEX + 1];
         bool changed;
+        tidy_old_copy(i, old_record);
         install_app(i, old_record, keep, &changed);
         if (changed) {
             installed++;

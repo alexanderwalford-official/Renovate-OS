@@ -119,6 +119,7 @@ print(area(3, 4))           # 12
 | Type | Examples | Notes |
 | --- | --- | --- |
 | number | `42`, `-7`, `0xFF` | whole numbers, 32 bit. `/` drops the remainder, `%` is the remainder |
+| decimal number | `3.14`, `-0.5`, `2.5e3` | 64 bit floating point (a double), about 15 significant digits |
 | string | `"hi\n"` | escapes: `\n` `\t` `\"` `\\` `\0`. `s[0]` is the first character |
 | list | `[1, "two", [3]]` | `l[0]`, `l[0] = 5`, `l + [6]` makes a new list |
 | bytes | `bytes(100)` | a block of raw bytes (0 to 255), e.g. a file read with `rdb` |
@@ -128,6 +129,26 @@ print(area(3, 4))           # 12
 `nil`, `false` and `0` count as false. `and` / `or` give back one of their values, so
 `input("Name? ") or "friend"` works. `+` joins strings, and turns anything else into text when
 one side is a string: `"Score: " + 10`.
+
+#### Whole and decimal numbers
+
+A number with a decimal point or an exponent is a decimal (`2.0`, `1e6`); one without is whole.
+When both sides of `+ - * / %` are whole, the answer is whole, exactly as it always was:
+`7 / 2` is `3`. When either side is a decimal, so is the answer: `7 / 2.0` is `3.5`, and
+`10 % 3.5` is `3.0`. Comparisons and `==` work across both (`2 == 2.0` is true), and dividing
+by zero is an error either way.
+
+Decimals print with up to six decimal places and at least one (`2.0`, `3.141593`), or with an
+exponent when very big or very small (`1.0e+20`, `1.0e-6`). They keep their full precision
+inside; only the printing rounds.
+
+Anywhere a built-in function wants a whole number (a screen position, a size, a colour), a
+decimal is rounded down, so a game can keep its positions as decimals and still call
+`rect(x, y, 10, 10, colour)`. A list index or a `for` loop's numbers can be decimals only if
+they are whole (`l[1.0]` is fine, `l[1.5]` is an error).
+
+The decimals are worked out by the processor's x87 FPU, switched on when a program starts
+(`lib/fpu.c`); the maths functions are in `lib/aer_math.c`.
 
 ### Built-in functions
 
@@ -155,6 +176,13 @@ encrypted file and `gopen` opens the graphics screen.
 `KEY_LEFT`, `KEY_RIGHT`, `KEY_HOME`, `KEY_END`, `KEY_PGUP`, `KEY_PGDN`, `KEY_DELETE`,
 `KEY_ENTER`, `KEY_BACKSPACE`, `KEY_TAB`, `KEY_ESCAPE` ·
 `haskey()` true if a key is waiting
+
+**Maths** (angles are in radians: a whole turn is `2 * PI`)
+`sqrt(x)` · `sin(angle)` · `cos(angle)` · `atan2(y, x)` the angle to the point (x, y) ·
+`floor(x)` rounds down to a whole number · `round(x)` to the nearest · `abs(x)` ·
+`float(x)` a number or text as a decimal (`float("2.5")`, nil if it isn't one) ·
+`int(x)` a decimal with its decimals cut off (`int(-2.7)` is `-2`), or text as a whole number ·
+`PI` (3.14159...)
 
 **Text**
 `len(x)` · `str(x)` · `int("42")` (nil if it isn't a number) · `chr(65)` · `ord("A")` ·
@@ -296,7 +324,7 @@ while not keydown(KEY_ESCAPE) do
 end
 ```
 
-`/bin/move.aer` is a small example of all of these. How they work: the back buffer is in
+`/bin/games/move.aer` is a small example of all of these. How they work: the back buffer is in
 `src/drivers/video/gfx.c`, held keys in `src/drivers/input/IO.c`, and the mixer in
 `src/sys/mixer.c`, which feeds the sound card from the timer interrupt so sound keeps playing
 smoothly whatever the program is doing.

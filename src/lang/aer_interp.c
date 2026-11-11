@@ -38,6 +38,8 @@
 #include "../lib/aer_stdlib.h"
 #include "../lib/aer_stdio.h"
 #include "../lib/primary_definitions.h"
+#include "../lib/aer_math.h"
+#include "../lib/fpu.h"
 #include "../drivers/video/VGA_linear.h"
 #include "../drivers/input/IO.h"
 #include "../sys/f_sys.h"
@@ -296,12 +298,18 @@ bool aer_truthy (value_t v) {
         case V_NIL: return false;
         case V_BOOL:
         case V_INT: return v.as.i != 0;
+        case V_FLOAT: return v.as.f != 0;
         default: return true;
     }
 }
 
-// == compares strings by their characters, but lists and bytes by identity (the same object)
+// == compares strings by their characters, but lists and bytes by identity (the same object).
+// Numbers compare by value, whole or decimal: 2 == 2.0
 bool aer_equal (value_t a, value_t b) {
+    bool decimal = a.type == V_FLOAT || b.type == V_FLOAT;
+    if (decimal && aer_is_number(a) && aer_is_number(b)) {
+        return aer_real(a) == aer_real(b);
+    }
     if (a.type != b.type) {
         return false;
     }
@@ -318,7 +326,7 @@ bool aer_equal (value_t a, value_t b) {
 }
 
 const char* aer_type_name (value_t v) {
-    static const char* const type_names[] = { "nil", "bool", "number", "string", "list", "bytes", "function", "function" };
+    static const char* const type_names[] = { "nil", "bool", "number", "string", "list", "bytes", "function", "function", "number" };
     return type_names[v.type];
 }
 
@@ -357,6 +365,11 @@ static void text_value (text_t* t, value_t v, int depth) {
             itoa(v.as.i, number, 10);
             text_add(t, number, (uint32_t)slen(number));
             break;
+        case V_FLOAT: {
+            char real[32];
+            text_add(t, real, (uint32_t)format_real(v.as.f, real, sizeof(real)));
+            break;
+        }
         case V_STR:
             if (depth > 0) {
                 text_add(t, "\"", 1); // strings inside a list are shown in quotes
@@ -520,7 +533,16 @@ static value_t lookup (const char* name, int line) {
 
 static value_t eval (aer_node_t* n);
 
+// a whole number, for a list index or a for loop. A decimal is fine if it is whole (2.0); one
+// that isn't (2.5) is an error rather than quietly rounded
 static int32_t need_int (value_t v, int line, const char* what) {
+    if (v.type == V_FLOAT && v.as.f == floor(v.as.f) && fabs(v.as.f) < 2147483648.0) {
+        return (int32_t)v.as.f;
+    }
+    if (v.type == V_FLOAT) {
+        aer_error(line, "%s must be a whole number, not %s (int() cuts off the decimals)", what,
+                  v.as.f != v.as.f ? "nan" : "a decimal");
+    }
     if (v.type != V_INT) {
         aer_error(line, "%s must be a number, not a %s", what, aer_type_name(v));
     }
@@ -568,6 +590,27 @@ static value_t concat (value_t a, value_t b) {
     return s;
 }
 
+// an operator on two numbers when at least one is a decimal: the answer is a decimal (or, for
+// a comparison, true / false)
+static value_t decimal_arithmetic (token_type_t op, double x, double y, int line) {
+    switch (op) {
+        case T_PLUS: return aer_float(x + y);
+        case T_MINUS: return aer_float(x - y);
+        case T_STAR: return aer_float(x * y);
+        case T_SLASH:
+        case T_PERCENT:
+            if (y == 0) {
+                aer_error(line, "division by zero");
+            }
+            return aer_float(op == T_SLASH ? x / y : fmod(x, y));
+        case T_LT: return aer_bool(x < y);
+        case T_LE: return aer_bool(x <= y);
+        case T_GT: return aer_bool(x > y);
+        case T_GE: return aer_bool(x >= y);
+        default: aer_error(line, "unknown operator");
+    }
+}
+
 // every binary operator (except and / or): joining, equality, string comparison, then numbers
 static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
     if (op == T_PLUS && (a.type == V_STR || b.type == V_STR || (a.type == V_LIST && b.type == V_LIST))) {
@@ -590,11 +633,15 @@ static value_t arithmetic (token_type_t op, value_t a, value_t b, int line) {
             default: break;
         }
     }
-    if (a.type != V_INT || b.type != V_INT) {
+    if (!aer_is_number(a) || !aer_is_number(b)) {
         aer_error(line, "can't use that operator on a %s and a %s", aer_type_name(a), aer_type_name(b));
     }
+    if (a.type == V_FLOAT || b.type == V_FLOAT) {
+        return decimal_arithmetic(op, aer_real(a), aer_real(b), line);
+    }
 
-    // numbers wrap around at 32 bits instead of overflowing
+    // two whole numbers: whole number maths. They wrap around at 32 bits instead of
+    // overflowing, and / drops the remainder (7 / 2 is 3; 7 / 2.0 is 3.5)
     uint32_t x = (uint32_t)a.as.i;
     uint32_t y = (uint32_t)b.as.i;
     switch (op) {
@@ -669,6 +716,7 @@ static value_t eval (aer_node_t* n) {
     check_stack(n->line);
     switch (n->type) {
         case N_NUMBER: return aer_int(n->number);
+        case N_FLOAT: return aer_float(n->real);
         case N_STRING: aer_retain(n->value); return n->value;
         case N_NIL: return aer_nil();
         case N_TRUE: return aer_bool(true);
@@ -713,7 +761,13 @@ static value_t eval (aer_node_t* n) {
                 aer_release(v);
                 return aer_bool(!truth);
             }
-            return aer_int((int32_t)(0u - (uint32_t)need_int(v, n->line, "the value after -")));
+            if (v.type == V_FLOAT) {
+                return aer_float(-v.as.f);
+            }
+            if (v.type != V_INT) {
+                aer_error(n->line, "the value after - must be a number, not a %s", aer_type_name(v));
+            }
+            return aer_int((int32_t)(0u - (uint32_t)v.as.i));
         }
 
         // "and" / "or" give back one of their operands, so "x or 5" is x unless x is nil / false / 0
@@ -990,6 +1044,7 @@ static void session_begin (const char* name, const char* args) {
     aer = &state;
     aer->name = name;
     kb_take_break(); // forget a Ctrl+C pressed before the program started
+    fpu_enable();    // decimal numbers need the FPU (lib/fpu.h): on before any code runs
 
     // the builtin functions are ordinary global variables, so a program could even replace one
     for (int i = 0; i < aer_builtin_count; i++) {
@@ -1075,12 +1130,14 @@ bool aer_is_program_name (const char* name, size_t length) {
     return strncasecmp(extension, ".aer", 4) == 0 || strncasecmp(extension, ".ren", 4) == 0;
 }
 
-// look for a program: as given, then with ".aer" added, in the current directory and then /bin/.
-// Its source code (free() it), or NULL. folder_out and name_out get where it was found
+const char* const aer_app_folders[] = { "/bin/", "/bin/games/", NULL };
+
+// look for a program: as given, then with ".aer" added, in the current directory and then in
+// each of aer_app_folders. Its source code (free() it), or NULL. folder_out and name_out get
+// where it was found
 static char* find_program (const char* path, char* folder_out, size_t folder_size, char* name_out, size_t name_size) {
     char dir[FS_PATH_MAX];
     char name[FS_NAME_MAX];
-    const char* folders[2] = { 0, "/bin/" };
     for (int with_extension = 0; with_extension < 2; with_extension++) {
         char full[FS_PATH_MAX];
         scpy(full, path, sizeof(full));
@@ -1090,11 +1147,13 @@ static char* find_program (const char* path, char* folder_out, size_t folder_siz
         if (!fs_split_path(full, dir, sizeof(dir), name, sizeof(name))) {
             continue;
         }
-        for (int f = 0; f < 2; f++) {
-            if (f == 1 && strchr(path, '/')) {
-                break; // an explicit path isn't searched for in /bin/
+        // the folder it was given in (the current one for a plain name), then the app folders
+        // (not for a path like "games/snake": that only means where it says)
+        for (int f = -1; f < 0 || aer_app_folders[f] != NULL; f++) {
+            if (f >= 0 && strchr(path, '/')) {
+                break;
             }
-            const char* folder = folders[f] ? folders[f] : dir;
+            const char* folder = f < 0 ? dir : aer_app_folders[f];
             char* source = fs_read_f(folder, name);
             if (source) {
                 scpy(folder_out, folder, folder_size);
