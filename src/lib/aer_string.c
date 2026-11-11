@@ -46,9 +46,13 @@
 void* memset(void* dest, int value, size_t count) {
     uint32_t byte = (uint8_t)value;
     uint32_t pattern = byte * 0x01010101u; // the byte in all four places: 0xAB -> 0xABABABAB
+    // a working copy of dest, because the instructions move EDI along as they go
     void* to = dest;
+    // e.g. 11 bytes = 2 whole 4 byte words and 3 bytes left over
     size_t words = count / 4;
     size_t bytes = count % 4;
+    // the words first, then the leftover bytes carry on from where EDI stopped. stosb only
+    // stores AL, the low byte of the pattern, which is the fill byte itself
     __asm__ volatile ("rep stosl" : "+D"(to), "+c"(words) : "a"(pattern) : "memory");
     __asm__ volatile ("rep stosb" : "+D"(to), "+c"(bytes) : "a"(pattern) : "memory");
     return dest;
@@ -57,8 +61,10 @@ void* memset(void* dest, int value, size_t count) {
 // copy count bytes from src to dest, returns dest
 // the regions must not overlap (that is what "restrict" promises), use memmove if they might
 void* memcpy(void* restrict dest, const void* restrict src, size_t count) {
+    // working copies, because the instructions move EDI and ESI along as they go
     void* to = dest;
     const void* from = src;
+    // the same split as memset: whole 4 byte words first, then the 0 to 3 bytes left over
     size_t words = count / 4;
     size_t bytes = count % 4;
     __asm__ volatile ("rep movsl" : "+D"(to), "+S"(from), "+c"(words) : : "memory");
@@ -132,6 +138,7 @@ void* memchr(const void* s, int c, size_t count) {
 // slen("abc") is 3, slen("") is 0
 size_t slen(const char* s) {
     size_t len = 0;
+    // count characters until the terminator
     while (s[len] != '\0') {
         len++;
     }
@@ -187,6 +194,7 @@ int strcasecmp(const char* a, const char* b) {
         a++;
         b++;
     }
+    // the difference of the first characters that don't match (folded, so case never decides it)
     return tolower((unsigned char)*a) - tolower((unsigned char)*b);
 }
 
@@ -347,6 +355,7 @@ size_t strspn(const char* s, const char* accept) {
 // e.g. strcspn("ls /sys", " ") is 2, the length of the first word
 size_t strcspn(const char* s, const char* reject) {
     size_t n = 0;
+    // the mirror image of strspn: count until a character IS in reject (or s ends)
     while (s[n] && !strchr(reject, s[n])) {
         n++;
     }
@@ -425,6 +434,7 @@ char* strrev(char* s) {
 // convert a string to upper / lower case in place
 // anything that isn't a letter is left alone; both return s so calls can be chained
 char* strupr(char* s) {
+    // the cast keeps toupper's argument in range for characters above 127 (see aer_ctype.h)
     for (char* p = s; *p; p++) {
         *p = (char)toupper((unsigned char)*p);
     }
@@ -455,19 +465,26 @@ char* strlwr(char* s) {
 // three are kept.
 // https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance
 
+// the longest string sdist will measure, the three rows live on the stack so they need a fixed size
 #define SDIST_LONGEST 32
 
+// the smaller of two ints
 static int smallest(int a, int b) {
     return a < b ? a : b;
 }
 
+// are a and b the same letter, ignoring case? (so "LS" is no distance from "ls")
 static bool same_letter(char a, char b) {
     return tolower((unsigned char)a) == tolower((unsigned char)b);
 }
 
+// how many single character edits (add, remove, change, or swap two neighbours) turn a into b,
+// ignoring case, see the table above. Strings of SDIST_LONGEST characters or more just get 99,
+// meaning "very different"
 int sdist(const char* a, const char* b) {
     size_t a_length = slen(a);
     size_t b_length = slen(b);
+    // too long for the fixed size rows below
     if (a_length >= SDIST_LONGEST || b_length >= SDIST_LONGEST) {
         return 99;
     }
@@ -475,6 +492,7 @@ int sdist(const char* a, const char* b) {
     int two_up[SDIST_LONGEST + 1];   // row i - 2
     int above[SDIST_LONGEST + 1];    // row i - 1
     int row[SDIST_LONGEST + 1];      // row i, being filled in
+    // row 0 of the table
     for (size_t j = 0; j <= b_length; j++) {
         above[j] = (int)j;           // "" -> the first j characters of b: add j
     }
@@ -482,17 +500,23 @@ int sdist(const char* a, const char* b) {
     for (size_t i = 1; i <= a_length; i++) {
         row[0] = (int)i;             // the first i characters of a -> "": take i away
         for (size_t j = 1; j <= b_length; j++) {
+            // a[i - 1] and b[j - 1] are the characters this cell adds (row / column 0 is "")
             int change = same_letter(a[i - 1], b[j - 1]) ? 0 : 1;
+            // take away, add, or change / keep: the three neighbours from the table above
             int best = smallest(above[j] + 1, row[j - 1] + 1);
             best = smallest(best, above[j - 1] + change);
+            // the swap only makes sense from the second row and column on, which is also why
+            // two_up is never read before it has been filled in
             bool swapped = i > 1 && j > 1 && same_letter(a[i - 1], b[j - 2]) && same_letter(a[i - 2], b[j - 1]);
             if (swapped) {
                 best = smallest(best, two_up[j - 2] + 1);
             }
             row[j] = best;
         }
+        // shuffle the rows up one ready for the next i
         memcpy(two_up, above, sizeof(above));
         memcpy(above, row, sizeof(row));
     }
+    // after the last shuffle the finished bottom row is in above
     return above[b_length];
 }

@@ -114,11 +114,16 @@ static uint8_t fb_font[256][16];   // a copy of font8x16, so vga_set_glyph can c
 
 // pack a colour into the framebuffer's pixel format, using the bit positions GRUB reported
 static uint32_t fb_pack(const uint8_t* rgb) {
+    // each 8 bit channel is cut down to the bits the screen has for it (shifting off the low
+    // bits, so 8 bits stay 8 and 5 bits keep the top 5), then moved up to where the screen keeps it
     return ((uint32_t)(rgb[0] >> (8 - fb.red_size)) << fb.red_pos) |
            ((uint32_t)(rgb[1] >> (8 - fb.green_size)) << fb.green_pos) |
            ((uint32_t)(rgb[2] >> (8 - fb.blue_size)) << fb.blue_pos);
 }
 
+// write one packed colour into the pixel at `pixel`, using as many bytes as a pixel takes.
+// There is no 24 bit type, so a 3 byte pixel is written a byte at a time, lowest byte first
+// (the x86 is little endian, so that is the same order a 4 byte write would use)
 static void fb_put(uint8_t* pixel, uint32_t color) {
     switch (fb.bytes) {
         case 4: *(uint32_t*)pixel = color; break;
@@ -129,6 +134,8 @@ static void fb_put(uint8_t* pixel, uint32_t color) {
 
 // draw one cell from cells[], including the underline cursor if it is in this cell
 static void fb_draw_cell(unsigned int index) {
+    // a cell is the character in the low byte and the colours in the high byte, text colour in
+    // the low 4 bits of that and background in the high 4
     uint8_t ch = cells[index] & 0xFF;
     uint8_t attr = cells[index] >> 8;
     uint32_t fg = fb_colors[attr & 0x0F];
@@ -139,19 +146,28 @@ static void fb_draw_cell(unsigned int index) {
     bool repeat_last = ch >= 0xC0 && ch <= 0xDF;
     bool cursor = vga_cursor_visible && index == cursor_index;
 
+    // the cell's top left pixel: its column and row in the grid, times the size of a scaled
+    // cell, from where the centred grid starts
     uint32_t x0 = fb.left + (index % COLS) * fb.cell_width * fb.scale;
     uint32_t y0 = fb.top + (index / COLS) * CELL_HEIGHT * fb.scale;
 
     for (uint32_t row = 0; row < CELL_HEIGHT; row++) {
+        // the row as 9 bits, bit 8 being the leftmost pixel: the font's 8 bits moved up one, which
+        // leaves bit 0 for the 9th column. (0x1FF is all 9 bits set, a solid line)
         // the cursor is an underline over the last two rows, in the text colour
         uint32_t bits = (cursor && row >= 14) ? 0x1FF : ((uint32_t)glyph[row] << 1);
         if (repeat_last && (glyph[row] & 1)) {
             bits |= 1;
         }
+        // every font row is drawn `scale` times, one screen line below the other
         for (uint32_t sy = 0; sy < fb.scale; sy++) {
+            // the first pixel of this screen line in the cell: pitch bytes per line down, then
+            // bytes per pixel across (pitch can be more than width * bytes, so it is used for rows)
             uint8_t* pixel = fb.base + (y0 + row * fb.scale + sy) * fb.pitch + x0 * fb.bytes;
+            // with 8 pixel wide cells col only reaches 7, so the 9th column (bit 0) is never drawn
             for (uint32_t col = 0; col < fb.cell_width; col++) {
                 uint32_t color = (bits & (0x100 >> col)) ? fg : bg;
+                // and every font pixel `scale` times across
                 for (uint32_t sx = 0; sx < fb.scale; sx++) {
                     fb_put(pixel, color);
                     pixel += fb.bytes;
@@ -164,10 +180,13 @@ static void fb_draw_cell(unsigned int index) {
 // paint the margin around the 80 x 25 grid (the screen is rarely an exact multiple of 720 x 400),
 // so a full screen layout like the splash fills the whole screen
 static void fb_fill_border(int color_index) {
-    border_color = color_index;
+    border_color = color_index; // remembered so a palette change or new framebuffer can repaint it
     uint32_t color = fb_colors[color_index];
+    // one past the grid's last pixel on the right and at the bottom
     uint32_t right = fb.left + COLS * fb.cell_width * fb.scale;
     uint32_t bottom = fb.top + ROWS * CELL_HEIGHT * fb.scale;
+    // lines above and below the grid are border all the way across, the lines beside it only
+    // to the left and right of it (the grid's own pixels belong to the cells)
     for (uint32_t y = 0; y < fb.height; y++) {
         bool grid_row = y >= fb.top && y < bottom;
         uint8_t* pixel = fb.base + y * fb.pitch;
@@ -186,7 +205,7 @@ static void fb_fill_border(int color_index) {
 }
 
 // redraw every cell that uses colour index (as text or background) or shows character ch
-// (pass -1 for whichever one doesn't apply)
+// (pass -1 for whichever one doesn't apply: no colour or character is ever -1, so it matches nothing)
 static void fb_redraw(int color_index, int ch) {
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
         uint8_t attr = cells[i] >> 8;
@@ -198,10 +217,13 @@ static void fb_redraw(int color_index, int ch) {
 
 // take over the framebuffer GRUB set up, returns false if we can't draw on it
 static bool fb_setup(const vga_framebuffer_t* info) {
+    // bits per pixel rounded up to whole bytes (so 15 bit colour still takes 2 bytes a pixel).
+    // 8 bit palette modes aren't drawn on: every colour would need setting up in the palette
     uint32_t bytes = (info->bpp + 7) / 8;
     if (info->address == 0 || (bytes != 2 && bytes != 3 && bytes != 4)) {
         return false;
     }
+    // keep the layout of the pixels, which the drawing functions read from fb
     fb_info = *info;
     fb.base = (uint8_t*)(uintptr_t)info->address;
     fb.pitch = info->pitch;
@@ -215,6 +237,9 @@ static bool fb_setup(const vga_framebuffer_t* info) {
 
     // 720 x 400 like real VGA if it fits, otherwise 8 pixel wide cells (640 x 400)
     fb.cell_width = (info->width >= COLS * 9) ? 9 : 8;
+    // the biggest whole number scale that fits each way, and the smaller of the two so the grid
+    // fits both ways. A whole number keeps every font pixel a neat square block, e.g. a 1920 x
+    // 1080 screen gives 1920 / 720 = 2 across and 1080 / 400 = 2 down, so 1440 x 800 of grid
     uint32_t scale_x = info->width / (COLS * fb.cell_width);
     uint32_t scale_y = info->height / (ROWS * CELL_HEIGHT);
     fb.scale = (scale_x < scale_y) ? scale_x : scale_y;
@@ -223,9 +248,11 @@ static bool fb_setup(const vga_framebuffer_t* info) {
     }
     fb.width = info->width;
     fb.height = info->height;
+    // centre the grid: half of what is left over goes on each side
     fb.left = (info->width - COLS * fb.cell_width * fb.scale) / 2;
     fb.top = (info->height - ROWS * CELL_HEIGHT * fb.scale) / 2;
 
+    // the 16 colours, packed once here instead of for every pixel
     for (int i = 0; i < 16; i++) {
         fb_colors[i] = fb_pack(palette[i]);
     }
@@ -241,10 +268,12 @@ static bool fb_setup(const vga_framebuffer_t* info) {
     return true;
 }
 
+// is the screen a framebuffer (true) or VGA text mode (false)?
 bool vga_framebuffer_active(void) {
     return fb_mode;
 }
 
+// copy what GRUB told us about the framebuffer into *out, false in VGA text mode (*out is untouched)
 bool vga_framebuffer_info(vga_framebuffer_t* out) {
     if (fb_mode) {
         *out = fb_info;
@@ -253,6 +282,7 @@ bool vga_framebuffer_info(vga_framebuffer_t* out) {
 }
 
 // where a block of cells is on screen, in framebuffer pixels
+// false in VGA text mode, where there are no pixels to give
 bool vga_cell_area(uint8_t col, uint8_t row, uint8_t cols, uint8_t rows,
                    uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h) {
     if (!fb_mode) {
@@ -267,11 +297,16 @@ bool vga_cell_area(uint8_t col, uint8_t row, uint8_t cols, uint8_t rows,
 
 // switch to a new framebuffer (after the graphics card changed mode) and redraw the screen on it
 bool vga_change_framebuffer(const vga_framebuffer_t* info) {
+    // the same checks fb_setup makes, plus the smallest screen the grid fits on (80 * 8 by
+    // 25 * 16 = 640 x 400). They are made first, so a framebuffer we can't use leaves the old
+    // one in place, rather than fb half set up for the new one
     uint32_t bytes = (info->bpp + 7) / 8;
     if (!fb_mode || info->address == 0 || (bytes != 2 && bytes != 3 && bytes != 4) ||
         info->width < COLS * 8 || info->height < ROWS * CELL_HEIGHT) {
         return false;
     }
+    // work out the new scale and centring (this blacks out the screen), then paint the border
+    // and every cell again from cells[]
     fb_setup(info);
     fb_fill_border(border_color);
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
@@ -280,6 +315,9 @@ bool vga_change_framebuffer(const vga_framebuffer_t* info) {
     return true;
 }
 
+// forget what the console last drew, so the next output repaints every cell
+// 0xFFFF (character 255, white on white) is a cell nothing really draws, so cell_set sees
+// every cell as changed
 void vga_invalidate(void) {
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
         cells[i] = 0xFFFF;
@@ -288,10 +326,13 @@ void vga_invalidate(void) {
 
 // change one cell, on screen and in cells[]
 static void cell_set(unsigned int index, uint16_t entry) {
+    // already showing that: skip it. Drawing a cell on a framebuffer is hundreds of pixel writes,
+    // so this is what keeps scrolling quick (most of a scrolled screen is blank lines)
     if (cells[index] == entry) {
         return;
     }
     cells[index] = entry;
+    // a framebuffer cell is drawn by us, a text mode cell by the graphics card from video[]
     if (fb_mode) {
         fb_draw_cell(index);
     } else {
@@ -335,6 +376,8 @@ void vga_move_cursor(uint8_t x, uint8_t y) {
     unsigned int old = cursor_index;
     cursor_index = (unsigned int)(y * COLS + x);
     if (fb_mode) {
+        // on a framebuffer the cursor is drawn as part of its cell, so redraw the cell it left
+        // (without it) and the one it moved to (with it)
         if (vga_cursor_visible && old != cursor_index) {
             fb_draw_cell(old);
             fb_draw_cell(cursor_index);
@@ -426,10 +469,13 @@ static void big_text_cell(uint8_t x, uint8_t y, enum color fg, enum color bg, bo
     }
 }
 
+// draw text in big letters made of half blocks (see above) with the top left corner at column x,
+// row y, returns how many columns wide it is
 int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text) {
     int width = 0;
 
     for (const char* c = text; *c != '\0'; c++) {
+        // the original font, not fb_font, so a glyph changed with vga_set_glyph isn't drawn big
         const uint8_t* glyph = font8x16[(uint8_t)*c];
         int letter_x = x + width;
 
@@ -455,6 +501,7 @@ int big_text(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* tex
 }
 
 // a filled rectangle of pixels on the framebuffer, cut to fit the screen
+// (x, y is in pixels, color is already packed with fb_pack)
 static void fb_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color) {
     for (uint32_t row = y; row < y + h && row < fb.height; row++) {
         uint8_t* pixel = fb.base + row * fb.pitch + x * fb.bytes;
@@ -465,8 +512,10 @@ static void fb_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t col
     }
 }
 
+// big_text at `percent` of its size, drawn in real pixels (see VGA_linear.h)
 int big_text_sized(uint8_t x, uint8_t y, enum color fg, enum color bg, const char* text, int percent, uint8_t* rows) {
     uint32_t left, top, cell_w, cell_h;
+    // where cell x, y is in pixels, and how big a cell is (vga_cell_area fails in text mode)
     if (percent >= 100 || !vga_cell_area(x, y, 1, 1, &left, &top, &cell_w, &cell_h)) {
         // the text screen (or full size): big_text, in cells
         if (rows != NULL) {
@@ -475,21 +524,27 @@ int big_text_sized(uint8_t x, uint8_t y, enum color fg, enum color bg, const cha
         return big_text(x, y, fg, bg, text);
     }
     if (percent < 10) {
-        percent = 10;
+        percent = 10; // any smaller and a font pixel could round down to nothing
     }
+    // it draws pixels straight over the cells, so make sure those are the live screen's cells
     LIVE_SCREEN();
 
     // one font pixel at full size is a cell wide and half a cell tall: this is `percent` of it
+    // (multiplied before dividing, so the percentage isn't lost to rounding)
     uint32_t pixel_w = cell_w * (uint32_t)percent / 100;
     uint32_t pixel_h = cell_h / 2 * (uint32_t)percent / 100;
     pixel_w = pixel_w > 0 ? pixel_w : 1;
     pixel_h = pixel_h > 0 ? pixel_h : 1;
 
+    // `at` is the left edge of the next letter, in pixels
     uint32_t at = left;
     for (const char* c = text; *c != '\0'; c++) {
         const uint8_t* glyph = font8x16[(uint8_t)*c];
+        // the same 14 font rows big_text shows, but one font row at a time: with real pixels
+        // there is no need to pair them up into half blocks
         for (uint32_t row = 0; row < BIG_TEXT_ROWS * 2; row++) {
             uint8_t bits = glyph[BIG_TEXT_FIRST_FONT_ROW + row];
+            // each font pixel becomes a pixel_w x pixel_h rectangle, bit 7 being the leftmost
             for (uint32_t col = 0; col < 8; col++) {
                 uint32_t colour = (bits & (0x80 >> col)) ? fb_colors[fg] : fb_colors[bg];
                 fb_rect(at + col * pixel_w, top + row * pixel_h, pixel_w, pixel_h, colour);
@@ -497,7 +552,8 @@ int big_text_sized(uint8_t x, uint8_t y, enum color fg, enum color bg, const cha
         }
         at += 8 * pixel_w;
     }
-    // how many cells it covers, rounded up
+    // how many cells it covers, rounded up: adding cell_h - 1 (or cell_w - 1) before dividing
+    // turns any part of a cell into a whole one
     if (rows != NULL) {
         *rows = (uint8_t)((BIG_TEXT_ROWS * 2 * pixel_h + cell_h - 1) / cell_h);
     }
@@ -566,21 +622,25 @@ static void capture_add(char c) {
     }
 }
 
+// start sending console output into buffer instead of onto the screen
 void console_capture_begin(char* buffer, size_t size) {
     capture.buffer = buffer;
     capture.size = size;
     capture.used = 0;
+    // empty to begin with, so a command that prints nothing gives back ""
     if (size > 0) {
         buffer[0] = '\0';
     }
 }
 
+// stop capturing (output goes to the screen again), returns how many characters were kept
 size_t console_capture_end(void) {
     size_t used = capture.used;
     capture.buffer = NULL;
     return used;
 }
 
+// is console output going into a capture buffer right now?
 bool console_capturing(void) {
     return capture.buffer != NULL;
 }
@@ -605,6 +665,7 @@ void console_clear(void) {
 // the top line goes into the scrollback first. The copy runs forwards: each cell is copied from
 // one row further down, which has not been overwritten yet, so the overlap is safe
 static void console_scroll(void) {
+    // keep the top line in the next slot of the ring, wrapping round to slot 0 at the end
     for (unsigned int x = 0; x < COLS; x++) {
         scrollback[scrollback_next][x] = cells[x];
     }
@@ -612,9 +673,11 @@ static void console_scroll(void) {
     if (scrollback_count < CONSOLE_SCROLLBACK) {
         scrollback_count++;
     }
+    // every row takes the one below it (cell i gets cell i + COLS, one row further down)
     for (unsigned int i = 0; i < COLS * (ROWS - 1); i++) {
         cell_set(i, cells[i + COLS]);
     }
+    // and the bottom row starts out blank
     for (unsigned int x = 0; x < COLS; x++) {
         cell_set((ROWS - 1) * COLS + x, VGA_ENTRY(' ', console_fg, console_bg));
     }
@@ -624,6 +687,7 @@ static void console_scroll(void) {
 // of a line, scroll at the bottom of the screen and copy the character to the serial port
 // it deliberately does not move the hardware cursor (4 slow port writes), callers do that once
 void console_putchar_raw(char c) {
+    // being captured: the character goes into the buffer and nowhere else
     if (capture.buffer != NULL) {
         capture_add(c);
         return;
@@ -726,12 +790,15 @@ void console_backspace(void) {
 // so screen row r shows line (scrollback_count - view_back + r) of that list.
 
 // scrolled off line i, 0 being the oldest kept
+// the oldest is scrollback_count slots behind scrollback_next. CONSOLE_SCROLLBACK is added before
+// taking that away so the unsigned sum never goes below 0, and % wraps it back into the ring
 static const uint16_t* scrollback_line(unsigned int i) {
     return scrollback[(scrollback_next + CONSOLE_SCROLLBACK - scrollback_count + i) % CONSOLE_SCROLLBACK];
 }
 
 // draw the view, with a tag in the top right corner saying how far back it is
 static void view_draw(void) {
+    // each screen row comes from the scrollback, or once past its end, from the set aside live screen
     for (unsigned int r = 0; r < ROWS; r++) {
         unsigned int line = scrollback_count - view_back + r;
         const uint16_t* source = line < scrollback_count ? scrollback_line(line)
@@ -745,6 +812,8 @@ static void view_draw(void) {
     char tag[40];
     char digits[8];
     unsigned int n = view_back, d = 0, t = 0;
+    // n % 10 gives the digits last one first, so they are collected in digits[] and copied out
+    // backwards. (do / while, so 0 still gets a digit, though view_back is never 0 here)
     do {
         digits[d++] = (char)('0' + n % 10);
         n /= 10;
@@ -756,12 +825,15 @@ static void view_draw(void) {
     for (const char* s = view_back == 1 ? " line back  PgUp / PgDn " : " lines back  PgUp / PgDn "; *s; s++) {
         tag[t++] = *s;
     }
+    // right aligned on the top row, black on yellow so it can't be mistaken for old output
     for (unsigned int i = 0; i < t; i++) {
         cell_set(COLS - t + i, VGA_ENTRY(tag[i], BLACK, YELLOW));
     }
 }
 
+// move the view `lines` further back (or forward, when negative) through the scrollback
 void console_view_scroll(int lines) {
+    // keep it between the live screen (0) and the oldest line kept
     int back = (int)view_back + lines;
     if (back < 0) {
         back = 0;
@@ -769,9 +841,11 @@ void console_view_scroll(int lines) {
     if (back > (int)scrollback_count) {
         back = (int)scrollback_count;
     }
+    // already there (e.g. Page Up with nothing more to see): nothing to redraw
     if ((unsigned int)back == view_back) {
         return;
     }
+    // all the way forward: put the live screen back as it was
     if (back == 0) {
         console_view_live();
         return;
@@ -788,6 +862,7 @@ void console_view_scroll(int lines) {
     view_draw();
 }
 
+// stop looking back: draw the set aside live screen again, cursor and all
 void console_view_live(void) {
     if (view_back == 0) {
         return;
@@ -796,11 +871,14 @@ void console_view_live(void) {
     for (unsigned int i = 0; i < COLS * ROWS; i++) {
         cell_set(i, live[i]);
     }
+    // the cursor comes back only if it was showing when we started looking back
     if (live_cursor) {
         vga_enable_cursor(14, 15);
     }
 }
 
+// forget every scrolled off line (on logout)
+// the lines are zeroed rather than just counted out, so the old text is really gone from memory
 void console_forget_scrollback(void) {
     console_view_live();
     for (unsigned int i = 0; i < CONSOLE_SCROLLBACK; i++) {
@@ -829,8 +907,11 @@ void vga_init(const vga_framebuffer_t* framebuffer) {
         0xA5, 0x99, 0x42, 0x3C, 0x00, 0x00, 0x00, 0x00
     };
 
+    // GRUB hands over a framebuffer when it set up a graphics mode (a UEFI boot), NULL in text
+    // mode. If it is a kind we can't draw on (or too small), AerOS carries on as if in text mode
     fb_mode = framebuffer != 0 && fb_setup(framebuffer);
     if (fb_mode) {
+        // our own copy of the font, so vga_set_glyph has something it can change
         for (int ch = 0; ch < 256; ch++) {
             for (int row = 0; row < CELL_HEIGHT; row++) {
                 fb_font[ch][row] = font8x16[ch][row];
@@ -847,6 +928,7 @@ void vga_init(const vga_framebuffer_t* framebuffer) {
         // itself, from the palette table above, which already has the orange)
         vga_set_palette(ORANGE, ORANGE_RGB);
     }
+    // the font has no copyright sign, so one of its characters is redrawn as one
     vga_set_glyph((uint8_t)VGA_COPYRIGHT[0], copyright);
 
     // cells[] starts out not matching anything on screen, so the first clear draws every cell
@@ -869,10 +951,14 @@ static uint8_t vga_dac_index(enum color color) {
     return index;
 }
 
-// the DAC takes a register number on 0x3C8 (write) or 0x3C7 (read), then red, green and blue
-// one after another through 0x3C9, each 6 bits (0 - 63)
+// change what one of the 16 text colours looks like, to r, g, b (0 - 255 each)
+// In text mode that is the DAC, the chip that turns colour numbers into the signal for the
+// screen. The DAC takes a register number on 0x3C8 (write) or 0x3C7 (read), then red, green and
+// blue one after another through 0x3C9, each 6 bits (0 - 63)
 // https://wiki.osdev.org/VGA_Hardware#Port_0x3C8
 void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b) {
+    // on a framebuffer the colours are our own: change the table, then redraw every cell (and
+    // the border) that uses this colour, as nothing on screen changes by itself
     if (fb_mode) {
         palette[color][0] = r;
         palette[color][1] = g;
@@ -884,12 +970,15 @@ void vga_set_palette(enum color color, uint8_t r, uint8_t g, uint8_t b) {
         }
         return;
     }
+    // in text mode the card redraws the screen with the new colour straight away.
+    // >> 2 turns 8 bits (0 - 255) into the DAC's 6 bits (0 - 63)
     outb(0x3C8, vga_dac_index(color));
     outb(0x3C9, r >> 2);
     outb(0x3C9, g >> 2);
     outb(0x3C9, b >> 2);
 }
 
+// read what one of the 16 text colours looks like now, as r, g, b (0 - 255 each)
 void vga_get_palette(enum color color, uint8_t* r, uint8_t* g, uint8_t* b) {
     if (fb_mode) {
         *r = palette[color][0];
@@ -897,6 +986,8 @@ void vga_get_palette(enum color color, uint8_t* r, uint8_t* g, uint8_t* b) {
         *b = palette[color][2];
         return;
     }
+    // << 2 turns the DAC's 6 bits back into 8. The bottom two bits come back as 0, so a colour
+    // read back can be up to 3 less than the one set (255 comes back as 252)
     outb(0x3C7, vga_dac_index(color));
     *r = (uint8_t)(inb(0x3C9) << 2);
     *g = (uint8_t)(inb(0x3C9) << 2);
@@ -910,6 +1001,7 @@ static uint8_t vga_read_reg(uint16_t port, uint8_t index) {
     return inb(port + 1);
 }
 
+// (the write half of the pair above)
 static void vga_write_reg(uint16_t port, uint8_t index, uint8_t value) {
     outb(port, index);
     outb(port + 1, value);
@@ -926,10 +1018,11 @@ void vga_set_glyph(uint8_t character, const uint8_t* glyph) {
         for (int row = 0; row < CELL_HEIGHT; row++) {
             fb_font[character][row] = glyph[row];
         }
-        fb_redraw(-1, character);
+        fb_redraw(-1, character); // the cells already showing it pick up the new shape
         return;
     }
 
+    // keep the five registers about to be changed, so text mode carries on exactly as before
     uint8_t map_mask = vga_read_reg(0x3C4, 0x02);
     uint8_t memory_mode = vga_read_reg(0x3C4, 0x04);
     uint8_t read_map = vga_read_reg(0x3CE, 0x04);
@@ -942,11 +1035,14 @@ void vga_set_glyph(uint8_t character, const uint8_t* glyph) {
     vga_write_reg(0x3CE, 0x05, 0x00); // odd / even off
     vga_write_reg(0x3CE, 0x06, 0x04); // memory window at 0xA0000, 64KB
 
+    // with the window on plane 2, 0xA0000 is the start of the font: 32 bytes a character, one
+    // byte per row of pixels (bit 7 the leftmost), and only the first 16 used by this font
     volatile uint8_t* slot = (volatile uint8_t*)0xA0000 + character * 32;
     for (int row = 0; row < 16; row++) {
         slot[row] = glyph[row];
     }
 
+    // and everything back, so 0xB8000 shows the characters and colours again
     vga_write_reg(0x3C4, 0x02, map_mask);
     vga_write_reg(0x3C4, 0x04, memory_mode);
     vga_write_reg(0x3CE, 0x04, read_map);

@@ -40,11 +40,16 @@ typedef struct {
     int capacity;
 } token_list_t;
 
+// Add a new, blank token of this type to the end of the list and return it, so the caller can
+// fill in its number or text
 static token_t* add_token (token_list_t* list, token_type_t type, int line) {
+    // full: double the room (starting at 256, enough for most small programs). The pointer
+    // returned is only good until the next add_token, which may move the array
     if (list->count == list->capacity) {
         list->capacity = list->capacity ? list->capacity * 2 : 256;
         list->tokens = aer_realloc(list->tokens, (size_t)list->capacity * sizeof(token_t));
     }
+    // cleared, so the fields this type doesn't use are 0 / NULL rather than leftovers
     token_t* t = &list->tokens[list->count++];
     memset(t, 0, sizeof(*t));
     t->type = type;
@@ -60,7 +65,8 @@ static int hex_value (char c) {
     return tolower((unsigned char)c) - 'a' + 10;
 }
 
-// the whole source text -> an array of tokens ending in T_EOF, *count says how many
+// The whole source text -> an array of tokens ending in T_EOF, *count says how many. Any
+// mistake (a bad number, an unclosed string) goes to aer_error, which never returns
 token_t* aer_lex (const char* src, int* count) {
     token_list_t list = { 0, 0, 0 };
     int line = 1;
@@ -83,7 +89,8 @@ token_t* aer_lex (const char* src, int* count) {
             continue;
         }
         if (c == '\n') {
-            // one T_NEWLINE however many blank lines there are
+            // one T_NEWLINE however many blank lines there are, none inside ( ) or [ ], and none
+            // at the very start of the file (so the parser never sees an empty statement)
             if (depth == 0 && list.count > 0 && list.tokens[list.count - 1].type != T_NEWLINE) {
                 add_token(&list, T_NEWLINE, line);
             }
@@ -102,6 +109,9 @@ token_t* aer_lex (const char* src, int* count) {
                 if (!isxdigit((unsigned char)*p)) {
                     aer_error(line, "expected hex digits after 0x");
                 }
+                // each hex digit is 4 bits, so check before shifting another one in: anything
+                // above 0x0FFFFFFF would lose its top bits. Hex can fill all 32 bits (0xFFFFFFFF),
+                // which comes out negative once stored as a signed number below
                 while (isxdigit((unsigned char)*p)) {
                     if (value > 0x0FFFFFFF) {
                         aer_error(line, "number is too big");
@@ -110,7 +120,9 @@ token_t* aer_lex (const char* src, int* count) {
                 }
             } else {
                 // a decimal number has a "." with digits after it, or an exponent (2.5, 1e6):
-                // read it as one, all of it
+                // read it as one, all of it. Look ahead past the digits first without moving p,
+                // to see which kind it is. A "." or "e" only counts with digits after it, so a
+                // plain "3." isn't taken for a decimal
                 const char* digits_end = p;
                 while (isdigit((unsigned char)*digits_end)) {
                     digits_end++;
@@ -120,6 +132,7 @@ token_t* aer_lex (const char* src, int* count) {
                                     (isdigit((unsigned char)digits_end[1]) ||
                                      ((digits_end[1] == '-' || digits_end[1] == '+') && isdigit((unsigned char)digits_end[2])));
                 if (has_point || has_exponent) {
+                    // parse_real moves p on to the first character after the number
                     double real;
                     parse_real(p, &real, &p);
                     if (isalpha((unsigned char)*p) || *p == '_') {
@@ -128,6 +141,9 @@ token_t* aer_lex (const char* src, int* count) {
                     add_token(&list, T_FLOAT, line)->real = real;
                     continue;
                 }
+                // a whole number: check before each step that value * 10 + digit will still fit
+                // in 2147483647 (0x7FFFFFFF), the biggest 32 bit signed number. Testing it
+                // afterwards would be too late, as the overflow would already have happened
                 while (isdigit((unsigned char)*p)) {
                     uint32_t digit = (uint32_t)(*p++ - '0');
                     if (value > (0x7FFFFFFFu - digit) / 10) {
@@ -136,6 +152,8 @@ token_t* aer_lex (const char* src, int* count) {
                     value = value * 10 + digit;
                 }
             }
+            // a letter straight after the digits means it wasn't really a number (and a name
+            // can't start with a digit either), so it is a mistake rather than two tokens
             if (isalpha((unsigned char)*p) || *p == '_') {
                 aer_error(line, "bad number"); // e.g. 12abc
             }
@@ -158,6 +176,7 @@ token_t* aer_lex (const char* src, int* count) {
             }
             // then copy it, decoding the escapes. The text can only get shorter (\n is 2
             // characters in the source and 1 in the string), so the source length is enough room
+            // (the length is kept as well as the '\0', because \0 can put a '\0' in the middle)
             char* text = aer_alloc((size_t)(p - start) + 1);
             uint32_t length = 0;
             for (const char* s = start; s < p; s++) {
@@ -165,6 +184,7 @@ token_t* aer_lex (const char* src, int* count) {
                     text[length++] = *s;
                     continue;
                 }
+                // a backslash: the character after it says what it stands for
                 s++;
                 switch (*s) {
                     case 'n': text[length++] = '\n'; break;
@@ -190,6 +210,9 @@ token_t* aer_lex (const char* src, int* count) {
                 p++;
             }
             size_t length = (size_t)(p - start);
+            // a keyword if it matches one of the words in full ("end" is, "ending" isn't), and
+            // otherwise a name. The length check comes first because start isn't '\0'
+            // terminated: it points into the middle of the source
             token_type_t type = T_NAME;
             for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
                 if (slen(keywords[k].word) == length && strncmp(keywords[k].word, start, length) == 0) {
@@ -206,7 +229,9 @@ token_t* aer_lex (const char* src, int* count) {
             continue;
         }
 
-        // symbols, the two character ones first
+        // symbols, the two character ones first (otherwise "<=" would be read as "<" then "=").
+        // ( and [ also count depth up, and ) and ] count it down, for the newline rule above;
+        // it never goes below 0, so a stray ) doesn't stop later lines from ending statements
         token_type_t type;
         int width = 2;
         if (c == '=' && p[1] == '=') {
@@ -238,6 +263,8 @@ token_t* aer_lex (const char* src, int* count) {
                 case '[': type = T_LBRACKET; depth++; break;
                 case ']': type = T_RBRACKET; if (depth > 0) depth--; break;
                 default:
+                    // say which character it was: as itself if it can be shown, otherwise by
+                    // its code (a tab or control character would print as nothing useful)
                     if (isprint((unsigned char)c)) {
                         aer_error(line, "unexpected character '%c'", c);
                     }
@@ -252,11 +279,14 @@ token_t* aer_lex (const char* src, int* count) {
     if (list.count > 0 && list.tokens[list.count - 1].type != T_NEWLINE) {
         add_token(&list, T_NEWLINE, line);
     }
+    // T_EOF on the end means the parser can always look at "the next token" without running
+    // off the array
     add_token(&list, T_EOF, line);
     *count = list.count;
     return list.tokens;
 }
 
+// Is word (length characters, not '\0' terminated) one of AerLang's keywords?
 bool aer_is_keyword (const char* word, size_t length) {
     for (size_t k = 0; k < sizeof(keywords) / sizeof(keywords[0]); k++) {
         if (slen(keywords[k].word) == length && strncmp(keywords[k].word, word, length) == 0) {
@@ -269,10 +299,13 @@ bool aer_is_keyword (const char* word, size_t length) {
 // Count the blocks code opens and doesn't close. Every if, while, for and func needs an end
 // (elif and else carry on the if's block rather than opening one of their own), so it is the
 // number of those words less the number of ends. Strings and comments are skipped, so the
-// "end" in print("the end") doesn't count
+// "end" in print("the end") doesn't count. The prompt uses this to know whether to ask for
+// another line before running what has been typed. It can go below 0 if there are too many ends
 int aer_open_blocks (const char* code) {
     int open = 0;
     const char* p = code;
+    // a quick scan of the text rather than a full aer_lex, so a half typed program (or one
+    // with a mistake in it) doesn't stop with an error
     while (*p) {
         if (*p == '#') {
             while (*p && *p != '\n') {
@@ -290,6 +323,8 @@ int aer_open_blocks (const char* code) {
             }
             continue;
         }
+        // anything that can't start a word (spaces, symbols, digits) is skipped, one
+        // character at a time
         if (!isalpha((unsigned char)*p) && *p != '_') {
             p++;
             continue;

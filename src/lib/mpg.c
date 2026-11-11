@@ -20,11 +20,14 @@
 #define PL_MPEG_IMPLEMENTATION
 #include "pl_mpeg/pl_mpeg.h"
 
+// whether a file looks like an MPEG-1 video (a program stream)
 bool mpg_detect (const uint8_t* data, uint32_t size) {
-    // the "pack" start code every program stream begins with
+    // the "pack" start code every program stream begins with: 00 00 01 is the prefix every MPEG
+    // start code has, and BA says this one is a pack header
     return size >= 4 && data[0] == 0x00 && data[1] == 0x00 && data[2] == 0x01 && data[3] == 0xBA;
 }
 
+// get ready to decode video: pl_mpeg does its maths with floats, so the FPU has to be on
 void mpg_init (void) {
     fpu_enable();
 }

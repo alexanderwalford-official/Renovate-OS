@@ -269,6 +269,7 @@ static int mem_create_folder (const char* path, const char* description) {
     if (mem_find_folder(path) >= 0) {
         return FS_ERR_EXISTS;
     }
+    // folders are only a flat list of paths, so this check is what keeps them a proper tree
     char parent[FS_PATH_MAX];
     fs_parent_path(path, parent, sizeof(parent));
     bool is_top = seq(path, "/");
@@ -375,6 +376,7 @@ static int mem_replace_file (const char* folder, const char* name, const void* d
     memcpy(contents, data, length);
     contents[length] = '\0';
 
+    // the new copy is ready, so the old buffer can go (the slot is never left without contents)
     struct file* file = &files[index];
     if (wipe_old) {
         memset(file->f_cont, 0, (size_t)file->f_size);
@@ -490,6 +492,7 @@ static char* copy_source_file (const source_file_t* file, uint32_t* size) {
     return copy;
 }
 
+// is there a folder at this path? (relative paths, "." and ".." are fine)
 bool fs_dir_exists (const char* d_path) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path))) {
@@ -504,14 +507,17 @@ bool fs_dir_exists (const char* d_path) {
     return mem_find_folder(path) >= 0;
 }
 
+// is there a file with this name in this folder? An old version like "notes.txt@2" counts too
 bool fs_file_exists (const char* f_path, const char* f_name) {
     char folder[FS_PATH_MAX];
     if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
         return false;
     }
+    // the built-in source files keep no old versions, so the answer is simply yes or no
     if (source_in(folder)) {
         return source_find(folder, f_name) != NULL;
     }
+    // first the real file, on the disk or in the tables
     bool exists;
     if (on_disk()) {
         exists = fat_file_exists(folder, f_name);
@@ -522,6 +528,8 @@ bool fs_file_exists (const char* f_path, const char* f_name) {
     char base[FS_NAME_MAX];
     int number;
     if (!exists && versions_split_name(f_name, base, sizeof(base), &number)) {
+        // versions are numbered 1 (the newest) upwards, so @number exists if at least
+        // that many are kept
         version_t list[VERSIONS_KEPT];
         exists = versions_list(folder, base, list) >= number;
     }
@@ -628,6 +636,7 @@ static char* read_file (const char* folder, const char* name, uint32_t* size) {
         return fat_read_file(folder, name, size);
     }
 
+    // VFS: hand back a copy, so the caller can't change or free the table's own buffer
     int index = mem_find_file(folder, name);
     if (index < 0) {
         return NULL;
@@ -658,13 +667,17 @@ char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
     return contents;
 }
 
+// open a file to read a piece at a time with fs_read_at(), false if it isn't there.
+// fs_file_t remembers which of the three places the file lives in, so each read goes straight there
 bool fs_open (const char* path, fs_file_t* file) {
     char folder[FS_PATH_MAX];
     char name[FS_NAME_MAX];
     if (!fs_split_path(path, folder, sizeof(folder), name, sizeof(name))) {
         return false;
     }
+    // built_in stays NULL unless it is a source file: fs_read_at() checks it first
     file->built_in = NULL;
+    // a built-in source file: just point at its bytes in the kernel image
     if (source_in(folder)) {
         const source_file_t* source = source_find(folder, name);
         if (source == NULL) {
@@ -674,6 +687,7 @@ bool fs_open (const char* path, fs_file_t* file) {
         file->size = source_size(source);
         return true;
     }
+    // on the disk: the FAT driver keeps its own place in the cluster chain inside file->fat
     file->on_disk = on_disk();
     if (file->on_disk) {
         if (!fat_open(folder, name, &file->fat)) {
@@ -682,6 +696,7 @@ bool fs_open (const char* path, fs_file_t* file) {
         file->size = file->fat.size;
         return true;
     }
+    // in the VFS: remember its slot in files[] (fs_read_at() checks the slot is still in use)
     file->vfs_slot = mem_find_file(folder, name);
     if (file->vfs_slot < 0) {
         return false;
@@ -702,6 +717,8 @@ static int32_t copy_part (const char* bytes, uint32_t size, uint32_t offset, voi
     return (int32_t)length;
 }
 
+// read up to length bytes from offset of a file fs_open() opened: how many were read, 0 at
+// the end, -1 on an error
 int32_t fs_read_at (fs_file_t* file, uint32_t offset, void* out, uint32_t length) {
     if (file->built_in != NULL) {
         return copy_part(file->built_in, file->size, offset, out, length);
@@ -735,6 +752,7 @@ int fs_list (const char* d_path, fs_list_fn fn, void* ctx) {
     return mem_list(path, fn, ctx);
 }
 
+// delete a file, keeping a copy of it first so it can be brought back
 int fs_delete_f (const char* f_path, const char* f_name) {
     char folder[FS_PATH_MAX];
     if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
@@ -803,11 +821,15 @@ static void count_entry (const char* name, bool is_dir, uint32_t size, void* con
     }
 }
 
+// how many files are in a folder, counting everything in the folders inside it too
+// (folders themselves don't count). FS_ERR_NOT_FOUND if the folder isn't there
 int fs_count_files (const char* d_path) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path)) || !fs_dir_exists(path)) {
         return FS_ERR_NOT_FOUND;
     }
+    // count_entry() calls back into fs_count_files() for each folder inside, so this walks
+    // the whole tree below `path`
     file_count_t count = { path, 0 };
     fs_list(path, count_entry, &count);
     return count.files;
@@ -833,6 +855,8 @@ typedef struct {
     int count;
 } batch_t;
 
+// fs_list() calls this for each thing in the folder: note down its name and whether it is a
+// folder, until the batch is full
 static void collect_entry (const char* name, bool is_dir, uint32_t size, void* context) {
     (void)size;
     batch_t* batch = context;
@@ -844,6 +868,9 @@ static void collect_entry (const char* name, bool is_dir, uint32_t size, void* c
     batch->count++;
 }
 
+// delete everything inside a folder (but not the folder itself), in the rounds described above.
+// zero_first overwrites each file before deleting it, on_file (may be NULL) is told about every
+// file that goes. Returns how many files were deleted, or an FS_ERR_ code
 int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, void* ctx) {
     char path[FS_PATH_MAX];
     if (!fs_resolve_dir(d_path, path, sizeof(path)) || !fs_dir_exists(path)) {
@@ -865,9 +892,11 @@ int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, vo
     // copy everything in it just to delete it. (And in the wipe, the versions go too.)
     versions_pause();
     for (;;) {
+        // step 1: collect up to BATCH_SIZE names (the same two buffers are reused every round)
         batch_t batch = { names, is_folder, 0 };
         fs_list(path, collect_entry, &batch);
 
+        // step 2: delete them, now that the listing has finished
         int deleted_this_round = 0;
         for (int i = 0; i < batch.count; i++) {
             if (is_folder[i]) {
@@ -898,6 +927,8 @@ int fs_empty_dir (const char* d_path, bool zero_first, fs_deleted_fn on_file, vo
             }
         }
 
+        // step 3: go round again, unless there was nothing left or nothing could be deleted
+        // (e.g. the current folder is in here, fs_delete_d() refuses it with FS_ERR_BUSY)
         bool folder_is_empty = batch.count == 0;
         bool stuck = deleted_this_round == 0;
         if (folder_is_empty || stuck) {
@@ -951,6 +982,7 @@ void fs_print (void) {
     } else {
         listed = mem_print(cd);
     }
+    // a read error (-1) wins over the src/ line, so the message below says what went wrong
     shown = listed < 0 ? listed : shown + listed;
 
     if (shown == 0) {

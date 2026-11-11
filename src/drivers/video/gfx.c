@@ -46,10 +46,12 @@ bool gfx_begin(void) {
     if (!vga_framebuffer_info(&fb)) {
         return false;
     }
-    fb_bytes = (fb.bpp + 7) / 8;
+    fb_bytes = (fb.bpp + 7) / 8; // bits rounded up to whole bytes (15 bit colour takes 2)
+    // drawing starts out going straight to the screen
     target = (uint8_t*)(uintptr_t)fb.address;
     target_pitch = fb.pitch;
     clear(BLACK); // hides the cursor, and tells the terminal to redraw itself afterwards
+    // the console's cells[] no longer match the pixels once we draw over them
     vga_invalidate();
     active = true;
     gfx_clear(0x000000);
@@ -61,19 +63,25 @@ void gfx_end(void) {
     if (!active) {
         return;
     }
-    gfx_buffered(false);
+    gfx_buffered(false); // shows the last frame and frees the back buffer, if there is one
     active = false;
+    // every cell counts as changed, so the clear below repaints the whole screen over our pixels
     vga_invalidate();
     clear(BLACK);
 }
 
+// switch between drawing straight to the screen and drawing to a back buffer (see the top of
+// this file), false if there are no graphics or no memory for the buffer
 bool gfx_buffered(bool on) {
     if (!active) {
         return false;
     }
     uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
+    // the back buffer's rows are exactly as long as the pixels in them, with none of the
+    // padding the screen's rows may have (fb.pitch)
     uint32_t row_bytes = fb.width * fb_bytes;
 
+    // switching on (asking twice does nothing)
     if (on && back == NULL) {
         back = malloc((size_t)row_bytes * fb.height);
         if (back == NULL) {
@@ -86,6 +94,7 @@ bool gfx_buffered(bool on) {
         target = back;
         target_pitch = row_bytes;
     } else if (!on && back != NULL) {
+        // switching off: drawing goes straight to the screen again
         gfx_show(); // the screen gets the last frame drawn
         free(back);
         back = NULL;
@@ -95,6 +104,7 @@ bool gfx_buffered(bool on) {
     return true;
 }
 
+// copy the finished frame from the back buffer onto the screen
 void gfx_show(void) {
     if (!active || back == NULL) {
         return; // drawing straight to the screen: it is already there
@@ -108,10 +118,12 @@ void gfx_show(void) {
     }
 }
 
+// the screen's width in pixels, 0 when graphics aren't on
 uint32_t gfx_width(void) {
     return active ? fb.width : 0;
 }
 
+// the screen's height in pixels, 0 when graphics aren't on
 uint32_t gfx_height(void) {
     return active ? fb.height : 0;
 }
@@ -121,7 +133,9 @@ uint32_t gfx_height(void) {
 //     32 bit (8:8:8)   red at bit 16, green at 8, blue at 0      -> 0x00RRGGBB
 //     16 bit (5:6:5)   red at bit 11, green at 5, blue at 0      -> rrrrrggggggbbbbb
 static uint32_t pack(uint32_t rgb) {
+    // split 0xRRGGBB into its three bytes
     uint32_t r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
+    // shifting right by 8 - size keeps the top `size` bits, the shift left puts them in place
     return ((r >> (8 - fb.red_size)) << fb.red_pos) |
            ((g >> (8 - fb.green_size)) << fb.green_pos) |
            ((b >> (8 - fb.blue_size)) << fb.blue_pos);
@@ -129,7 +143,9 @@ static uint32_t pack(uint32_t rgb) {
 
 // write one packed pixel (the caller has checked x and y are on screen)
 static void put(uint32_t x, uint32_t y, uint32_t pixel) {
+    // the pixel's address: y whole rows down (pitch bytes each), then x pixels across
     uint8_t* p = target + y * target_pitch + x * fb_bytes;
+    // there is no 24 bit type, so a 3 byte pixel goes a byte at a time, lowest byte first
     switch (fb_bytes) {
         case 4:
             *(uint32_t*)p = pixel;
@@ -151,6 +167,8 @@ static void put(uint32_t x, uint32_t y, uint32_t pixel) {
 static void fill_row(uint32_t x, uint32_t y, uint32_t count, uint32_t pixel) {
     if (fb_bytes == 4) {
         void* p = target + y * target_pitch + x * 4;
+        // rep stosl stores EAX at [EDI] ECX times, moving EDI on 4 bytes each time. "+D" and
+        // "+c" tell the compiler both registers change, "memory" that the pixels do too
         __asm__ volatile ("rep stosl" : "+D"(p), "+c"(count) : "a"(pixel) : "memory");
         return;
     }
@@ -159,6 +177,7 @@ static void fill_row(uint32_t x, uint32_t y, uint32_t count, uint32_t pixel) {
     }
 }
 
+// one pixel at x, y in the colour 0xRRGGBB
 // every public drawing call clips to the screen, so apps can draw partly (or wholly) off it
 void gfx_pixel(int x, int y, uint32_t rgb) {
     if (active && x >= 0 && y >= 0 && (uint32_t)x < fb.width && (uint32_t)y < fb.height) {
@@ -166,6 +185,7 @@ void gfx_pixel(int x, int y, uint32_t rgb) {
     }
 }
 
+// a filled rectangle, w x h pixels with its top left corner at x, y
 void gfx_rect(int x, int y, int w, int h, uint32_t rgb) {
     if (!active) {
         return;
@@ -180,9 +200,11 @@ void gfx_rect(int x, int y, int w, int h, uint32_t rgb) {
         h += y;
         y = 0;
     }
+    // nothing left of it, or it starts past the right or bottom edge
     if (w <= 0 || h <= 0 || (uint32_t)x >= fb.width || (uint32_t)y >= fb.height) {
         return;
     }
+    // and cut off whatever hangs over the right and bottom edges
     if ((uint32_t)(x + w) > fb.width) {
         w = (int)fb.width - x;
     }
@@ -190,12 +212,13 @@ void gfx_rect(int x, int y, int w, int h, uint32_t rgb) {
         h = (int)fb.height - y;
     }
 
-    uint32_t pixel = pack(rgb);
+    uint32_t pixel = pack(rgb); // once, not for every pixel
     for (int row = 0; row < h; row++) {
         fill_row((uint32_t)x, (uint32_t)(y + row), (uint32_t)w, pixel);
     }
 }
 
+// fill the whole screen with one colour
 void gfx_clear(uint32_t rgb) {
     gfx_rect(0, 0, (int)fb.width, (int)fb.height, rgb);
 }
@@ -254,6 +277,8 @@ void gfx_text(int x, int y, const char* text, uint32_t rgb, int scale) {
     }
     for (; *text; text++, x += 8 * scale) {
         const uint8_t* glyph = font8x16[(uint8_t)*text];
+        // one byte per row of the letter, bit 7 the leftmost pixel. Only the set bits are drawn,
+        // so the text has no background and whatever is behind it shows through
         for (int row = 0; row < 16; row++) {
             for (int col = 0; col < 8; col++) {
                 if (glyph[row] & (0x80 >> col)) {
@@ -286,15 +311,18 @@ static bool screen_is_xrgb (void) {
            fb.red_size == 8 && fb.green_size == 8 && fb.blue_size == 8;
 }
 
+// draw a w x h block of 0x00RRGGBB pixels scaled to out_w x out_h at x, y (see above)
 void gfx_draw_pixels(const uint32_t* pixels, int w, int h, int stride, int x, int y, int out_w, int out_h) {
     if (!active || pixels == NULL || w <= 0 || h <= 0 || out_w <= 0 || out_h <= 0) {
         return;
     }
+    // source_column[] only has room for this many (far wider than any screen)
     if (out_w > MOST_COLUMNS) {
         out_w = MOST_COLUMNS;
     }
 
     // the part of the scaled picture that lands on the screen, in picture coordinates
+    // (column 0 being the picture's left edge on the screen, wherever that is)
     int first_column = 0;
     int last_column = out_w;      // one past the last
     int first_row = 0;
@@ -315,17 +343,24 @@ void gfx_draw_pixels(const uint32_t* pixels, int w, int h, int stride, int x, in
         return; // all of it is off the screen
     }
 
+    // screen column `column` of out_w shows source column column * w / out_w of w: the same
+    // fraction of the way across. Multiplying first keeps it exact, e.g. drawing 320 pixels at
+    // 960 wide gives columns 0, 0, 0, 1, 1, 1, 2...
     for (int column = first_column; column < last_column; column++) {
         source_column[column] = (uint32_t)column * (uint32_t)w / (uint32_t)out_w;
     }
 
     bool straight = screen_is_xrgb();
+    // the bytes of one drawn row on the screen, for copying a row that repeats
     uint32_t row_bytes = (uint32_t)(last_column - first_column) * fb_bytes;
-    int previous_source_row = -1;
+    int previous_source_row = -1; // no row drawn yet, and -1 matches no real source row
     uint8_t* previous_row = NULL;
 
     for (int row = first_row; row < last_row; row++) {
+        // the source row, worked out the same way as the columns
         int source_row = (int)((uint32_t)row * (uint32_t)h / (uint32_t)out_h);
+        // where this row starts on the screen (or in the back buffer): its line, then the first
+        // column that is on the screen
         uint8_t* screen_row = target + (uint32_t)(y + row) * target_pitch + (uint32_t)(x + first_column) * fb_bytes;
 
         if (source_row == previous_source_row) {
@@ -333,13 +368,17 @@ void gfx_draw_pixels(const uint32_t* pixels, int w, int h, int stride, int x, in
             continue;
         }
 
+        // a new source row: pick out its pixels column by column
         const uint32_t* source = pixels + source_row * stride;
         if (straight) {
+            // the screen's own format, so each pixel is copied as it is (the top byte is
+            // ignored by the screen)
             uint32_t* out = (uint32_t*)screen_row;
             for (int column = first_column; column < last_column; column++) {
                 *out++ = source[source_column[column]];
             }
         } else {
+            // any other format: repacked a pixel at a time (slower, but rare)
             for (int column = first_column; column < last_column; column++) {
                 uint32_t pixel = pack(source[source_column[column]]);
                 put((uint32_t)(x + column), (uint32_t)(y + row), pixel);
@@ -373,15 +412,21 @@ typedef struct {
     uint32_t colours; // entries in the palette
 } bmp_t;
 
+// a 16 bit little endian number at p: the first byte is the low one. Read a byte at a time, as
+// BMP fields aren't always lined up on a 2 or 4 byte boundary
 static uint32_t u16(const uint8_t* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
+// a 32 bit little endian number at p: two 16 bit halves, the low half first
 static uint32_t u32(const uint8_t* p) { return u16(p) | (u16(p + 2) << 16); }
 
 // read and check the headers, false for anything that isn't a BMP we can draw, or that claims
 // more pixels than the file holds (so a damaged file can't make us read past its end)
 static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
+    // 54 bytes: the 14 byte file header and the smallest (40 byte) info header
     if (d == 0 || length < 54 || d[0] != 'B' || d[1] != 'M') {
         return false;
     }
+    // the fields (see the table above). Width and height are signed, as a negative height
+    // means the rows are stored top down
     uint32_t header = u32(d + 14);
     int32_t width = (int32_t)u32(d + 18);
     int32_t height = (int32_t)u32(d + 22);
@@ -393,6 +438,8 @@ static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
     b->width = width;
     b->height = height < 0 ? -height : height;
 
+    // older (12 byte) headers are a different layout, and anything over 16384 pixels is more
+    // likely a damaged file than a picture (it also keeps the sums in gfx_image within 32 bits)
     if (header < 40 || width <= 0 || width > 16384 || b->height == 0 || b->height > 16384) {
         return false;
     }
@@ -404,15 +451,21 @@ static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
         return false;
     }
 
-    // each row is padded to a whole number of 4 byte words
+    // each row is padded to a whole number of 4 byte words: the bits in a row, rounded up to
+    // a multiple of 32 (adding 31 before dividing), as bytes. e.g. 3 pixels at 24 bits = 72 bits,
+    // which rounds up to 96 bits = 12 bytes
     b->stride = (((uint32_t)width * b->bpp + 31) / 32) * 4;
+    // all the rows must be in the file. Worked out in 64 bits, as a damaged header could make
+    // the product wrap round in 32 bits and look small (multiplying is fine, it's only 64 bit
+    // division that needs libgcc)
     if ((uint64_t)b->pixels + (uint64_t)b->stride * (uint32_t)b->height > length) {
         return false;
     }
 
+    // an 8 bit picture's pixels are palette numbers: find the palette, and check it is all there
     if (b->bpp == 8) {
         b->colours = u32(d + 46) ? u32(d + 46) : 256;
-        b->palette = d + 14 + header;
+        b->palette = d + 14 + header; // straight after the info header, whatever size that is
         if (b->colours > 256 || 14 + header + b->colours * 4 > length) {
             return false;
         }
@@ -422,20 +475,24 @@ static bool bmp_open(const uint8_t* d, uint32_t length, bmp_t* b) {
 
 // the colour of one pixel as 0xRRGGBB, (0, 0) being the top left
 static uint32_t bmp_pixel(const bmp_t* b, int x, int y) {
+    // most BMPs store the bottom row first, so row y from the top is that many rows from the end
     int row = b->top_down ? y : b->height - 1 - y;
     const uint8_t* p = b->data + b->pixels + (uint32_t)row * b->stride;
     if (b->bpp == 8) {
+        // a palette number: point at its colour in the palette instead
         uint32_t index = p[x];
         if (index >= b->colours) {
-            return 0;
+            return 0; // past the end of the palette (a damaged file): black rather than garbage
         }
         p = b->palette + index * 4;
     } else {
-        p += (uint32_t)x * (b->bpp / 8);
+        p += (uint32_t)x * (b->bpp / 8); // 3 or 4 bytes a pixel (a 32 bit pixel's 4th is alpha)
     }
+    // pixels and palette entries alike are blue, green, red: turn them round into 0xRRGGBB
     return ((uint32_t)p[2] << 16) | ((uint32_t)p[1] << 8) | p[0];
 }
 
+// the size of a BMP picture, false if it isn't one we can show
 bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h) {
     bmp_t b;
     if (!bmp_open(data, length, &b)) {
@@ -446,6 +503,7 @@ bool gfx_image_size(const uint8_t* data, uint32_t length, int* w, int* h) {
     return true;
 }
 
+// draw a BMP picture at x, y, scaled to fit in max_w x max_h when those are above 0
 bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, int max_h) {
     bmp_t b;
     if (!active || !bmp_open(data, length, &b)) {
@@ -465,6 +523,9 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
         if (max_h > 16384) {
             max_h = 16384;
         }
+        // compare the shapes without dividing: width / height <= max_w / max_h is the same as
+        // width * max_h <= height * max_w. If the picture is the narrower shape, its height
+        // fills the box and the width follows; otherwise the width fills it
         if ((uint32_t)b.width * (uint32_t)max_h <= (uint32_t)b.height * (uint32_t)max_w) {
             h = (uint32_t)max_h;
             w = (uint32_t)b.width * (uint32_t)max_h / (uint32_t)b.height;
@@ -472,6 +533,7 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
             w = (uint32_t)max_w;
             h = (uint32_t)b.height * (uint32_t)max_w / (uint32_t)b.width;
         }
+        // a very long thin picture could round down to 0 one way, and then draw nothing
         if (w < 1) {
             w = 1;
         }
@@ -485,6 +547,7 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
     // A zoomed in picture can be thousands of pixels wider than the screen
     uint32_t x0 = x < 0 ? (uint32_t)-x : 0, x1 = w;
     uint32_t y0 = y < 0 ? (uint32_t)-y : 0, y1 = h;
+    // starts past the right or bottom edge: none of it shows, but it is still a good picture
     if (x >= (int)fb.width || y >= (int)fb.height) {
         return true;
     }
@@ -496,6 +559,7 @@ bool gfx_image(const uint8_t* data, uint32_t length, int x, int y, int max_w, in
     }
 
     // nearest neighbour: every screen pixel takes the colour of the picture pixel under it
+    // (pixel tx of w comes from pixel tx * width / w of the picture, the same fraction across)
     for (uint32_t ty = y0; ty < y1; ty++) {
         int py = (int)(ty * (uint32_t)b.height / h);
         for (uint32_t tx = x0; tx < x1; tx++) {
@@ -515,6 +579,7 @@ struct gfx_overlay {
     uint8_t pixels[];        // the area's pixels as they were, w * fb_bytes bytes a row
 };
 
+// keep what the screen shows in an area, and draw straight onto the screen until gfx_overlay_end
 gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h) {
     if (!active) {
         return NULL;
@@ -528,6 +593,7 @@ gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h) {
         return NULL;
     }
 
+    // one allocation holds both the struct and the pixels kept, which go in its pixels[] at the end
     uint32_t row_bytes = (uint32_t)w * fb_bytes;
     gfx_overlay_t* overlay = malloc(sizeof(gfx_overlay_t) + row_bytes * (uint32_t)h);
     if (overlay == NULL) {
@@ -538,7 +604,8 @@ gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h) {
     overlay->w = w;
     overlay->h = h;
 
-    // keep what the screen shows there now
+    // keep what the screen shows there now (the screen itself, not the back buffer: it is the
+    // screen that has to look the same afterwards), a row at a time as the rows are pitch apart
     uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
     for (int row = 0; row < h; row++) {
         memcpy(overlay->pixels + (uint32_t)row * row_bytes,
@@ -553,12 +620,14 @@ gfx_overlay_t* gfx_overlay_begin(int x, int y, int w, int h) {
     return overlay;
 }
 
+// put back what was under the overlay, and send drawing wherever it went before
 void gfx_overlay_end(gfx_overlay_t* overlay) {
     if (overlay == NULL) {
         return;
     }
     uint8_t* screen = (uint8_t*)(uintptr_t)fb.address;
     uint32_t row_bytes = (uint32_t)overlay->w * fb_bytes;
+    // the kept pixels back onto the screen, row by row
     for (int row = 0; row < overlay->h; row++) {
         memcpy(screen + (uint32_t)(overlay->y + row) * fb.pitch + (uint32_t)overlay->x * fb_bytes,
                overlay->pixels + (uint32_t)row * row_bytes, row_bytes);

@@ -26,6 +26,7 @@
 // gotcha: it can also be opened later with "run iso_launch_options", but by then the file system is
 // already set up, so a new choice only changes boot_option (which can switch the terminal's VFS / DEMO banner)
 int boot_options_menu (void) {
+    // the menu, drawn at fixed places on the 80 x 25 text screen (column, row), roughly centred
     clear(BRIGHT);
     puts(27, 5, BLACK, BRIGHT, "______________________");
     puts(32, 7, BLACK, BRIGHT, "BOOT OPTIONS");
@@ -61,11 +62,12 @@ int boot_options_menu (void) {
 // it goes through the process manager like the rest of the boot: create, execute, destroy
 // returns 0 when the menu has finished, or -1 if there was no free slot on the process stack
 int init_recovery (void) {
-    // process for launch options
+    // process for launch options ("iso_launch_options" is the AerLang name for boot_options_menu)
     int pid = p_create("iso_launch_options");
     if (pid < 0) {
         return -1;
     }
+    // runs the menu until a choice is made, then frees the slot for the next boot step
     p_exec(pid);
     p_destroy(pid);
     return 0;

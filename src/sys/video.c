@@ -129,6 +129,7 @@ static void load_more (plm_buffer_t* buffer, void* user) {
     if (got <= 0) {
         return;
     }
+    // plm_buffer_write copies it into pl_mpeg's own buffer, so p->chunk is free for the next load
     plm_buffer_write(buffer, p->chunk, (size_t)got);
     p->file_position += (uint32_t)got;
 }
@@ -154,18 +155,24 @@ static size_t tell (plm_buffer_t* buffer, void* user) {
 
 // the video time now, in seconds (see "keeping picture and sound together" at the top)
 static double clock_now (player_t* p) {
+    // the sound clock: where the sound started, plus the frames that have reached the speakers
     if (p->has_sound && p->sound_start_known) {
         uint32_t played = mixer_played(p->voice);
         uint32_t delay = mixer_delay();
+        // the mixer counts a frame as played once it hands it to the card, but the card still
+        // has about mixer_delay frames to go before it is heard. Right at the start fewer than
+        // that have been played, and the unsigned subtraction would wrap round, so it stays 0
         uint32_t heard = 0;
         if (played > delay) {
             heard = played - delay;
         }
-        return p->sound_start + (double)heard / MIXER_RATE;
+        return p->sound_start + (double)heard / MIXER_RATE; // frames / frames a second = seconds
     }
     if (p->has_sound) {
         return p->clock_start_time; // no sound written yet (just started or skipped): wait there
     }
+    // the timer clock: stood still while paused (toggle_pause keeps the time it stopped at),
+    // otherwise the milliseconds since it was last started
     if (p->paused) {
         return p->clock_start_time;
     }
@@ -191,6 +198,7 @@ static int16_t to_16_bit (float sample) {
     if (sample <= -1.0f) {
         return -32768;
     }
+    // without the checks above a loud sample would wrap round to the other end, a nasty click
     return (int16_t)(sample * 32767.0f);
 }
 
@@ -203,12 +211,17 @@ static int16_t to_16_bit (float sample) {
 //
 //     input index 0 = the last frame of the block before (the "carry"), 1.. = this block
 static uint32_t convert_sound (player_t* p, const plm_samples_t* samples, int16_t* out) {
+    // static, so 4.5KB doesn't go on the stack every call (only one video plays at a time)
     static int16_t input[PLM_AUDIO_SAMPLES_PER_FRAME * 2];
     uint32_t count = samples->count;
+    // "interleaved": left, right, left, right... so count frames are count * 2 samples
     for (uint32_t i = 0; i < count * 2; i++) {
         input[i] = to_16_bit(samples->interleaved[i]);
     }
 
+    // step_position is 16.16 fixed point: the top 16 bits are a whole input frame number and the
+    // bottom 16 bits how far it is on to the next one (0x8000 = half way). Each output frame
+    // moves it on by `step`, so at 32000 Hz to 48000 Hz it moves 2/3 of an input frame each time
     uint32_t made = 0;
     while ((p->step_position >> 16) < count && made < MOST_CONVERTED_FRAMES) {
         uint32_t index = p->step_position >> 16;              // the input frame we are past
@@ -226,6 +239,9 @@ static uint32_t convert_sound (player_t* p, const plm_samples_t* samples, int16_
         int32_t left_b = input[index * 2];
         int32_t right_b = input[index * 2 + 1];
 
+        // a + (b - a) * fraction: the point that far along the straight line from a to b.
+        // fraction is cut to 15 bits so the product (a difference of two samples, at most
+        // 65535, times at most 32767) fits in an int32_t, and >> 15 divides by 32768 to undo it
         out[made * 2] = (int16_t)(left_a + (((left_b - left_a) * fraction) >> 15));
         out[made * 2 + 1] = (int16_t)(right_a + (((right_b - right_a) * fraction) >> 15));
         made++;
@@ -233,6 +249,8 @@ static uint32_t convert_sound (player_t* p, const plm_samples_t* samples, int16_
     }
 
     // carry over to the next block: its index 0 is this block's last frame
+    // (taking count whole frames off the position keeps the fraction part as it was, so the
+    // spacing of output frames carries on evenly across the join)
     p->step_position -= count << 16;
     p->carry_left = input[(count - 1) * 2];
     p->carry_right = input[(count - 1) * 2 + 1];
@@ -245,8 +263,11 @@ static void feed_sound (player_t* p) {
     if (!p->has_sound || p->sound_ended || p->paused) {
         return;
     }
+    // a quarter of a second ahead is enough to cover a slow picture decode without the sound
+    // running dry, while keeping a skip or pause quick to be heard
     while (mixer_stream_queued(p->voice) < SOUND_AHEAD_FRAMES) {
         plm_samples_t* samples = plm_decode_audio(p->plm);
+        // no more sound in the file
         if (samples == NULL) {
             p->sound_ended = true;
             return;
@@ -264,7 +285,9 @@ static void feed_sound (player_t* p) {
 // the sound has played to its end: carry on with the timer as the clock (a sound track can be
 // a little shorter than the pictures)
 static void check_sound_finished (player_t* p) {
+    // the last of it has to have left the stream too, not just been decoded
     if (p->has_sound && p->sound_ended && mixer_stream_queued(p->voice) == 0) {
+        // read the time before has_sound changes, so the timer clock carries on from the same moment
         double time = clock_now(p);
         p->has_sound = false;
         restart_timer_clock(p, time);
@@ -281,6 +304,8 @@ static void fit_picture (player_t* p) {
     int screen_w = (int)gfx_width();
     int screen_h = (int)gfx_height();
     // the wider of "full width" and "full height", whichever still fits
+    // (width / height <= screen_w / screen_h, multiplied out so there is no division: a picture
+    // narrower than the screen's shape fills the height, with black bars left and right)
     if (p->width * screen_h <= p->height * screen_w) {
         p->draw_h = screen_h;
         p->draw_w = p->width * screen_h / p->height;
@@ -307,6 +332,7 @@ static void draw_controls (player_t* p) {
     int screen_h = (int)gfx_height();
     int bar_y = screen_h - 48;
 
+    // a dark strip across the bottom 56 pixels for everything to sit on
     gfx_rect(0, bar_y - 8, screen_w, 56, 0x181818);
 
     // the progress bar, filled up to how far through the video we are
@@ -322,6 +348,7 @@ static void draw_controls (player_t* p) {
     gfx_rect(20, bar_y, bar_w, 6, 0x404040);
     gfx_rect(20, bar_y, filled, 6, 0xFF7F00);
 
+    // "1:05 / 3:20" on the left, the keys on the right (8 pixels a character, 20 from the edge)
     char now[16], total[16], line[96];
     format_time(position, now, sizeof(now));
     format_time(p->duration, total, sizeof(total));
@@ -337,6 +364,7 @@ static void draw_controls (player_t* p) {
 
 // draw the latest picture (and the controls if they are up) and put it all on the screen
 static void present (player_t* p) {
+    // everything goes into the back buffer first, so the screen never shows a half drawn frame
     gfx_clear(0x000000); // the black bars either side, and wherever the controls were
     if (p->have_picture) {
         gfx_draw_pixels(p->pixels, p->width, p->height, p->width, p->draw_x, p->draw_y, p->draw_w, p->draw_h);
@@ -364,8 +392,10 @@ static void decode_next_picture (player_t* p) {
     }
     uint32_t before = clkuptms();
     p->waiting = plm_decode_video(p->plm);
+    // for the average in the report at the end
     p->decode_ms += clkuptms() - before;
     p->decodes++;
+    // NULL: there are no more pictures in the file
     if (p->waiting == NULL) {
         p->video_ended = true;
     }
@@ -378,6 +408,7 @@ static void decode_next_picture (player_t* p) {
 // the computer would drop every picture and look frozen, instead of playing a little jerkily
 #define MOST_DROPPED_MS 200
 
+// show the waiting picture once the clock reaches its time, or drop it if it is too late (see above)
 static void show_when_due (player_t* p) {
     if (p->waiting == NULL) {
         return;
@@ -387,15 +418,17 @@ static void show_when_due (player_t* p) {
     if (due > now) {
         return; // not yet
     }
+    // late means past the time the next picture should be showing (1 / framerate is one frame)
     bool late = now - due > 1.0 / p->framerate;
     bool shown_recently = clkuptms() - p->last_shown_ms < MOST_DROPPED_MS;
+    // dropping needs something already on the screen to leave up, hence have_picture
     if (late && p->have_picture && shown_recently) {
         p->dropped++;
     } else {
         show_frame(p, p->waiting);
         p->last_shown_ms = clkuptms();
     }
-    p->waiting = NULL;
+    p->waiting = NULL; // shown or dropped, either way decode the next one
 }
 
 
@@ -414,6 +447,8 @@ static void capture_frame (plm_t* plm, plm_frame_t* frame, void* user) {
 // jump `seconds` forwards or backwards (to the nearest whole picture before that time)
 static void skip (player_t* p, double seconds) {
     double target = clock_now(p) + seconds;
+    // stay inside the video: no earlier than the start, and a second short of the end so there
+    // is still a picture to land on
     if (target < 0) {
         target = 0;
     }
@@ -421,6 +456,8 @@ static void skip (player_t* p, double seconds) {
         target = p->duration - 1;
     }
 
+    // plm_seek only hands over the picture it lands on through the callback, so the callback
+    // is set just for the seek and taken away again straight after
     plm_set_video_decode_callback(p->plm, capture_frame, p);
     bool landed = plm_seek(p->plm, target, 0);
     plm_set_video_decode_callback(p->plm, NULL, NULL);
@@ -436,13 +473,14 @@ static void skip (player_t* p, double seconds) {
         mixer_stream_clear(p->voice); // drop the sound queued from the old place
         p->has_sound = true;
         p->sound_ended = false;
-        p->sound_start_known = false;
-        p->step_position = 0;
+        p->sound_start_known = false; // the sound clock restarts from the first sound decoded
+        p->step_position = 0;         // and the resampling starts afresh
     }
     restart_timer_clock(p, plm_get_time(p->plm));
     present(p);
 }
 
+// pause, or carry on after a pause (Space)
 static void toggle_pause (player_t* p) {
     p->paused = !p->paused;
     if (p->has_sound) {
@@ -452,12 +490,14 @@ static void toggle_pause (player_t* p) {
         p->clock_start_time = clock_now(p); // (the timer clock stands still while paused)
         p->controls_until = 0xFFFFFFFF;    // the controls stay up while paused
     } else {
+        // the timer clock carries on from the time it stopped at, not from when it was paused
         restart_timer_clock(p, p->clock_start_time);
         p->controls_until = clkuptms() + CONTROLS_MS;
     }
-    present(p);
+    present(p); // redraw now, to show or take away "(paused)"
 }
 
+// deal with every key pressed since last time round the main loop
 static void handle_keys (player_t* p) {
     if (kb_take_break()) {
         p->stop = true; // Ctrl+C
@@ -481,7 +521,7 @@ static void handle_keys (player_t* p) {
         } else if (key == KEY_RIGHT) {
             skip(p, SKIP_SECONDS);
         } else {
-            present(p);
+            present(p); // any other key: just bring the controls up
         }
     }
 }
@@ -491,6 +531,7 @@ static void handle_keys (player_t* p) {
 //  Starting, playing and stopping
 // =================================================================================================
 
+// does the file look like a video the player can open? Only its first 4 bytes are read
 bool video_is_video (const char* path) {
     fs_file_t file;
     uint8_t start[4];
@@ -501,6 +542,7 @@ bool video_is_video (const char* path) {
     if (got != (int32_t)sizeof(start)) {
         return false; // shorter than 4 bytes: not a video
     }
+    // an MPEG-1 file starts with a 4 byte "pack" start code (00 00 01 BA), which is enough to tell
     return mpg_detect(start, sizeof(start));
 }
 
@@ -512,6 +554,7 @@ static void close_player (player_t* p) {
     if (p->plm != NULL) {
         plm_destroy(p->plm); // this also frees the buffer it was made with
     }
+    // free(NULL) does nothing, so these are fine even if they were never allocated
     free(p->pixels);
     free(p->chunk);
 }
@@ -521,11 +564,14 @@ static int open_player (player_t* p, const char* path) {
     if (!fs_open(path, &p->file)) {
         return VIDEO_ERR_NOT_FOUND;
     }
+    // every early return below leaves whatever was made so far for close_player to free
     p->chunk = malloc(READ_CHUNK);
     if (p->chunk == NULL) {
         return VIDEO_ERR_NO_MEMORY;
     }
     mpg_init();
+    // a buffer that fills itself from the file through our three callbacks (see the top), with
+    // p handed back to each of them as `user`
     plm_buffer_t* buffer = plm_buffer_create_with_callbacks(load_more, seek_to, tell, p->file.size, p);
     if (buffer == NULL) {
         return VIDEO_ERR_NO_MEMORY;
@@ -542,9 +588,11 @@ static int open_player (player_t* p, const char* path) {
     p->height = plm_get_height(p->plm);
     p->framerate = plm_get_framerate(p->plm);
     p->duration = plm_get_duration(p->plm);
+    // a framerate of 0 would make the "more than a frame late" sum divide by 0
     if (p->width <= 0 || p->height <= 0 || p->framerate <= 0) {
         return VIDEO_ERR_FORMAT;
     }
+    // room for one picture, 4 bytes a pixel
     p->pixels = malloc((size_t)p->width * (size_t)p->height * 4);
     if (p->pixels == NULL) {
         return VIDEO_ERR_NO_MEMORY;
@@ -566,6 +614,8 @@ static void open_sound (player_t* p) {
         p->sound_ended = true;
         return;
     }
+    // input frames per output frame as 16.16 fixed point (65536 = 1), e.g. 44100 Hz to 48000 Hz
+    // is 44100 * 65536 / 48000 = 60211, a little under one input frame per output frame
     p->step = (p->sample_rate << 16) / MIXER_RATE;
 }
 
@@ -581,7 +631,10 @@ static void report (player_t* p, const char* path) {
     serial_write(line);
 }
 
+// play a video file full screen until it ends or the user stops it, VIDEO_OK or an error
 int video_play_file (const char* path) {
+    // all zero so close_player can tell what was never set up (voice -1 means no mixer stream,
+    // as 0 is a real one)
     player_t p;
     memset(&p, 0, sizeof(p));
     p.voice = -1;
@@ -595,22 +648,27 @@ int video_play_file (const char* path) {
         close_player(&p);
         return VIDEO_ERR_NO_SCREEN;
     }
+    // a back buffer so the screen only ever shows whole frames (if there is no memory for one
+    // it carries on drawing straight to the screen, which just flickers a little)
     gfx_buffered(true);
     fit_picture(&p);
     open_sound(&p);
     restart_timer_clock(&p, 0.0);
-    p.controls_until = clkuptms() + CONTROLS_MS;
+    p.controls_until = clkuptms() + CONTROLS_MS; // the controls show for a moment at the start
 
+    // the main loop (see the top of the file)
     while (!p.stop) {
         handle_keys(&p);
         if (p.stop) {
             break;
         }
+        // paused: nothing to do but wait for a key
         if (p.paused) {
             sleep_ms(10);
             continue;
         }
 
+        // sound first, so it never runs dry while a picture is being decoded
         feed_sound(&p);
         decode_next_picture(&p);
         show_when_due(&p);
@@ -622,12 +680,16 @@ int video_play_file (const char* path) {
             present(&p);
         }
 
+        // finished once the last picture is gone and the sound has played out (has_sound goes
+        // false in check_sound_finished, or was never true)
         bool pictures_done = p.video_ended && p.waiting == NULL;
         bool sound_done = !p.has_sound;
         if (pictures_done && sound_done) {
             break;
         }
         // nothing due yet: rest until the next interrupt
+        // (a picture still waiting means it isn't due; with no picture waiting the loop goes
+        // straight round to decode the next one)
         if (p.waiting != NULL || p.video_ended) {
             sleep_ms(1);
         }
@@ -635,10 +697,11 @@ int video_play_file (const char* path) {
 
     report(&p, path);
     close_player(&p);
-    gfx_end();
+    gfx_end(); // the text console comes back
     return VIDEO_OK;
 }
 
+// what an error from video_play_file means, in words
 const char* video_strerror (int error) {
     switch (error) {
         case VIDEO_OK:            return "ok";

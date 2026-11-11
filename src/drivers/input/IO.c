@@ -140,12 +140,15 @@ static void kb_push(uint8_t key) {
 // are doing: the A key is always 'a', the arrows are KEY_LEFT and so on, shift is KEY_SHIFT
 static volatile bool held[256];
 
+// record that key went down (down = true) or came back up. Key 0 means "no key" and anything
+// outside the table is ignored, so callers can pass whatever plain_key / extended_key returned
 static void set_held(int key, bool down) {
     if (key > 0 && key < 256) {
         held[key] = down;
     }
 }
 
+// true while key is held down right now, see IO.h
 bool kb_is_down(int key) {
     if (key >= 'A' && key <= 'Z') {
         key = key - 'A' + 'a'; // the table only has the lower case letters
@@ -159,15 +162,19 @@ bool kb_is_down(int key) {
 // the key an ordinary (not 0xE0) scancode stands for, without shift: 0x1E is always 'a'.
 // 0 for keys that don't have one
 static int plain_key(uint8_t code) {
+    // the modifiers have no character in the maps, so they get their KEY_ values here
     switch (code) {
         case 0x2A:
         case 0x36: return KEY_SHIFT;
         case 0x1D: return KEY_CTRL;
         case 0x38: return KEY_ALT;
     }
+    // always the unshifted map, so shift + A still counts as the 'a' key being held.
+    // The (uint8_t) stops a char above 127 turning into a negative number
     if (code < sizeof(kb_map_normal) - 1) {
         return (uint8_t)kb_map_normal[code];
     }
+    // keypad 7 (0x47) is the first entry of kb_map_keypad
     if (code >= 0x47 && code <= 0x53) {
         return (uint8_t)kb_map_keypad[code - 0x47];
     }
@@ -230,12 +237,14 @@ static void kb_process_scancode(uint8_t scancode) {
     bool released = (scancode & 0x80) != 0;
     uint8_t code = scancode & 0x7F;
 
+    // the byte before was 0xE0, so this is one of the newer keys with its own table
     if (kb_extended) {
         kb_extended = false;
         kb_process_extended(code, released);
         return;
     }
 
+    // keep the held keys table up to date for every press and release, typing or not
     set_held(plain_key(code), !released);
 
     // modifier keys: update our state, they never produce a character themselves
@@ -279,6 +288,9 @@ static void kb_process_scancode(uint8_t scancode) {
     kb_push((uint8_t)c);
 }
 
+// true once for every ctrl + C: reading the flag also clears it, so one press stops one program
+// (there is a tiny window where an IRQ could set it between the read and the clear, losing that
+// press, which is harmless)
 bool kb_take_break(void) {
     bool pressed = kb_break;
     kb_break = false;
@@ -290,6 +302,7 @@ bool kb_take_break(void) {
 // sends the end of interrupt to the PIC afterwards. Port 0x60 has to be read every time: until it
 // is, the controller holds on to the byte and won't send us the next one.
 static void keyboard_handler(struct regs* r) {
+    // the saved registers are not needed, this just silences the unused parameter warning
     (void)r;
     uint8_t scancode = inb(KBC_DATA);
     crypto_add_entropy(scancode); // key press timing feeds the random number generator
@@ -301,19 +314,23 @@ char* GetSecret (char* in, int size) {
     int len = 0;
     for (;;) {
         int key = getk();
+        // no keyboard, or enter: the secret is finished
         if (key == 0 || key == '\n' || key == '\r') {
             break;
         }
+        // backspace rubs out one star as well as the character behind it
         if (key == '\b') {
             if (len > 0) {
                 len--;
                 console_backspace();
             }
         } else if (isprint(key) && len < size - 1) {
+            // keep the real character but only ever show a star
             in[len++] = (char)key;
             console_putchar('*');
         }
     }
+    // the loop only stores characters, the NUL goes on at the end
     in[len] = '\0';
     console_putchar('\n');
     return in;
@@ -349,6 +366,7 @@ int getk(void) {
 // skipped, and EOF (-1) is returned when there is no keyboard
 int getchar(void) {
     int key;
+    // keep reading until a plain character arrives
     do {
         key = getk();
         if (key == 0) {
@@ -470,10 +488,12 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
         }
     }
 
+    // finished (or no keyboard): remember the line for the up arrow
     input_history_add(in);
     return in;
 }
 
+// the line editor without Tab completion, see IO.h
 char* getln(char* in, int size) {
     return GetLine(in, size, NULL);
 }
@@ -495,6 +515,8 @@ void ClearInputbuffer(void) {
 // port: KBC_COMMAND for a command, KBC_DATA for a command's data byte
 // returns false if the controller never became ready (e.g. there is no PS/2 controller at all)
 static bool kbc_write(uint16_t port, uint8_t value) {
+    // poll the status register (capped, so a missing controller can't hang the boot) until the
+    // controller has taken its previous byte
     for (int i = 0; i < 100000; i++) {
         if ((inb(KBC_STATUS) & KBC_INPUT_FULL) == 0) {
             outb(port, value);
@@ -507,6 +529,7 @@ static bool kbc_write(uint16_t port, uint8_t value) {
 // wait until the controller has a byte for us
 // returns false on timeout, true when the byte can be read from KBC_DATA
 static bool kbc_wait_read(void) {
+    // the same capped poll as kbc_write, this time for the output full bit
     for (int i = 0; i < 100000; i++) {
         if (inb(KBC_STATUS) & KBC_OUTPUT_FULL) {
             return true;
@@ -542,7 +565,7 @@ void init_keyboard(void) {
         }
     }
 
-    // enable the first PS/2 port
+    // enable the first PS/2 port (command 0xAE, in case the BIOS left it disabled)
     kbc_write(KBC_COMMAND, 0xAE);
 
     // route IRQ1 to keyboard_handler and unmask it at the PIC so the interrupt is actually delivered

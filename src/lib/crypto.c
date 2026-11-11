@@ -29,6 +29,7 @@ static uint32_t load_be32 (const uint8_t* p) {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
 }
 
+// the other way round: write a number out as 4 bytes, most significant byte first
 static void store_be32 (uint8_t* p, uint32_t value) {
     p[0] = (uint8_t)(value >> 24);
     p[1] = (uint8_t)(value >> 16);
@@ -74,6 +75,8 @@ static void sha256_block (uint32_t state[8], const uint8_t* block) {
     for (int i = 0; i < 16; i++) {
         w[i] = load_be32(block + i * 4);
     }
+    // each new word mixes four earlier ones, two of them scrambled by rotating and shifting
+    // (the "small sigma" functions s0 and s1), so every bit of the block reaches many rounds
     for (int i = 16; i < 64; i++) {
         uint32_t s0 = ror(w[i - 15], 7) ^ ror(w[i - 15], 18) ^ (w[i - 15] >> 3);
         uint32_t s1 = ror(w[i - 2], 17) ^ ror(w[i - 2], 19) ^ (w[i - 2] >> 10);
@@ -86,6 +89,8 @@ static void sha256_block (uint32_t state[8], const uint8_t* block) {
     //   majority: (a & b) ^ (a & c) ^ (b & c)  each bit is whatever most of a, b and c have
     uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
     uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+    // t1 = h + "big sigma" of e (three rotations xor-ed) + choose + round constant + schedule word
+    // t2 = "big sigma" of a + majority
     for (int i = 0; i < 64; i++) {
         uint32_t t1 = h + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i];
         uint32_t t2 = (ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
@@ -96,9 +101,11 @@ static void sha256_block (uint32_t state[8], const uint8_t* block) {
     // adding the old state back in is what makes the step impossible to run backwards
     state[0] += a; state[1] += b; state[2] += c; state[3] += d;
     state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+    // the schedule is made from the data, which may be a password, so it doesn't stay on the stack
     wipe(w, sizeof(w));
 }
 
+// start a new SHA-256 hash: the fixed starting state and nothing collected yet
 void sha256_init (sha256_t* s) {
     // the starting state: the first 32 bits of the fractional parts of the square roots of the
     // first 8 primes
@@ -114,8 +121,10 @@ void sha256_init (sha256_t* s) {
 // are stirred in straight away
 void sha256_update (sha256_t* s, const void* data, size_t length) {
     const uint8_t* p = data;
+    // the total length is kept for the padding at the end
     s->length += length;
     while (length > 0) {
+        // top the block up with as much as fits (or as much as there is)
         uint32_t take = 64 - s->used;
         if (take > length) {
             take = (uint32_t)length;
@@ -124,6 +133,7 @@ void sha256_update (sha256_t* s, const void* data, size_t length) {
         s->used += take;
         p += take;
         length -= take;
+        // a full block is stirred in and the buffer starts again from empty
         if (s->used == 64) {
             sha256_block(s->state, s->block);
             s->used = 0;
@@ -138,9 +148,12 @@ void sha256_final (sha256_t* s, uint8_t out[SHA256_SIZE]) {
     //
     //     | message ... | 0x80 | 0x00 0x00 ... | length in bits (8 bytes) |
     //                                           ^ ends exactly on a 64 byte boundary
+    // the length is taken before padding, because sha256_update() adds the padding to it too
     uint64_t bits = s->length * 8;
     static const uint8_t one_bit = 0x80, zero = 0;
     sha256_update(s, &one_bit, 1);
+    // 56 = 64 - 8: stop when exactly the length's 8 bytes are left. If the 0x80 landed past 56,
+    // this runs on into a fresh block, which is why the padding can take two blocks
     while (s->used != 56) {
         sha256_update(s, &zero, 1);
     }
@@ -149,12 +162,15 @@ void sha256_final (sha256_t* s, uint8_t out[SHA256_SIZE]) {
     store_be32(length + 4, (uint32_t)bits);
     sha256_update(s, length, 8);
 
+    // the digest is the eight state words, written out big endian
     for (int i = 0; i < 8; i++) {
         store_be32(out + i * 4, s->state[i]);
     }
+    // the context still holds the last block of data and a state that leads to the digest
     wipe(s, sizeof(*s));
 }
 
+// hash a whole buffer in one go, when all the data is already in one place
 void sha256 (const void* data, size_t length, uint8_t out[SHA256_SIZE]) {
     sha256_t s;
     sha256_init(&s);
@@ -178,7 +194,9 @@ void sha256 (const void* data, size_t length, uint8_t out[SHA256_SIZE]) {
 // copy of those states instead of hashing the key again, which roughly halves the work in
 // PBKDF2 (tens of thousands of HMACs with the same key).
 
+// prepare a reusable HMAC context for one key: hash the two padded keys once, keep both states
 void hmac_init (hmac_t* h, const void* key, size_t key_length) {
+    // the key, made exactly one 64 byte SHA-256 block long
     uint8_t block[64];
     memset(block, 0, sizeof(block));
     if (key_length > 64) {
@@ -187,6 +205,8 @@ void hmac_init (hmac_t* h, const void* key, size_t key_length) {
         memcpy(block, key, key_length);
     }
 
+    // inner state: SHA-256 with (key ^ ipad) already hashed in. Then the same for the outer
+    // state with (key ^ opad). The two pads only differ so the two hashes start differently
     uint8_t pad[64];
     for (int i = 0; i < 64; i++) pad[i] = block[i] ^ 0x36;
     sha256_init(&h->inner);
@@ -195,6 +215,7 @@ void hmac_init (hmac_t* h, const void* key, size_t key_length) {
     sha256_init(&h->outer);
     sha256_update(&h->outer, pad, 64);
 
+    // both buffers are the key in plain sight (or one xor away from it)
     wipe(block, sizeof(block));
     wipe(pad, sizeof(pad));
 }
@@ -203,18 +224,22 @@ void hmac_init (hmac_t* h, const void* key, size_t key_length) {
 // is left unchanged so it can be used again. out may be the same buffer as first
 static void hmac_run (const hmac_t* h, const void* first, size_t first_length,
                       const void* second, size_t second_length, uint8_t out[SHA256_SIZE]) {
+    // inner hash: carry on from a copy of the prepared state (key ^ ipad already in), add the data
     uint8_t inner[SHA256_SIZE];
     sha256_t s = h->inner;
     sha256_update(&s, first, first_length);
     sha256_update(&s, second, second_length);
     sha256_final(&s, inner);
 
+    // outer hash: (key ^ opad) followed by the inner digest. Only written to out at the very
+    // end, which is why out can safely be the same buffer as first
     s = h->outer;
     sha256_update(&s, inner, sizeof(inner));
     sha256_final(&s, out);
     wipe(inner, sizeof(inner));
 }
 
+// a one off HMAC: prepare the key, run once, then wipe the prepared states (they hold the key)
 void hmac_sha256 (const void* key, size_t key_length, const void* data, size_t length, uint8_t out[SHA256_SIZE]) {
     hmac_t h;
     hmac_init(&h, key, key_length);
@@ -237,17 +262,20 @@ void hmac_sha256 (const void* key, size_t key_length, const void* data, size_t l
 // and different for every password, so the same password never gives the same key twice and
 // an attacker can't work out a table of common passwords in advance.
 
+// stretch a password and salt into length bytes of key, running HMAC iterations times per block
 void pbkdf2_sha256 (const void* password, size_t password_length, const void* salt, size_t salt_length,
                     uint32_t iterations, uint8_t* out, size_t length) {
     hmac_t h;
     hmac_init(&h, password, password_length); // the password is the HMAC key every time
 
+    // one pass per 32 bytes of key wanted. u is the latest Ui in the chain, t the running xor
     for (uint32_t block = 1; length > 0; block++) {
         uint8_t u[SHA256_SIZE], t[SHA256_SIZE], number[4];
         store_be32(number, block);
         hmac_run(&h, salt, salt_length, number, sizeof(number), u); // U1
         memcpy(t, u, sizeof(t));
         for (uint32_t i = 1; i < iterations; i++) {
+            // i & 1023 is i % 1024 done with a mask: every 1024 rounds, without a division
             if ((i & 1023) == 0) {
                 busy(); // this is the slow part: let a spinner turn
             }
@@ -255,10 +283,12 @@ void pbkdf2_sha256 (const void* password, size_t password_length, const void* sa
             for (int k = 0; k < SHA256_SIZE; k++) t[k] ^= u[k];
         }
 
+        // the last block may only be partly needed
         size_t take = length < SHA256_SIZE ? length : SHA256_SIZE;
         memcpy(out, t, take);
         out += take;
         length -= take;
+        // both are pieces of the key being made
         wipe(u, sizeof(u));
         wipe(t, sizeof(t));
     }
@@ -288,6 +318,7 @@ void pbkdf2_sha256 (const void* password, size_t password_length, const void* sa
 static uint8_t sbox[256];
 static bool sbox_ready = false;
 
+// rotate a byte left: the bits that fall off the top come back in at the bottom
 static uint8_t rotl8 (uint8_t x, int n) {
     return (uint8_t)((x << n) | (x >> (8 - n)));
 }
@@ -315,6 +346,7 @@ static void aes_build_sbox (void) {
         if (q & 0x80) {
             q ^= 0x09;
         }
+        // the affine transform on the inverse gives the S-box entry for p
         sbox[p] = (uint8_t)(q ^ rotl8(q, 1) ^ rotl8(q, 2) ^ rotl8(q, 3) ^ rotl8(q, 4) ^ 0x63);
     } while (p != 1);
     sbox[0] = 0x63; // 0 has no inverse, the standard defines its entry as 0x63
@@ -333,16 +365,21 @@ static uint32_t sub_word (uint32_t w) {
 //     every 8th word: rotate one byte left, SubBytes, xor the round constant (1, 2, 4, 8...)
 //     the 4th word in between: SubBytes only
 void aes256_init (aes256_t* aes, const uint8_t key[32]) {
+    // the S-box is built the first time any key is set up
     if (!sbox_ready) {
         aes_build_sbox();
     }
+    // words 0-7: the key as it is
     uint32_t* w = aes->round_keys;
     for (int i = 0; i < 8; i++) {
         w[i] = load_be32(key + i * 4);
     }
+    // the round constant doubles (in GF(2^8)) each time it is used, so no two rounds match
     uint8_t rcon = 1;
     for (int i = 8; i < 60; i++) {
         uint32_t t = w[i - 1];
+        // (t << 8) | (t >> 24) is the one byte left rotation, the round constant goes in the
+        // top byte only
         if (i % 8 == 0) {
             t = sub_word((t << 8) | (t >> 24)) ^ ((uint32_t)rcon << 24);
             rcon = xtime(rcon);
@@ -363,8 +400,10 @@ static void add_round_key (uint8_t* s, const uint32_t* k) {
     }
 }
 
+// encrypt one 16 byte block with the expanded key: round key 0, then the 14 rounds
 void aes256_encrypt_block (const aes256_t* aes, const uint8_t in[16], uint8_t out[16]) {
     uint8_t s[16], t[16]; // the grid, s[c * 4 + r] is row r of column c
+    // copied in first, so in and out may be the same buffer
     memcpy(s, in, 16);
     add_round_key(s, aes->round_keys);
     for (int round = 1; round <= 14; round++) {
@@ -390,10 +429,12 @@ void aes256_encrypt_block (const aes256_t* aes, const uint8_t in[16], uint8_t ou
                 a[3] ^= all ^ xtime(a3 ^ a0);
             }
         }
+        // each round key is 4 words, so round n's starts at word 4n
         add_round_key(t, aes->round_keys + round * 4);
         memcpy(s, t, 16);
     }
     memcpy(out, s, 16);
+    // the in between grids are partly encrypted data, a help to anyone attacking the key
     wipe(s, sizeof(s));
     wipe(t, sizeof(t));
 }
@@ -412,19 +453,23 @@ void aes256_encrypt_block (const aes256_t* aes, const uint8_t in[16], uint8_t ou
 // encrypted messages together would cancel the key stream out. fcrypt.c makes a fresh random
 // key for every file it encrypts, so that can't happen.
 
+// encrypt or decrypt data in place (it is the same operation) with the key stream from nonce
 void aes256_ctr (const aes256_t* aes, const uint8_t nonce[8], uint8_t* data, size_t length) {
     uint8_t counter[16], stream[16];
+    // the nonce half of the counter block never changes
     memcpy(counter, nonce, 8);
     for (uint32_t block = 0; length > 0; block++) {
         // the top 4 counter bytes stay 0: 2^32 blocks is 64GB, far more than a file can hold
         store_be32(counter + 8, 0);
         store_be32(counter + 12, block);
         aes256_encrypt_block(aes, counter, stream);
+        // the last block may be short: only as much stream as there is data is used
         size_t take = length < 16 ? length : 16;
         for (size_t i = 0; i < take; i++) data[i] ^= stream[i];
         data += take;
         length -= take;
     }
+    // with the key stream, anyone could decrypt the last block (or encrypt a fake one)
     wipe(stream, sizeof(stream));
 }
 
@@ -451,6 +496,7 @@ static uint8_t pool[SHA256_SIZE];  // carries everything mixed in so far from on
 static uint32_t pool_counter = 0;  // makes every call's input different, even with no new entropy
 static volatile uint32_t entropy = 0; // written by interrupt handlers, so volatile
 
+// ask the CPU about itself: leaf picks the question, the answers come back in the 4 registers
 static void cpuid (uint32_t leaf, uint32_t* a, uint32_t* b, uint32_t* c, uint32_t* d) {
     __asm__ volatile ("cpuid" : "=a"(*a), "=b"(*b), "=c"(*c), "=d"(*d) : "a"(leaf), "c"(0));
 }
@@ -458,12 +504,15 @@ static void cpuid (uint32_t leaf, uint32_t* a, uint32_t* b, uint32_t* c, uint32_
 // the CPU's cycle counter (billions a second): exactly which cycle an interrupt lands on jitters
 static uint64_t read_tsc (void) {
     uint64_t t;
+    // "=A" is the 32 bit way to get the edx:eax pair rdtsc fills as one 64 bit number
     __asm__ volatile ("rdtsc" : "=A"(t));
     return t;
 }
 
 // called from the keyboard and timer interrupts, so it is kept to a few instructions
 void crypto_add_entropy (uint32_t value) {
+    // rotate the old value left 7 bits so earlier inputs aren't simply cancelled by xor-ing
+    // the same value in again, then mix in the new value and the cycle count
     entropy = ((entropy << 7) | (entropy >> 25)) ^ value ^ (uint32_t)read_tsc();
 }
 
@@ -471,6 +520,7 @@ void crypto_add_entropy (uint32_t value) {
 // it says so with the carry flag, so it is tried a few times
 static bool hardware_random (uint32_t* value) {
     static int available = -1; // -1 = not checked yet
+    // CPUID is slow, so the answer is worked out once and remembered
     if (available < 0) {
         uint32_t a, b, c, d;
         cpuid(1, &a, &b, &c, &d);
@@ -481,6 +531,7 @@ static bool hardware_random (uint32_t* value) {
     }
     for (int tries = 0; tries < 10; tries++) {
         uint8_t ok;
+        // setc copies the carry flag into ok: 1 means *value really is a fresh random number
         __asm__ volatile ("rdrand %0; setc %1" : "=r"(*value), "=qm"(ok));
         if (ok) {
             return true;
@@ -489,14 +540,18 @@ static bool hardware_random (uint32_t* value) {
     return false;
 }
 
+// fill buffer with unpredictable bytes, 16 at a time, as in the diagram above
 void crypto_random (void* buffer, size_t length) {
     uint8_t* out = buffer;
     while (length > 0) {
+        // take this round's inputs: the cycle count now, and a snapshot of the entropy (an
+        // interrupt can change it at any moment, so it is read once)
         sha256_t s;
         uint8_t digest[SHA256_SIZE];
         uint64_t tsc = read_tsc();
         uint32_t stir = entropy;
         uint32_t hw = 0;
+        // hash them all together with the pool, plus RDRAND if the CPU has it
         sha256_init(&s);
         sha256_update(&s, pool, sizeof(pool));
         sha256_update(&s, &pool_counter, sizeof(pool_counter));
@@ -515,6 +570,7 @@ void crypto_random (void* buffer, size_t length) {
         sha256(digest, sizeof(digest), pool);
         out += take;
         length -= take;
+        // the unused half of the digest is what the next pool came from, so it can't be left about
         wipe(digest, sizeof(digest));
     }
 }
@@ -526,11 +582,13 @@ void crypto_random (void* buffer, size_t length) {
 bool crypto_equal (const void* a, const void* b, size_t length) {
     const uint8_t* x = a;
     const uint8_t* y = b;
+    // x ^ y is 0 only where the bytes match, so any mismatch leaves a bit set in difference
     uint8_t difference = 0;
     for (size_t i = 0; i < length; i++) difference |= x[i] ^ y[i];
     return difference == 0;
 }
 
+// fill a buffer with zeros in a way the compiler is not allowed to skip
 void wipe (void* buffer, size_t length) {
     // volatile, so the compiler can't decide the writes are pointless (the buffer is about to
     // go out of scope) and leave them out
@@ -540,8 +598,11 @@ void wipe (void* buffer, size_t length) {
     }
 }
 
+// write bytes out as lower case hex, two characters per byte, ending with '\0'. out needs
+// room for length * 2 + 1 characters
 void crypto_to_hex (const uint8_t* bytes, size_t length, char* out) {
     static const char digits[] = "0123456789abcdef";
+    // >> 4 is the top 4 bits (the first hex digit), & 15 the bottom 4 (the second)
     for (size_t i = 0; i < length; i++) {
         out[i * 2] = digits[bytes[i] >> 4];
         out[i * 2 + 1] = digits[bytes[i] & 15];
@@ -549,6 +610,7 @@ void crypto_to_hex (const uint8_t* bytes, size_t length, char* out) {
     out[length * 2] = '\0';
 }
 
+// the value of one hex digit (either case), or -1 if c isn't one
 static int hex_digit (char c) {
     if (c >= '0' && c <= '9') {
         return c - '0';
@@ -562,6 +624,8 @@ static int hex_digit (char c) {
     return -1;
 }
 
+// read length bytes back from hex text. False if the text is too short or has a non hex
+// character in it
 bool crypto_from_hex (const char* hex, uint8_t* out, size_t length) {
     for (size_t i = 0; i < length; i++) {
         int hi = hex_digit(hex[i * 2]);
@@ -579,13 +643,17 @@ bool crypto_from_hex (const char* hex, uint8_t* out, size_t length) {
 // Known answers published with each standard. A typo anywhere above (or a compiler problem)
 // would change these, so the boot log shows [FAIL] instead of silently storing weak passwords.
 
+// does got match the expected answer written as hex? (up to 64 bytes)
 static bool check_hex (const uint8_t* got, size_t length, const char* want) {
     uint8_t expected[64];
+    // plain memcmp is fine here: these are public test answers, not secrets
     return crypto_from_hex(want, expected, length) && memcmp(got, expected, length) == 0;
 }
 
+// run every known answer test, true only if all of them pass
 bool crypto_selftest (void) {
     uint8_t out[SHA256_SIZE];
+    // &= keeps going after a failure, so one run tests everything
     bool ok = true;
 
     // FIPS 180-4 examples: one block, and a message that needs two blocks

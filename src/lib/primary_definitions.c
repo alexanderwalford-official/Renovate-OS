@@ -63,6 +63,7 @@ static char toArray_buffer[16]; // big enough for "-2147483648"
 // (despite the name it gives back text, the "array" being the array of characters)
 // returns toArray_buffer, which the next call overwrites
 char* toArray(int number) {
+    // always base 10, so negative numbers get a '-'
     return itoa(number, toArray_buffer, 10);
 }
 
@@ -91,6 +92,7 @@ int seq(const char* string_a, const char* string_b) {
 // - parts must have room for max_parts pointers
 // the terminal calls this with max_parts = 2 to separate a command from its arguments
 int split(char* string, char split_char, char** parts, int max_parts) {
+    // nothing to split, or nowhere to put the parts
     if (string == NULL || parts == NULL || max_parts <= 0) {
         return 0;
     }
@@ -128,6 +130,7 @@ char* StrRemove(char* string, const char* target, int c) {
         // slide everything after the match left over the top of it, closing the gap
         // the + 1 brings the '\0' along too; memmove (not memcpy) because the two regions overlap
         memmove(found, found + target_len, slen(found + target_len) + 1);
+        // found stays put: the next search starts with whatever just slid into the gap
         removed++;
     }
     return string;

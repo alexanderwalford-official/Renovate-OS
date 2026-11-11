@@ -81,6 +81,7 @@ uint32_t auth_failures_seen = 0;
 static account_t accounts[MAX_ACCOUNTS];
 static int account_count = 0;
 
+// logins are only needed with a real disk: without one there is nowhere to keep accounts
 bool auth_required (void) {
     return fs_mode == FS_MODE_DISK;
 }
@@ -92,6 +93,8 @@ static bool valid_name (const char* name, size_t longest) {
     if (length == 0 || length > longest) {
         return false;
     }
+    // the (unsigned char) casts matter: a char above 127 would be negative, and the is...()
+    // functions only promise to work for 0 to 255
     for (const char* c = name; *c != '\0'; c++) {
         bool allowed = islower((unsigned char)*c) || isdigit((unsigned char)*c) || *c == '_' || *c == '-';
         if (!allowed) {
@@ -107,7 +110,9 @@ static bool valid_name (const char* name, size_t longest) {
 // read one line of the accounts file into an account. False if the line doesn't make sense
 static bool parse_account_line (char* line, account_t* account) {
     char* fields[5]; // name, rounds, salt, hash, wrong passwords
+    // trim first, so a '\r' from a file edited on another computer doesn't end up in the count
     int field_count = split(trim(line), ':', fields, 5);
+    // 4 is enough: the wrong passwords field is newer, and older files don't have it
     if (field_count < 4) {
         return false;
     }
@@ -115,6 +120,8 @@ static bool parse_account_line (char* line, account_t* account) {
     const char* name = fields[0];
     const char* salt_hex = fields[2];
     const char* hash_hex = fields[3];
+    // AUTH_NAME_MAX rather than the shorter limit for new names, so accounts made before home
+    // folders existed (with longer names) still load
     if (!valid_name(name, AUTH_NAME_MAX)) {
         return false;
     }
@@ -122,6 +129,7 @@ static bool parse_account_line (char* line, account_t* account) {
         return false; // each byte is two hex digits
     }
 
+    // the numbers are written in decimal (base 10)
     scpy(account->name, name, sizeof(account->name));
     account->rounds = (uint32_t)strtoul(fields[1], NULL, 10);
     if (field_count == 5) {
@@ -130,9 +138,11 @@ static bool parse_account_line (char* line, account_t* account) {
         account->wrong_passwords = 0; // an older file without the count
     }
 
+    // 0 rounds isn't a real PBKDF2 (and is what strtoul gives for text that isn't a number)
     if (account->rounds == 0) {
         return false;
     }
+    // the lengths were checked above, so these only fail on a character that isn't hex
     if (!crypto_from_hex(salt_hex, account->salt, SALT_SIZE)) {
         return false;
     }
@@ -152,6 +162,7 @@ static void load (void) {
         return; // no file yet, so no accounts
     }
 
+    // one line at a time. Anything past MAX_ACCOUNTS is ignored, as accounts[] has no room
     char* position; // strtok_r keeps its place in the text here
     char* line = strtok_r(text, "\n", &position);
     while (line != NULL && account_count < MAX_ACCOUNTS) {
@@ -165,12 +176,15 @@ static void load (void) {
 
 // write accounts[] back to /acc/users (making the file the first time)
 static int save (void) {
+    // room for every account at its longest possible line, plus the '\0' (the + 1 also means
+    // a file with no accounts still gets a buffer)
     char* text = malloc((size_t)account_count * ACCOUNT_LINE_MAX + 1);
     if (text == NULL) {
         return AUTH_ERR_SAVE;
     }
     text[0] = '\0';
 
+    // each account back into a "name:rounds:salt:hash:wrong" line, with the bytes as hex
     for (int i = 0; i < account_count; i++) {
         const account_t* account = &accounts[i];
         char salt_hex[SALT_SIZE * 2 + 1];
@@ -184,6 +198,7 @@ static int save (void) {
         strcat(text, line);
     }
 
+    // false = replace the whole file, not add to the end of it
     int result;
     if (fs_file_exists(ACCOUNTS_FOLDER, ACCOUNTS_FILE)) {
         result = fs_write_f(ACCOUNTS_FOLDER, ACCOUNTS_FILE, text, false);
@@ -211,7 +226,9 @@ static int find (const char* name) {
 // give an account a new password: a fresh random salt, and the hash of the password with it.
 // The password itself is never kept anywhere
 static void set_password (account_t* account, const char* password) {
+    // today's round count, whatever the old password was hashed with
     account->rounds = PBKDF2_ROUNDS;
+    // a new salt every time, so the same password set twice still gives a different hash
     crypto_random(account->salt, SALT_SIZE);
     pbkdf2_sha256(password, slen(password), account->salt, SALT_SIZE,
                   account->rounds, account->hash, SHA256_SIZE);
@@ -220,6 +237,7 @@ static void set_password (account_t* account, const char* password) {
 
 // ---- home folders ---------------------------------------------------------------------------
 
+// a user's home folder, "/home/alex/", into out. False if the name is too long to have one
 bool auth_home (const char* name, char* out, size_t size) {
     // A folder name on the disk has to fit the 8.3 format, so only names of up to 8 characters
     // get a home folder. New names can't be longer; only accounts made before home folders
@@ -227,6 +245,7 @@ bool auth_home (const char* name, char* out, size_t size) {
     if (slen(name) > AUTH_HOME_NAME_MAX) {
         return false;
     }
+    // HOMES_FOLDER "%s/" is two strings side by side, which C joins into "/home/%s/"
     sfmt(out, size, HOMES_FOLDER "%s/", name);
     return true;
 }
@@ -237,6 +256,7 @@ static void make_home (const char* name) {
     if (!auth_home(name, home, sizeof(home))) {
         return;
     }
+    // /home/ itself first, as the first account on a new disk finds it missing
     if (!fs_dir_exists(HOMES_FOLDER)) {
         fs_create_d(HOMES_FOLDER, "home folders");
     }
@@ -249,6 +269,8 @@ static void make_home (const char* name) {
 static void enter_home (const char* name) {
     make_home(name); // accounts made before home folders existed get theirs now
 
+    // checked again, as making it can fail (a long old name, or a full disk). If so the
+    // terminal just stays where it was
     char home[FS_PATH_MAX];
     if (auth_home(name, home, sizeof(home)) && fs_dir_exists(home)) {
         scpy(cd, home, sizeof(cd));
@@ -258,14 +280,17 @@ static void enter_home (const char* name) {
 
 // ---- the accounts ---------------------------------------------------------------------------
 
+// can a new account have this name? New names must be short enough for a home folder
 bool auth_valid_new_name (const char* name) {
     return valid_name(name, AUTH_HOME_NAME_MAX);
 }
 
+// make a new account with this password, and its home folder
 int auth_add (const char* name, const char* password) {
     if (!auth_valid_new_name(name)) {
         return AUTH_ERR_NAME;
     }
+    // fresh from the disk, so the name check and the save see the file as it is now
     load();
     if (find(name) >= 0) {
         return AUTH_ERR_EXISTS;
@@ -274,12 +299,15 @@ int auth_add (const char* name, const char* password) {
         return AUTH_ERR_FULL;
     }
 
+    // the new account goes on the end, cleared so nothing from an old load is left in it
+    // (a wrong passwords count of 0, for one)
     account_t* account = &accounts[account_count];
     account_count++;
     memset(account, 0, sizeof(*account));
     scpy(account->name, name, sizeof(account->name));
     set_password(account, password);
 
+    // only make the home folder once the account is safely saved
     int result = save();
     if (result == AUTH_OK) {
         make_home(name);
@@ -287,6 +315,7 @@ int auth_add (const char* name, const char* password) {
     return result;
 }
 
+// remove an account from the accounts file (its home folder is left alone)
 int auth_delete (const char* name) {
     load();
     int index = find(name);
@@ -294,13 +323,15 @@ int auth_delete (const char* name) {
         return AUTH_ERR_NOT_FOUND;
     }
 
-    // close the gap: move every account after it down one place
+    // close the gap: move every account after it down one place (memmove, not memcpy, because
+    // the two areas overlap)
     int after = account_count - index - 1;
     memmove(&accounts[index], &accounts[index + 1], (size_t)after * sizeof(account_t));
     account_count--;
     return save();
 }
 
+// give an existing account a new password (and a new salt)
 int auth_set_password (const char* name, const char* password) {
     load();
     int index = find(name);
@@ -336,15 +367,18 @@ bool auth_check (const char* name, const char* password) {
 
     // crypto_equal takes the same time however many bytes match, which a plain memcmp doesn't
     bool right = account != NULL && crypto_equal(hash, account->hash, SHA256_SIZE);
+    // the hash of a right password is as good as the saved one, so it isn't left on the stack
     wipe(hash, sizeof(hash));
     return right;
 }
 
+// is there an account with this name?
 bool auth_exists (const char* name) {
     load();
     return find(name) >= 0;
 }
 
+// call fn once for each account's name, in the order they are in the file
 void auth_list (void (*fn)(const char* name, void* ctx), void* ctx) {
     load();
     for (int i = 0; i < account_count; i++) {
@@ -352,6 +386,7 @@ void auth_list (void (*fn)(const char* name, void* ctx), void* ctx) {
     }
 }
 
+// a short, plain message for one of the AUTH_ codes, for showing to the user
 const char* auth_strerror (int error) {
     switch (error) {
         case AUTH_OK:            return "ok";
@@ -375,6 +410,7 @@ static uint32_t count_wrong_password (const char* name) {
         return 0;
     }
     accounts[index].wrong_passwords++;
+    // saved before anything else happens, so pulling the plug can't undo the count
     save();
     return accounts[index].wrong_passwords;
 }
@@ -383,6 +419,7 @@ static uint32_t count_wrong_password (const char* name) {
 static uint32_t forget_wrong_passwords (const char* name) {
     load();
     int index = find(name);
+    // nothing to forget means nothing to save, so the usual login doesn't write to the disk
     if (index < 0 || accounts[index].wrong_passwords == 0) {
         return 0;
     }
@@ -392,13 +429,14 @@ static uint32_t forget_wrong_passwords (const char* name) {
     return how_many;
 }
 
-// fs_empty_dir() calls this after each file it wipes, to move the progress bar along.
-// `context` is the wipe_progress_t that wipe_home() handed to fs_empty_dir
+// what the progress bar needs while a home folder is wiped: the bar, and how far along it is
 typedef struct {
     ui_progress_t bar;
     uint32_t files_done;
 } wipe_progress_t;
 
+// fs_empty_dir() calls this after each file it wipes, to move the progress bar along.
+// `context` is the wipe_progress_t that wipe_home() handed to fs_empty_dir
 static void wipe_progress_step (const char* name, void* context) {
     wipe_progress_t* progress = context;
     progress->files_done++;
@@ -408,6 +446,8 @@ static void wipe_progress_step (const char* name, void* context) {
 // overwrite every file in a home folder with zeros and delete it, with a progress bar.
 // Returns how many files were wiped
 static int wipe_home (const char* home) {
+    // counted first, so the progress bar knows where its end is. An empty folder (or an error,
+    // below 0) needs no bar at all
     int total = fs_count_files(home);
     if (total <= 0) {
         return 0;
@@ -424,12 +464,14 @@ static int wipe_home (const char* home) {
 // after a wrong password for an account that exists: a warning, or, on every third one in a
 // row, wipe the home folder
 static void after_wrong_password (const char* name, uint32_t wrong_passwords) {
+    // an account with no home folder still gets the warnings, there is just nothing to wipe
     char home[FS_PATH_MAX];
     bool has_home = auth_home(name, home, sizeof(home)) && fs_dir_exists(home);
 
     // where this one falls in the current run of three: 1, 2, then 0 on the third
     uint32_t in_this_run = wrong_passwords % AUTH_MAX_FAILURES;
 
+    // 1st or 2nd of a run: just the warning
     if (in_this_run != 0) {
         colour(YELLOW, BLACK);
         prtf("  Warning: that is %u of %u wrong passwords in a row for %s.\n",
@@ -440,13 +482,18 @@ static void after_wrong_password (const char* name, uint32_t wrong_passwords) {
         return;
     }
 
+    // the 3rd (or 6th, 9th...): wipe the home folder
     colour(LIGHT_RED, BLACK);
     prtf("  %u wrong passwords in a row for %s.\n", AUTH_MAX_FAILURES, name);
     if (has_home) {
+        // below 0 is an error from the file system: report it as no files rather than a
+        // strange negative number
         int wiped = wipe_home(home);
         if (wiped < 0) {
             wiped = 0;
         }
+        // set again after the progress bar (drawn in its own green and grey), to be sure the
+        // message comes out red
         colour(LIGHT_RED, BLACK);
         prtf("  The %d file(s) in %s have been securely deleted.\n", wiped, home);
     }
@@ -522,11 +569,14 @@ static void create_first_account (void) {
         char name[64];
         ask("User name: ", name, sizeof(name), false);
         char* user = strlwr(trim(name)); // names are kept in lower case
+        // the same rule as auth_add() uses, checked here so a bad name is caught before the
+        // passwords are typed
         if (!valid_name(user, AUTH_HOME_NAME_MAX)) {
             prtf("  Names are 1 to 8 of a-z, 0-9, _ and -\n\n");
             continue;
         }
 
+        // typed twice, as a typo here would lock the only account out of the computer
         char password[PASSWORD_MAX];
         char again[PASSWORD_MAX];
         ask("Password:  ", password, sizeof(password), true);
@@ -544,6 +594,7 @@ static void create_first_account (void) {
         ui_busy_begin("Saving the account"); // hashing the password takes a moment
         int result = auth_add(user, password);
         ui_busy_end();
+        // the typed passwords are no use once hashed, and mustn't stay in memory
         wipe(password, sizeof(password));
         wipe(again, sizeof(again));
 
@@ -552,12 +603,14 @@ static void create_first_account (void) {
             continue;
         }
 
+        // made it: log straight in as the new account
         scpy(auth_user, user, sizeof(auth_user));
         enter_home(user);
         return;
     }
 }
 
+// the login screen: keeps asking until someone logs in (or makes the first account)
 void auth_login (void) {
     auth_failures_seen = 0;
 
@@ -567,6 +620,7 @@ void auth_login (void) {
         return;
     }
 
+    // no accounts at all (a new disk, or a damaged file): there is nobody to log in as yet
     load();
     if (account_count == 0) {
         create_first_account();
@@ -587,8 +641,10 @@ void auth_login (void) {
         char password[PASSWORD_MAX];
         ask("Username: ", name, sizeof(name), false);
         ask("Password: ", password, sizeof(password), true);
+        // lower case, so "Alex" logs in as alex
         char* user = strlwr(trim(name));
 
+        // PBKDF2 takes about a second, so show that something is happening
         ui_busy_begin("Checking the password");
         bool right = auth_check(user, password);
         ui_busy_end();
@@ -607,6 +663,7 @@ void auth_login (void) {
         uint32_t wrong_passwords = count_wrong_password(user);
         colour(LIGHT_RED, BLACK);
         prtf("  Wrong user name or password.\n");
+        // 0 means the name doesn't exist, so there is no account to warn about or wipe
         if (wrong_passwords > 0) {
             after_wrong_password(user, wrong_passwords);
         }

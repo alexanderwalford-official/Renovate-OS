@@ -24,40 +24,54 @@
 #define BGA_ENABLED     0x01
 #define BGA_LFB_ENABLED 0x40
 
+// read one of the card's registers: its number goes to the index port, the value comes back
+// through the data port (16 bit port reads and writes, as the registers are 16 bits)
 static uint16_t bga_read (uint16_t reg) {
     outw(BGA_INDEX, reg);
     return inw(BGA_DATA);
 }
 
+// write one of the card's registers, the same way round
 static void bga_write (uint16_t reg, uint16_t value) {
     outw(BGA_INDEX, reg);
     outw(BGA_DATA, value);
 }
 
+// is the graphics card a Bochs Graphics Adapter (QEMU, Bochs, VirtualBox), whose resolution we can change?
 bool bga_available (void) {
-    // the versions so far are 0xB0C0 to 0xB0C5
+    // the versions so far are 0xB0C0 to 0xB0C5. On any other card nothing answers at these ports
+    // (a read usually gives 0xFFFF), so the ID is a safe way to ask. 0xB0CF leaves room for newer ones
     uint16_t id = bga_read(BGA_REG_ID);
     return id >= 0xB0C0 && id <= 0xB0CF;
 }
 
+// change the resolution to width x height at 32 bits a pixel, and move the console onto it
 bool bga_set_mode (uint32_t width, uint32_t height) {
     vga_framebuffer_t fb;
+    // only from a framebuffer (the card has to be in graphics mode already, and we need its
+    // address), and nothing bigger than 4096 either way, a sensible limit for any screen
     if (!bga_available() || !vga_framebuffer_info(&fb) || width > 4096 || height > 4096) {
         return false;
     }
     // check the mode fits in the card's memory, when the card says how much it has
+    // (4 bytes a pixel; older versions have no such register and read back 0)
     uint32_t memory = (uint32_t)bga_read(BGA_REG_VIDEO_64K) * 64 * 1024;
     if (memory != 0 && width * height * 4 > memory) {
         return false;
     }
 
+    // the card only takes a new size while it is switched off
     bga_write(BGA_REG_ENABLE, 0);
     bga_write(BGA_REG_XRES, (uint16_t)width);
     bga_write(BGA_REG_YRES, (uint16_t)height);
     bga_write(BGA_REG_BPP, 32);
+    // back on, with the linear framebuffer: the whole screen as one block of memory at the same
+    // address as before, rather than the old 64KB window at 0xA0000
     bga_write(BGA_REG_ENABLE, BGA_ENABLED | BGA_LFB_ENABLED);
 
     // the card may round or refuse a size, so use what it actually set
+    // its rows have no padding, so a row is just width * 4 bytes, and its 32 bit pixels are
+    // 0x00RRGGBB: blue in the lowest byte, then green, then red
     fb.width = bga_read(BGA_REG_XRES);
     fb.height = bga_read(BGA_REG_YRES);
     fb.bpp = 32;

@@ -42,6 +42,7 @@
 //  1. The explanations
 // =================================================================================================
 
+// what WHY says about one kind of problem, under the headings "Why:" and "What you can do:"
 typedef struct {
     const char* what;       // what happened, in a sentence
     const char* why;        // why AerOS works like this
@@ -50,6 +51,9 @@ typedef struct {
     const char* code_vfs;   // ...if it's a different one without a disk (VFS mode), or NULL
 } explanation_t;
 
+// One explanation for every problem_t, found by the problem's own number. Each is written as
+// [PROBLEM_X] = { ... } (a "designated initialiser"), so the order here doesn't have to match
+// the order in explain.h. Long strings are split over lines: C joins "ab" "cd" into "abcd"
 static const explanation_t explanations[PROBLEM_COUNT] = {
     [PROBLEM_NOT_FOUND] = {
         "AerOS looked, and there is nothing with that name there.",
@@ -244,6 +248,10 @@ static const explanation_t explanations[PROBLEM_COUNT] = {
     },
 };
 
+// The functions below each turn one part of AerOS's error codes into the problem WHY explains.
+// A code with no explanation of its own becomes PROBLEM_OTHER
+
+// an FCRYPT_ERR_ code (encrypted files) -> its problem
 problem_t explain_fcrypt_problem (int fcrypt_error) {
     switch (fcrypt_error) {
         case FCRYPT_ERR_NOT_FOUND: return PROBLEM_NOT_FOUND;
@@ -253,6 +261,7 @@ problem_t explain_fcrypt_problem (int fcrypt_error) {
     }
 }
 
+// a SOUND_ERR_ code (PLAY, BEEP...) -> its problem
 problem_t explain_sound_problem (int sound_error) {
     switch (sound_error) {
         case SOUND_ERR_NO_CARD:   return PROBLEM_NO_SOUND_CARD;
@@ -263,6 +272,7 @@ problem_t explain_sound_problem (int sound_error) {
     }
 }
 
+// a VIDEO_ERR_ code (playing a .mpg) -> its problem
 problem_t explain_video_problem (int video_error) {
     switch (video_error) {
         case VIDEO_ERR_NOT_FOUND: return PROBLEM_NOT_FOUND;
@@ -273,6 +283,7 @@ problem_t explain_video_problem (int video_error) {
     }
 }
 
+// a NET_ERR_ code (sys/net.h) -> its problem
 problem_t explain_net_problem (int net_error) {
     switch (net_error) {
         case NET_ERR_NO_CARD:   return PROBLEM_NO_NETWORK;
@@ -289,12 +300,16 @@ problem_t explain_net_problem (int net_error) {
 _Static_assert(PROBLEM_READ_ONLY - PROBLEM_NOT_FOUND == FS_ERR_NOT_FOUND - FS_ERR_READ_ONLY,
                "the PROBLEM_ codes for the file system must match the FS_ERR_ codes, in order");
 
+// an FS_ERR_ code -> its problem, worked out from where the code is in the list (see above)
 static problem_t fs_problem (int fs_error) {
     int first = FS_ERR_NOT_FOUND;   // -1: PROBLEM_NOT_FOUND
     int last = FS_ERR_READ_ONLY;    // -9: PROBLEM_READ_ONLY
+    // outside the run of codes that have problems of their own (0, or a newer code)
     if (fs_error > first || fs_error < last) {
         return PROBLEM_OTHER;
     }
+    // how far down from -1 the code is, is how far up from PROBLEM_NOT_FOUND its problem is:
+    // -1 -> PROBLEM_NOT_FOUND + 0, -2 -> PROBLEM_NOT_FOUND + 1, and so on
     return (problem_t)(PROBLEM_NOT_FOUND + (first - fs_error));
 }
 
@@ -304,8 +319,9 @@ static problem_t fs_problem (int fs_error) {
 // =================================================================================================
 
 // Copy text, writing each "@cli_something" as the name of the command that runs cli_something
-// ("@cli_list" -> "LA"). An @ followed by a name no command runs is copied as it is
+// ("@cli_list" -> "LA"). An @ followed by a name no command runs is copied without the @
 static void expand_commands (const char* text, char* out, size_t size) {
+    // `used` is how much of out is filled; one place is always kept for the '\0'
     size_t used = 0;
     while (*text != '\0' && used + 1 < size) {
         if (*text != '@') {
@@ -322,6 +338,8 @@ static void expand_commands (const char* text, char* out, size_t size) {
         }
         function[length] = '\0';
 
+        // the command's name in its place, or the function's own name if no command runs it
+        // (without the @ either way), cut short if out is nearly full
         const char* command = cli_command_called(function);
         const char* word = command != NULL ? command : function;
         size_t room = size - 1 - used;
@@ -337,14 +355,18 @@ static void expand_commands (const char* text, char* out, size_t size) {
 
 // print text with its words wrapped at WIDTH, every line indented by `indent` spaces
 static void print_wrapped (const char* text, int indent) {
+    // the "@cli_" names turned into commands first, so the wrapping counts the real words
     char expanded[640];
     expand_commands(text, expanded, sizeof(expanded));
 
+    // ("%*s" with "" prints `indent` spaces: the * takes the width from the argument list)
     prtf("%*s", indent, "");
     int column = indent;
     const char* word = expanded;
     while (*word != '\0') {
         size_t length = strcspn(word, " ");
+        // A word that won't fit (with the space before it) starts a new line. A word at the
+        // start of a line is printed whatever its length: moving it on wouldn't help
         bool starts_line = column == indent;
         if (!starts_line && column + 1 + (int)length > WIDTH) {
             prtf("\n%*s", indent, "");
@@ -355,9 +377,11 @@ static void print_wrapped (const char* text, int indent) {
             prtf(" ");
             column++;
         }
+        // "%.*s" prints just `length` characters: the word, not the rest of the text after it
         prtf("%.*s", (int)length, word);
         column += (int)length;
 
+        // on to the next word (two spaces in a row count as one)
         word += length;
         while (*word == ' ') {
             word++;
@@ -378,6 +402,8 @@ static void print_folded (const char* text, size_t length, int column, int inden
             prtf("%.*s\n", (int)length, text);
             return;
         }
+        // look back from the edge for a space, but only through the second half of the room,
+        // so a line is never broken so early that most of it is left empty
         size_t cut = room;
         while (cut > room / 2 && text[cut] != ' ') {
             cut--;
@@ -385,6 +411,7 @@ static void print_folded (const char* text, size_t length, int column, int inden
         if (text[cut] != ' ') {
             cut = room; // one long word: just cut it
         }
+        // this line's part, then a new line already indented for the rest
         prtf("%.*s\n%*s", (int)cut, text, indent, "");
         while (cut < length && text[cut] == ' ') {
             cut++; // the next line doesn't start with the space it was broken at
@@ -400,14 +427,18 @@ static void print_folded (const char* text, size_t length, int column, int inden
 // into paragraphs and wrapped to fit the screen. Indented lines (examples, little tables) and
 // blank lines are kept just as they are
 static void print_comment (const char* comment) {
+    // the paragraph being gathered, until something other than a plain line ends it
     char paragraph[1024] = "";
     for (const char* line = comment; ; ) {
+        // one line of the comment at a time; the loop carries on once past the end of the
+        // text, so the last paragraph is still printed before it stops
         size_t length = strcspn(line, "\n");
         bool plain = length > 0 && line[0] != ' ';
         bool at_end = *line == '\0';
 
         // a plain line carries on the paragraph; anything else ends it
         if (plain) {
+            // joined to the line before with a space, as much of it as fits
             if (paragraph[0] != '\0') {
                 scat(paragraph, " ", sizeof(paragraph));
             }
@@ -417,6 +448,7 @@ static void print_comment (const char* comment) {
             memcpy(paragraph + used, line, copy);
             paragraph[used + copy] = '\0';
         } else {
+            // print the paragraph gathered so far, wrapped, and start a new one
             if (paragraph[0] != '\0') {
                 prtf("%*s", INDENT, "");
                 print_folded(paragraph, slen(paragraph), INDENT, INDENT);
@@ -431,6 +463,7 @@ static void print_comment (const char* comment) {
             print_folded(line, length, INDENT, INDENT + own_indent);
         }
 
+        // on to the next line, past its '\n'
         line += length;
         if (*line == '\n') {
             line++;
@@ -462,6 +495,8 @@ static void print_place (const char* function, const source_place_t* place) {
                          // line itself and the one after
 #define CODE_WIDTH 72    // longer lines are cut short
 
+// Everything WHY needs about the last problem. They are copies, not pointers: by the time WHY
+// is typed, whatever printed the problem has finished and its memory may be gone
 static struct {
     problem_t problem;
     char message[160];          // the message as it was printed
@@ -478,7 +513,7 @@ static struct {
     char code[CODE_LINES][CODE_WIDTH + 1];
 } last;
 
-static int hints_shown = 0;
+static int hints_shown = 0;   // how many "(WHY explains)" reminders since logging in (see HINTS)
 
 // keep the folder and name of what a problem was about. "notes.txt" -> the current folder
 // and "notes.txt"; "/sys/cach/" -> "/sys/" and "cach"
@@ -488,12 +523,15 @@ static void remember_subject (const char* subject) {
     if (subject == NULL) {
         return;
     }
+    // a copy, since the slashes on the end are cut off. (length > 1 keeps "/" itself whole)
     char path[FS_PATH_MAX];
     scpy(path, subject, sizeof(path));
     size_t length = slen(path);
     while (length > 1 && path[length - 1] == '/') {
         path[--length] = '\0'; // a folder: "/sys/cach/" -> "/sys/cach"
     }
+    // fs_split_path works out the folder the same way the file system does (the current
+    // folder for a name on its own). If it can't, nothing is remembered rather than half
     if (!fs_split_path(path, last.folder, sizeof(last.folder), last.name, sizeof(last.name))) {
         last.folder[0] = '\0';
         last.name[0] = '\0';
@@ -502,16 +540,20 @@ static void remember_subject (const char* subject) {
 
 // print a problem's message and remember it (the shared part of explain_say and explain_say_fs)
 static void say (problem_t problem, const char* subject) {
+    // (the caller has already written the message into last.message; code_lines is cleared
+    // because only an AerLang error has program lines to show)
     last.problem = problem;
     last.code_lines = 0;
     remember_subject(subject);
 
     prtf("%s", last.message);
+    // the "(WHY explains)" reminder, for the first few problems only
     if (hints_shown < HINTS) {
         hints_shown++;
         char hint[32];
         sfmt(hint, sizeof(hint), "(%s explains)", cli_command_called("cli_why"));
         // after the message if it fits on the line, otherwise on a line of its own
+        // (the 2 is the two spaces in front of the hint)
         bool fits = slen(last.message) + 2 + slen(hint) < COLS;
         colour(DARK_GRAY, console_bg);
         prtf(fits ? "  %s" : "\n  %s", hint);
@@ -520,7 +562,9 @@ static void say (problem_t problem, const char* subject) {
     prtf("\n");
 }
 
+// print a problem's message (made like prtf makes one) and remember it for WHY
 void explain_say (problem_t problem, const char* subject, const char* format, ...) {
+    // format the message straight into `last`, where WHY will find it
     va_list ap;
     va_start(ap, format);
     vsnprintf(last.message, sizeof(last.message), format, ap);
@@ -528,33 +572,43 @@ void explain_say (problem_t problem, const char* subject, const char* format, ..
     say(problem, subject);
 }
 
+// explain_say for a file system error: the message gets ": " and what the error means on the
+// end, and the problem is worked out from the FS_ERR_ code
 void explain_say_fs (int fs_error, const char* subject, const char* format, ...) {
     va_list ap;
     va_start(ap, format);
     vsnprintf(last.message, sizeof(last.message), format, ap);
     va_end(ap);
+    // "Can't open notes.txt" + ": " + "not found"
     scat(last.message, ": ", sizeof(last.message));
     scat(last.message, fs_strerror(fs_error), sizeof(last.message));
     say(fs_problem(fs_error), subject);
 }
 
+// remember an AerLang error for WHY: the program (NULL for code typed at the prompt), the line
+// it stopped on, its message, and the lines of code around it
 void explain_program (const char* program, int line, const char* message, const char* source) {
     last.problem = program != NULL ? PROBLEM_PROGRAM : PROBLEM_TYPED_CODE;
     scpy(last.message, message, sizeof(last.message));
     scpy(last.program, program != NULL ? program : "Your code", sizeof(last.program));
     last.line = line;
     last.code_lines = 0;
+    // no folder: an AerLang error isn't about a missing file, so WHY lists no names like it
     last.folder[0] = '\0';
     if (source == NULL || line < 1) {
         return;
     }
 
     // keep copies of the lines around the error: the program's source is freed once it stops
+    //
+    // From two lines before the error (or line 1, near the top), walking through the source
+    // a line at a time and counting them, until CODE_LINES are kept or the source ends
     last.first_code_line = line > 2 ? line - 2 : 1;
     int n = 1;
     for (const char* p = source; *p != '\0' && last.code_lines < CODE_LINES; n++) {
         size_t length = strcspn(p, "\n");
         if (n >= last.first_code_line) {
+            // without the '\r' of a Windows "\r\n" line end, and cut to CODE_WIDTH
             size_t keep = length;
             if (keep > 0 && p[keep - 1] == '\r') {
                 keep--;
@@ -573,6 +627,7 @@ void explain_program (const char* program, int line, const char* message, const 
     }
 }
 
+// forget the last problem, and show the hints again (at logout, so the next person starts afresh)
 void explain_forget (void) {
     memset(&last, 0, sizeof(last));
     hints_shown = 0;
@@ -583,23 +638,27 @@ void explain_forget (void) {
 #define MOST_SIMILAR 5   // how many look-alike names WHY lists
 #define SIMILAR 2        // a name this many changes away (or fewer, see sdist) looks alike
 
+// what print_if_similar keeps between calls: how many names it has printed so far
 typedef struct {
     int found;
 } similar_t;
 
 // fs_list() calls this for each thing in the folder: print it if it looks like the name
 static void print_if_similar (const char* name, bool is_dir, uint32_t size, void* context) {
-    (void)size;
+    (void)size; // fs_list gives every entry's size, but it doesn't matter here
     similar_t* similar = context;
+    // sdist counts the changes (a letter added, removed or swapped) between the two names
     if (similar->found == MOST_SIMILAR || sdist(name, last.name) > SIMILAR) {
         return;
     }
+    // a comma before every name but the first, and a / after a folder's
     prtf("%s%s%s", similar->found == 0 ? "" : ", ", name, is_dir ? "/" : "");
     similar->found++;
 }
 
 // for a name that wasn't found: list the names in the same folder that are almost the same
 static void print_similar_names (void) {
+    // nothing to compare with, or the folder itself is what's missing (or has gone since)
     if (last.name[0] == '\0' || !fs_dir_exists(last.folder)) {
         return;
     }
@@ -620,6 +679,7 @@ static void print_program_lines (void) {
         return;
     }
     prtf("\n");
+    // each line with its number; the one it stopped on gets "->" and brighter colours
     for (int i = 0; i < last.code_lines; i++) {
         int line = last.first_code_line + i;
         bool is_it = line == last.line;
@@ -631,7 +691,10 @@ static void print_program_lines (void) {
     colour(BRIGHT, console_bg);
 }
 
+// WHY on its own: the last problem's message, what it means, why, what to do, and the code
+// that decided it
 void explain_last (void) {
+    // nothing to explain yet: say what WHY can do instead
     if (last.problem == PROBLEM_NONE) {
         print_wrapped("Nothing has gone wrong since you logged in. When something does, "
                       "@cli_why on its own explains it.", 0);
@@ -658,6 +721,7 @@ void explain_last (void) {
     }
     colour(BRIGHT, console_bg);
 
+    // (AerLang problems have no "what": their message already said it)
     if (explanation->what != NULL) {
         print_wrapped(explanation->what, INDENT);
     }
@@ -676,6 +740,10 @@ void explain_last (void) {
     print_wrapped(explanation->fix, INDENT);
 
     // and where in AerOS this was decided
+    //
+    // Without a disk, files are kept in memory by different code, so a problem may have a
+    // second function for that. It is only shown if it really is in /src/, so a function
+    // renamed since this table was written is left out rather than pointed at wrongly
     const char* code = explanation->code;
     if (fs_mode == FS_MODE_MEMORY && explanation->code_vfs != NULL) {
         code = explanation->code_vfs;
@@ -698,6 +766,8 @@ void explain_last (void) {
 // where to find what a function is for: the comment above its definition, or if that has
 // none, the comment above its declaration in a .h file. "" if neither has one
 static void function_comment (const char* function, const source_place_t* place, char* out, size_t size) {
+    // the comment right above the code first; the .h file is only looked in when that
+    // comment is missing
     source_comment_above(place->file, place->line, out, size);
     source_place_t declared;
     if (out[0] == '\0' && source_find_declaration(function, &declared)) {
@@ -718,11 +788,14 @@ static void function_summary (const char* function, const source_place_t* place,
         }
     }
     // the first sentence: up to ". " (or the end)
+    //
+    // The '\0' goes where the space was, so the full stop stays. (AerOS's comments often
+    // leave the last full stop off, which is why "the end" counts too)
     char* full_stop = strstr(comment, ". ");
     if (full_stop != NULL) {
         full_stop[1] = '\0';
     }
-    // cut short, with "..." to show it was
+    // cut short, with "..." to show it was (width - 3 characters, then the three dots)
     if (slen(comment) > width) {
         comment[width - 3] = '\0';
         scat(comment, "...", sizeof(comment));
@@ -735,6 +808,7 @@ static void function_summary (const char* function, const source_place_t* place,
 #define MOST_USES 14     // the longest list WHY shows
 #define USE_NAME_MAX 40
 
+// the functions found so far, each with where it is defined (found once, kept for the summary)
 typedef struct {
     char names[MOST_USES][USE_NAME_MAX];
     source_place_t places[MOST_USES];
@@ -756,6 +830,7 @@ static bool is_keyword (const char* name) {
 // itself, names already listed, and the everyday C library ones (lib/aer_string.c,
 // aer_stdio.c...: prtf, scpy, malloc), which almost everything uses
 static void add_use (uses_t* uses, const char* name, const char* self) {
+    // (the function itself: a function that calls itself would otherwise list itself)
     if (uses->count == MOST_USES || is_keyword(name) || seq(name, self)) {
         return;
     }
@@ -764,10 +839,13 @@ static void add_use (uses_t* uses, const char* name, const char* self) {
             return;
         }
     }
+    // only names that really are defined somewhere in AerOS, which also leaves out
+    // everything that isn't a function at all
     source_place_t place;
     if (!source_find_function(name, &place)) {
         return; // not a function (a macro, or a function pointer)
     }
+    // the everyday library functions: "lib/aer_" is 8 characters
     if (strncmp(place.file->path, "lib/aer_", 8) == 0) {
         return;
     }
@@ -783,12 +861,15 @@ static void gather_uses (const char* code, const char* end, const char* self, us
     const char* p = code;
     while (p < end) {
         // skip what can't hold a call
+        //
+        // a "//" comment: up to the end of its line
         if (p + 1 < end && p[0] == '/' && p[1] == '/') {
             while (p < end && *p != '\n') {
                 p++;
             }
             continue;
         }
+        // a block comment: up to and past its closing star and slash (or the end of the code)
         if (p + 1 < end && p[0] == '/' && p[1] == '*') {
             p += 2;
             while (p + 1 < end && !(p[0] == '*' && p[1] == '/')) {
@@ -797,6 +878,8 @@ static void gather_uses (const char* code, const char* end, const char* self, us
             p += 2;
             continue;
         }
+        // a string or a character: up to the quote that closes it. "printf(" in a string
+        // is only text, and a quote inside a comment is never seen, since comments go first
         if (*p == '"' || *p == '\'') {
             char quote = *p++;
             while (p < end && *p != quote) {
@@ -824,12 +907,17 @@ static void gather_uses (const char* code, const char* end, const char* self, us
             p++;
         }
         size_t length = (size_t)(p - name);
+        // AerOS's style puts a space between a name and its '(' in definitions ("fs_list (")
+        // but not in calls, so spaces are allowed either way
         const char* after = p;
         while (after < end && *after == ' ') {
             after++;
         }
+        // straight after a '.' or "->"? (the checks against `code` stop name[-1] and
+        // name[-2] from reading before the start of the code)
         bool member = (name > code && name[-1] == '.') || (name - 1 > code && name[-2] == '-' && name[-1] == '>');
         bool called = after < end && *after == '(';
+        // the name isn't '\0' ended in the code, so it is copied out first
         if (called && !member && length < USE_NAME_MAX) {
             char copy[USE_NAME_MAX];
             memcpy(copy, name, length);
@@ -841,6 +929,8 @@ static void gather_uses (const char* code, const char* end, const char* self, us
 
 // the text of lines `first` to `last` of a file, as a start and an end pointer
 static bool lines_text (const source_file_t* file, int first, int last, const char** start, const char** end) {
+    // the start of the first line, and the end of the last (its length on from its start).
+    // The source is one long run of bytes, so everything between comes along too
     size_t length;
     *start = source_line(file, first, &length);
     const char* last_line = source_line(file, last, &length);
@@ -851,6 +941,7 @@ static bool lines_text (const source_file_t* file, int first, int last, const ch
     return true;
 }
 
+// WHY <name> for a C function: where it is, the comment above it, and what it uses
 bool explain_function (const char* function) {
     source_place_t place;
     if (!source_find_function(function, &place)) {
@@ -868,6 +959,9 @@ bool explain_function (const char* function) {
     print_comment(comment);
 
     // what it uses, each with the first sentence of its own comment
+    //
+    // The body is from the line after the definition to the closing "}": the definition's
+    // own line names the function and its parameters, but calls nothing
     int last_line = source_function_end(place.file, place.line);
     const char* body;
     const char* body_end;
@@ -878,12 +972,15 @@ bool explain_function (const char* function) {
     if (uses.count > 0) {
         prtf("\n");
         print_heading("It uses:");
+        // the longest name sets how wide the name column is, so the summaries line up
         int name_width = 0;
         for (int i = 0; i < uses.count; i++) {
             int length = (int)slen(uses.names[i]);
             name_width = length > name_width ? length : name_width;
         }
         for (int i = 0; i < uses.count; i++) {
+            // the summary gets what is left of the line after the name and two spaces (but
+            // never less than 10 characters, even next to a very long name)
             char summary[WIDTH + 1];
             int room = WIDTH - INDENT - name_width - 2;
             function_summary(uses.names[i], &uses.places[i], summary, room > 10 ? (size_t)room : 10);
@@ -901,11 +998,13 @@ bool explain_function (const char* function) {
     return true;
 }
 
+// SRC <name> for a C function: its comment and its code, with line numbers
 bool explain_show_code (const char* function) {
     source_place_t place;
     if (!source_find_function(function, &place)) {
         return false;
     }
+    // from the top of the comment above it to its closing "}"
     int first = source_comment_start(place.file, place.line);
     int last_line = source_function_end(place.file, place.line);
 
@@ -922,6 +1021,9 @@ bool explain_show_code (const char* function) {
         while (indent < length && text[indent] == ' ') {
             indent++;
         }
+        // A line starting "//" or "/*" is a comment. The lines inside a block comment don't
+        // start that way, but any line between the comment's first line and the definition
+        // must be part of the comment, since source_comment_start found it all as one
         bool is_comment = indent + 1 < length && text[indent] == '/' && (text[indent + 1] == '/' || text[indent + 1] == '*');
         bool inside_block = n < place.line && n > first && !is_comment; // the lines of a /* */ block
         colour(DARK_GRAY, console_bg);
@@ -931,6 +1033,7 @@ bool explain_show_code (const char* function) {
         int number_width = 6;
         print_folded(text, length, number_width, number_width + (int)indent + 4);
     }
+    // longer than the screen: the start has scrolled off the top, so say how to get back to it
     colour(DARK_GRAY, console_bg);
     if (last_line - first > ROWS - 4) {
         prtf("(Page Up scrolls back to the start)\n");

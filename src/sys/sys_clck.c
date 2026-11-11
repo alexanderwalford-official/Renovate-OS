@@ -86,10 +86,11 @@ void clck_init(void) {
     clck_ready = true;
 }
 
-// milliseconds since the timer started, see sys_clck.h
 // milliseconds counted by the busy wait in sleep_ms, used instead of ticks when the timer is dead
 static uint32_t busy_ms = 0;
 
+// milliseconds since the timer started, see sys_clck.h. If the timer never started (or
+// clck_verify() found it dead) ticks stays frozen, so the busy wait's own count is the best guess
 uint32_t clkuptms(void) {
     return clck_ready ? ticks : busy_ms;
 }
@@ -122,13 +123,17 @@ void sleep_ms(uint32_t ms) {
 // comes. Everything that waits on ticks would wait forever, so once interrupts are on we give the
 // timer about 50ms to tick. If it doesn't, clck_ready goes false and every wait becomes a busy wait.
 bool clck_verify(void) {
+    // with interrupts off no tick could ever arrive, so there is nothing to test
     if (!clck_ready || !interrupts_enabled()) {
         return false;
     }
     uint32_t start = ticks;
+    // 50000 port writes of roughly 1 microsecond each is about 50ms, leaving the loop as soon as
+    // the first tick arrives
     for (int i = 0; i < 50000 && ticks == start; i++) {
         io_wait();
     }
+    // still no tick: the PIT is silent, so fall back to busy waiting from now on
     if (ticks == start) {
         clck_ready = false;
     }
@@ -141,6 +146,7 @@ void clck_hang(long time) {
     if (time <= 0) {
         return;
     }
+    // mark thread 0 busy for the length of the wait, then free again
     sys_threads_status[0] = false;
     sleep_ms((uint32_t)time);
     sys_threads_status[0] = true;
@@ -246,6 +252,7 @@ void rtc_read(rtc_time_t* t) {
     // read yet. A missing register usually reads as 0 or junk, which the range check rejects)
     uint8_t century = (raw.century >= 19 && raw.century <= 21) ? raw.century : 20;
 
+    // hand the cleaned up values back to the caller
     t->second = raw.second;
     t->minute = raw.minute;
     t->hour = raw.hour;

@@ -56,6 +56,7 @@ void serial_init(void) {
     // transmitter is wired straight back into the receiver inside the chip, nothing goes out
     outb(COM1_PORT + 4, 0x1E); // loopback mode to test the chip
     outb(COM1_PORT + 0, 0xAE); // send a test byte
+    // (0xAE is just a recognisable pattern, any byte would do)
 
     // only a working serial port sends the test byte back
     // (with no UART at this address the read usually floats to 0xFF, a broken one returns junk)
@@ -71,6 +72,7 @@ void serial_init(void) {
 // gotcha: if the UART never reports ready the byte is written anyway after the timeout, so a stuck
 // port loses characters instead of hanging the whole kernel
 void serial_putchar(char c) {
+    // no UART was found, so there is nowhere to send it
     if (!serial_ready) {
         return;
     }
@@ -78,6 +80,7 @@ void serial_putchar(char c) {
     // (polls LSR bit 5; the loop body is empty on purpose, all the work happens in the condition)
     for (int timeout = 100000; timeout > 0 && (inb(COM1_PORT + 5) & 0x20) == 0; timeout--) {
     }
+    // DLAB is off, so offset +0 is the transmit holding register
     outb(COM1_PORT, (uint8_t)c);
 }
 

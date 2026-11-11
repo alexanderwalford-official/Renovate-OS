@@ -209,6 +209,7 @@ void pic_unmask(uint8_t irq) {
 void pic_mask(uint8_t irq) {
     uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
     uint8_t bit = (uint8_t)(1 << (irq & 7));
+    // set the bit: 1 = blocked
     outb(port, inb(port) | bit);
 }
 
@@ -217,6 +218,7 @@ void pic_mask(uint8_t irq) {
 // the ISR has a bit set for every IRQ the chip has delivered to the CPU but not yet had an EOI
 // for. Returns slave << 8 | master, so bit n of the result is IRQ n
 static uint16_t pic_read_isr(void) {
+    // ask both chips to show their ISR on the next command port read, then read them back
     outb(PIC1_COMMAND, PIC_READ_ISR);
     outb(PIC2_COMMAND, PIC_READ_ISR);
     return (uint16_t)((inb(PIC2_COMMAND) << 8) | inb(PIC1_COMMAND));
@@ -420,6 +422,7 @@ void isr_dispatch(struct regs* r) {
         return;
     }
 
+    // hand the interrupt to whichever driver claimed this line (if any)
     if (irq_handlers[irq]) {
         irq_handlers[irq](r);
     }
@@ -474,7 +477,9 @@ void idt_init(void) {
 
     // limit = 256 * 8 - 1 = 2047, the whole table
     table_ptr_t idt_ptr = { sizeof(idt) - 1, (uint32_t)(uintptr_t)idt };
+    // unlike lgdt there is nothing to reload afterwards, the CPU reads the IDT fresh on every interrupt
     __asm__ volatile ("lidt %0" : : "m"(idt_ptr));
 
+    // reported by the boot log and SYSINFO
     interrupts_ready = true;
 }

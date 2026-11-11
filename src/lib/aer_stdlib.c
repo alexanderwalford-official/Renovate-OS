@@ -51,6 +51,7 @@ long labs(long value) {
 // returns str; an invalid base gives an empty string
 // e.g. utoa(10, buf, 2) gives "1010", utoa(48879, buf, 16) gives "beef"
 char* utoa(unsigned int value, char* str, int base) {
+    // 36 = 10 digits plus 26 letters, there is nothing left to write a bigger digit with
     if (base < 2 || base > 36) {
         *str = '\0';
         return str;
@@ -356,6 +357,7 @@ static size_t heap_bytes = HEAP_SIZE;
 // set the heap up as one big free block covering the whole pool
 // called automatically by the first malloc, so nobody has to remember to initialise it
 static void heap_init(void) {
+    // the first header sits at the very start of the pool and owns everything after it
     heap_head = (heap_block_t*)heap_area;
     heap_head->size = HEAP_SIZE - sizeof(heap_block_t);
     heap_head->magic = HEAP_FREE;
@@ -367,19 +369,27 @@ static void heap_init(void) {
 // give the heap another stretch of free memory (the boot code adds the biggest block of RAM the
 // bootloader reports). It must lie above every earlier region, so the list stays in address order.
 void heap_add_region(void* start, size_t size) {
+    // round the start up to the next 16 byte boundary (the same add-then-mask trick as malloc),
+    // so every pointer handed out from this region is aligned too
     uintptr_t first = ((uintptr_t)start + HEAP_ALIGN - 1) & ~(uintptr_t)(HEAP_ALIGN - 1);
+    // the bytes skipped at the front are lost, and the end is trimmed down to a multiple of 16
     size -= first - (uintptr_t)start;
     size &= ~(size_t)(HEAP_ALIGN - 1);
+    // too small to hold a header and even one 16 byte chunk: not worth adding
     if (size < sizeof(heap_block_t) + HEAP_ALIGN) {
         return;
     }
+    // the built-in pool always comes first in the list, so make sure it exists
     if (heap_head == NULL) {
         heap_init();
     }
+    // find the last block, the new region goes on after it
     heap_block_t* last = heap_head;
     while (last->next) {
         last = last->next;
     }
+    // the whole region becomes one big free block. It is never merged with last, because
+    // heap_touching() sees the gap between the two regions
     heap_block_t* region = (heap_block_t*)first;
     region->size = size - sizeof(heap_block_t);
     region->magic = HEAP_FREE;
@@ -391,6 +401,7 @@ void heap_add_region(void* start, size_t size) {
 
 // does block a end exactly where block b starts? (false across the gap between two regions)
 static bool heap_touching(const heap_block_t* a, const heap_block_t* b) {
+    // a + 1 is just past a's header, adding a->size gets to the byte after its data
     return (const uint8_t*)(a + 1) + a->size == (const uint8_t*)b;
 }
 
@@ -398,12 +409,15 @@ static bool heap_touching(const heap_block_t* a, const heap_block_t* b) {
 //     [hdr A | data A][hdr B | data B]   ->   [hdr A | data A ............. ]
 static void heap_merge_next(heap_block_t* block) {
     heap_block_t* gone = block->next;
+    // B's header becomes ordinary free space too, so block grows by the header as well as the data
     block->size += sizeof(heap_block_t) + gone->size;
+    // unlink B from the list: block now points past it, and the block after B points back at block
     block->next = gone->next;
     if (gone->next) {
         gone->next->prev = block;
     }
     gone->magic = 0; // no longer a header, so a stale pointer to it is ignored by free()
+    // the rover must never be left pointing at a header that no longer exists
     if (heap_rover == gone) {
         heap_rover = block;
     }
@@ -453,6 +467,7 @@ void* malloc(size_t size) {
             // hand out the memory just after the header
             return block + 1;
         }
+        // not this one: step on, wrapping from the last block back round to the first
         block = block->next ? block->next : heap_head;
     } while (block != heap_rover);
     return NULL; // went all the way round: out of memory
@@ -478,6 +493,8 @@ void free(void* ptr) {
     if (block->next && block->next->magic == HEAP_FREE && heap_touching(block, block->next)) {
         heap_merge_next(block);
     }
+    // the after neighbour is done first so that, if both merge, the block before ends up
+    // swallowing the already combined block in one go
     if (block->prev && block->prev->magic == HEAP_FREE && heap_touching(block->prev, block)) {
         heap_merge_next(block->prev);
     }
@@ -492,6 +509,7 @@ void* calloc(size_t count, size_t size) {
     if (size != 0 && count > SIZE_MAX / size) {
         return NULL; // overflow
     }
+    // malloc doesn't clear memory, so the zeroing is done here
     void* ptr = malloc(count * size);
     if (ptr) {
         memset(ptr, 0, count * size);
@@ -511,6 +529,7 @@ void* realloc(void* ptr, size_t size) {
         free(ptr);
         return NULL;
     }
+    // step back from the caller's pointer to its header, the same as free() does
     heap_block_t* block = (heap_block_t*)ptr - 1;
     // not a heap block, we can't know how big it is so we can't safely copy it
     if (block->magic != HEAP_USED) {
@@ -565,6 +584,7 @@ size_t heap_total(void) {
 // it walks the whole block list, so it's O(number of blocks); returns 0 before the first malloc
 size_t heap_used(void) {
     size_t used = 0;
+    // heap_head is NULL before the first malloc, so the loop simply doesn't run
     for (heap_block_t* b = heap_head; b != NULL; b = b->next) {
         if (b->magic == HEAP_USED) {
             used += b->size + sizeof(heap_block_t);

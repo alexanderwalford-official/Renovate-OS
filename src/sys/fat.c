@@ -197,11 +197,13 @@ const char* fs_strerror (int error) {
     }
 }
 
-// read / write one 512 byte sector of the mounted drive (lba is absolute), false on a drive error
+// read one 512 byte sector of the mounted drive (lba is absolute), false on a drive error
+// (these two keep fat_vol.bus / fat_vol.slave out of every other function)
 static bool fat_read_sector (uint32_t lba, void* buffer) {
     return drive_read(fat_vol.bus, fat_vol.slave, lba, 1, buffer);
 }
 
+// write one 512 byte sector to the mounted drive (lba is absolute), false on a drive error
 static bool fat_write_sector (uint32_t lba, const void* buffer) {
     return drive_write(fat_vol.bus, fat_vol.slave, lba, 1, buffer);
 }
@@ -440,6 +442,7 @@ static void fat_free_chain (uint32_t cluster) {
 // thanks to the cache this is one sector read per 128 (FAT32) or 256 (FAT16) clusters
 uint32_t fat_free_clusters (void) {
     uint32_t free_count = 0;
+    // the data clusters are numbered 2 to cluster_count + 1 (entries 0 and 1 are reserved)
     for (uint32_t c = 2; c < fat_vol.cluster_count + 2; c++) {
         if (fat_get(c) == 0) {
             free_count++;
@@ -1001,11 +1004,14 @@ char* fat_read_file (const char* f_path, const char* name, uint32_t* size) {
 
 // ---- reading a file a piece at a time (see fat_file_t in fat.h) -------------------------------
 
+// open a file for reading with fat_read_at(), false if there is no such file (see fat.h)
 bool fat_open (const char* f_path, const char* name, fat_file_t* file) {
     fat_entry_t e;
     if (!fat_find_file(f_path, name, &e)) {
         return false;
     }
+    // nothing is read yet: just remember where the chain starts and stand on its first cluster
+    // (first_cluster is 0 for an empty file, fat_read_at() never gets far enough to use it then)
     file->first_cluster = fat_entry_cluster(&e.entry);
     file->size = e.entry.size;
     file->cluster = file->first_cluster;
@@ -1017,6 +1023,7 @@ bool fat_open (const char* f_path, const char* name, fat_file_t* file) {
 // carries on from the cluster read last; going back it has to start again from the first.
 // False if the chain ends too soon (a damaged disk)
 static bool fat_go_to_cluster (fat_file_t* file, uint32_t index) {
+    // a FAT chain only links forwards, so going back means walking again from the start
     if (index < file->cluster_index) {
         file->cluster = file->first_cluster;
         file->cluster_index = 0;
@@ -1031,7 +1038,10 @@ static bool fat_go_to_cluster (fat_file_t* file, uint32_t index) {
     return fat_valid_cluster(file->cluster);
 }
 
+// read up to length bytes from offset into out, returns how many were read (0 at the end, -1 on error)
+// each pass of the loop handles one sector, or a run of whole sectors inside one cluster
 int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t length) {
+    // starting at or past the end: nothing to read (this also covers an empty file)
     if (offset >= file->size) {
         return 0;
     }
@@ -1043,6 +1053,7 @@ int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t leng
     uint32_t done = 0;
 
     while (done < length) {
+        // the byte of the file we are up to, and the cluster of the chain that holds it
         uint32_t position = offset + done;
         if (!fat_go_to_cluster(file, position / cluster_bytes)) {
             return -1;
@@ -1056,6 +1067,8 @@ int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t leng
 
         if (in_sector == 0 && left >= FAT_SECTOR_SIZE) {
             // whole sectors: read as many as possible from this cluster straight into `out`
+            // (a cluster's sectors are next to each other on the disk, so one multi sector read
+            // does it, but the next cluster can be anywhere, so we stop at the cluster's end)
             uint32_t sectors = left / FAT_SECTOR_SIZE;
             uint32_t sectors_left_in_cluster = fat_vol.sectors_per_cluster - sector;
             if (sectors > sectors_left_in_cluster) {
@@ -1083,12 +1096,16 @@ int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t leng
     return (int32_t)done;
 }
 
+// what fat_list_dir() passes to fat_each_visit(): the caller's callback and its own ctx,
+// plus a count of the entries seen
 typedef struct {
     fs_list_fn fn;
     void* ctx;
     int count;
 } fat_each_ctx_t;
 
+// hand one entry on to the caller's fs_list_fn (name, is it a directory, size) and count it
+// (always returns false, so the walk carries on through the whole directory)
 static bool fat_each_visit (const fat_entry_t* e, void* ctx) {
     fat_each_ctx_t* each = ctx;
     each->fn(e->name, (e->entry.attr & FAT_ATTR_DIRECTORY) != 0, e->entry.size, each->ctx);
@@ -1123,20 +1140,25 @@ int fat_create_file (const char* f_path, const char* name, const char* contents,
     if (fat_find(dir, name, &existing)) {
         return FS_ERR_EXISTS;
     }
+    // turn the name into its 11 byte on-disk form now, before any space is taken
+    // (the rest of the entry starts as zeros: no times yet, cluster 0, not hidden or read only)
     memset(&d, 0, sizeof(d));
     if (!fat_make_83(name, d.name, &d.nt_case)) {
         return FS_ERR_BAD_NAME;
     }
 
+    // 1. the data, into a fresh chain nobody points at yet
     int result = fat_write_chain(contents, length, &first);
     if (result != FS_OK) {
         return result;
     }
+    // 2. a slot for the entry (this may grow the directory by a cluster)
     if (!fat_free_slot(dir, &lba, &slot)) {
         fat_free_chain(first);
         return FS_ERR_FULL;
     }
 
+    // 3. fill in the entry and write it, which is the moment the file appears
     d.attr = FAT_ATTR_ARCHIVE;
     d.size = length;
     fat_set_entry_cluster(&d, first); // 0 for an empty file, FAT's way of saying "no clusters"
@@ -1154,9 +1176,11 @@ int fat_create_file (const char* f_path, const char* name, const char* contents,
 // a crash part way leaves either the old file or the new one, never a mix of the two.
 // appending is done the simple way: read the old file, join the new text on, write it all out
 int fat_write_file (const char* f_path, const char* name, const char* text, bool append) {
+    // replacing is exactly fat_replace_file() with the text as the new data
     if (!append) {
         return fat_replace_file(f_path, name, text, (uint32_t)slen(text), false);
     }
+    // appending: read the old contents in full first
     fat_entry_t e;
     if (!fat_find_file(f_path, name, &e)) {
         return FS_ERR_NOT_FOUND;
@@ -1198,6 +1222,7 @@ int fat_replace_file (const char* f_path, const char* name, const void* data, ui
     if (!fat_find_file(f_path, name, &e)) {
         return FS_ERR_NOT_FOUND;
     }
+    // remember the old chain now, the entry is about to be changed to point at the new one
     uint32_t old_cluster = fat_entry_cluster(&e.entry);
 
     // write the new data first, then point the entry at it, then free the old data
@@ -1206,6 +1231,8 @@ int fat_replace_file (const char* f_path, const char* name, const void* data, ui
         return result;
     }
 
+    // update our copy of the entry (keeping its name, creation date and other attributes),
+    // then write it back to the same slot: this one sector write is the switch-over point
     fat_set_entry_cluster(&e.entry, first);
     e.entry.size = length;
     e.entry.attr |= FAT_ATTR_ARCHIVE;
@@ -1214,6 +1241,8 @@ int fat_replace_file (const char* f_path, const char* name, const void* data, ui
         fat_free_chain(first); // the entry still points at the old data, so drop the new copy
         return FS_ERR_IO;
     }
+    // the old data now belongs to nobody. Zero it first if asked to, because freeing a
+    // cluster only changes the FAT and leaves the bytes on the disk
     if (wipe_old) {
         fat_zero_chain(old_cluster);
     }
@@ -1292,6 +1321,7 @@ int fat_create_dir (const char* d_path) {
     d.attr = FAT_ATTR_DIRECTORY;
     fat_stamp(&d, true); // size stays 0, directories always have size 0
 
+    // a directory always owns at least one cluster, even when it is empty, to hold "." and ".."
     uint32_t cluster = fat_alloc_cluster(0);
     if (cluster == 0) {
         return FS_ERR_FULL;
@@ -1308,6 +1338,7 @@ int fat_create_dir (const char* d_path) {
         return FS_ERR_IO;
     }
 
+    // last of all, add the new directory's entry to its parent
     if (!fat_free_slot(parent_dir, &lba, &slot)) {
         fat_free_chain(cluster);
         return FS_ERR_FULL;
@@ -1410,6 +1441,7 @@ static uint16_t fat_u16 (const uint8_t* p) {
     return (uint16_t)(p[0] | (p[1] << 8));
 }
 
+// the 32 bit version of fat_u16(): byte 0 is the lowest, byte 3 the highest
 static uint32_t fat_u32 (const uint8_t* p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }

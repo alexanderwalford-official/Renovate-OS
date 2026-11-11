@@ -85,10 +85,12 @@ int splash_screen (void) {
 // anything else is shown as an unknown error. Returns 0 after holding the screen for 4 seconds
 int error_screen (const char* code) {
     clear(RED);
+    // a fixed layout, every line starting 5 columns in, from row 7 down to row 12
     puts(5, 7, BLACK, RED, "==================================");
     puts(5, 9, BLACK, RED, ">> SYSTEM EXCEPTION <<");
     puts(5, 10, BLACK, RED, "The system encountered an error and was forced to stop.");
     puts(5, 11, BLACK, RED, "Message is as followed:");
+    // the last line says which error it was
     if (seq(code, "invalid_code")) {
         puts(5, 12, BLACK, RED, "[ ! ] OS COMPILER LEVEL EXCEPTION >> INVALID CODE PARSED");
     } else {
@@ -104,7 +106,16 @@ int error_screen (const char* code) {
     return 0;
 }
 
+// true if the first word of the code names an AerLang program file ("hello.aer", "/bin/x.aer ...")
+static bool is_program (const char* code) {
+    // the first word ends at the first space, or at the end of the line if there is none
+    const char* end = strchr(code, ' ');
+    size_t length = end ? (size_t)(end - code) : slen(code);
+    return aer_is_program_name(code, length);
+}
+
 // main method to compile input line code, returns 0 on success and -1 for invalid code
+// (for a program file: -1 if it wasn't found or stopped with an error, see aer_run_file)
 // code = one line of AerLang, matched exactly and case sensitively (only "s:" is a prefix)
 //
 // the instructions AerLang knows:
@@ -116,14 +127,8 @@ int error_screen (const char* code) {
 //   flash               flash a block at the cursor twice (about 2 seconds)
 //   terminal            start the terminal, unless it is already running
 //   iso_launch_options  the boot options menu (sys/recovery.c)
+//   <name>.aer [args]   run an AerLang program file, with the rest of the line as its arguments
 // anything else shows the error screen and returns -1
-// true if the first word of the code names an AerLang program file ("hello.aer", "/bin/x.aer ...")
-static bool is_program (const char* code) {
-    const char* end = strchr(code, ' ');
-    size_t length = end ? (size_t)(end - code) : slen(code);
-    return aer_is_program_name(code, length);
-}
-
 int compile (const char* code) {
     int result = 0;
 
@@ -138,6 +143,7 @@ int compile (const char* code) {
     if (strncmp(code, "s:", 2) == 0) {
         prtf("%s\n", code + 2);
     }
+    // the fixed instructions, each matched against the whole line
     else if (seq(code, "update_stack")) {
         p_stack_update();
     }
@@ -170,16 +176,23 @@ int compile (const char* code) {
         // that init_boot already set up stays as it is
         boot_options_menu();
     }
+    // checked after the fixed instructions, which never end in ".aer" anyway
     else if (is_program(code)) {
         // "<program>.aer [args]": run an AerLang program file, the rest of the line is its args
+        // (".ren" files from before the language was renamed count too, see aer_is_program_name)
         char program[FS_PATH_MAX];
+        // copy the first word out on its own, since aer_run_file wants the path as a string
+        // ending in '\0', and the code itself carries on into the arguments
         const char* space = strchr(code, ' ');
         size_t length = space ? (size_t)(space - code) : slen(code);
+        // a path too long for the buffer is cut short (leaving room for the '\0'), it then
+        // simply won't be found
         if (length >= sizeof(program)) {
             length = sizeof(program) - 1;
         }
         memcpy(program, code, length);
         program[length] = '\0';
+        // everything after the first space is handed over as the arguments, "" if there are none
         result = aer_run_file(program, space ? space + 1 : "");
     }
     else {

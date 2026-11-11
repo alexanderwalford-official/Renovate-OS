@@ -26,11 +26,14 @@
 
 static int paused = 0; // see versions_pause
 
+// stop keeping versions until versions_resume() (a count, so pauses can nest)
 void versions_pause (void) {
     paused++;
 }
 
+// undo one versions_pause(), versions are kept again once every pause has been resumed
 void versions_resume (void) {
+    // never below 0, so a stray extra resume can't make the next pause do nothing
     if (paused > 0) {
         paused--;
     }
@@ -41,6 +44,7 @@ void versions_resume (void) {
 //  Where a file's versions are
 // =================================================================================================
 
+// is a file in this folder versioned? (inside a home folder, but not in its versions folder)
 bool versions_apply (const char* folder, char* home_out, size_t size) {
     // "/home/alex/notes/" is in the home folder "/home/alex/": the part up to the slash after
     // the account's name
@@ -49,10 +53,12 @@ bool versions_apply (const char* folder, char* home_out, size_t size) {
         return false;
     }
     const char* account = folder + homes_length;
+    // the account name runs up to the next '/' (folder paths always end in one)
     const char* slash = strchr(account, '/');
     if (slash == NULL || slash == account) {
         return false; // "/home/" itself
     }
+    // copy out "/home/alex/", the '/' after the name included
     char home[FS_PATH_MAX];
     size_t home_length = (size_t)(slash - folder) + 1;
     if (home_length >= sizeof(home)) {
@@ -62,6 +68,8 @@ bool versions_apply (const char* folder, char* home_out, size_t size) {
     home[home_length] = '\0';
 
     // the versions folder's own files don't have versions
+    // (otherwise keeping a version would change a file in there, which would keep a version of
+    // that, and so on)
     char versions[FS_PATH_MAX];
     sfmt(versions, sizeof(versions), "%s%s", home, VERSIONS_FOLDER);
     if (strncasecmp(folder, versions, slen(versions)) == 0) {
@@ -106,6 +114,7 @@ static bool find_place (const char* folder, const char* name, place_t* place) {
 }
 
 // the name of slot `slot` (0 to 9): "3F2A91C0.V4"
+// (8 hex digits, a dot and "V" + 1 digit fits the 8.3 format, so it works on a FAT disk too)
 static void slot_name (const place_t* place, int slot, char* out, size_t size) {
     sfmt(out, size, "%08X.V%d", place->hash, slot);
 }
@@ -115,6 +124,7 @@ static void slot_name (const place_t* place, int slot, char* out, size_t size) {
 //  The first line of a version
 // =================================================================================================
 
+// a version's first line, taken apart by read_header()
 typedef struct {
     uint32_t sequence;             // how many versions of the file were kept before this one
     char saved[20];                // when, "DD-MM-YY--HH:MM:SS"
@@ -131,12 +141,15 @@ static bool read_header (const char* version_path, header_t* header) {
     if (!fs_open(version_path, &file)) {
         return false;
     }
+    // only the start of the file is read: the first line is never longer than HEADER_MAX,
+    // so there is no need to load the whole version
     char line[HEADER_MAX + 1];
     int32_t got = fs_read_at(&file, 0, line, HEADER_MAX);
     if (got <= 0) {
         return false;
     }
     line[got] = '\0';
+    // no newline within HEADER_MAX, or no "#AERV " at the start: not one of our versions
     char* end = strchr(line, '\n');
     size_t mark_length = slen(HEADER_MARK);
     if (end == NULL || strncmp(line, HEADER_MARK, mark_length) != 0) {
@@ -144,6 +157,8 @@ static bool read_header (const char* version_path, header_t* header) {
     }
     *end = '\0';
 
+    // the three fields after the mark: the sequence number, the date (no spaces in it), and
+    // the path, which is the whole rest of the line (it may have spaces in it)
     char* p = line + mark_length;
     header->sequence = (uint32_t)strtoul(p, &p, 10);
     while (*p == ' ') {
@@ -157,6 +172,7 @@ static bool read_header (const char* version_path, header_t* header) {
     header->saved[date_length] = '\0';
     scpy(header->path, p + date_length + 1, sizeof(header->path));
 
+    // the old contents start just after the '\n', and run to the end of the file
     header->header_length = (uint32_t)(end - line) + 1;
     header->size = file.size - header->header_length;
     return true;
@@ -170,6 +186,7 @@ typedef struct {
     header_t header;
 } slot_t;
 
+// look at one of a file's slots: is there a version in it, and is it one of this file's?
 static void read_slot (const place_t* place, int slot, slot_t* out) {
     char name[16];
     char path[FULL_PATH_MAX];
@@ -177,6 +194,7 @@ static void read_slot (const place_t* place, int slot, slot_t* out) {
     sfmt(path, sizeof(path), "%s%s", place->versions, name);
 
     out->used = fs_file_exists(place->versions, name);
+    // the path in the first line has to match, as two paths can share a hash (and so slot names)
     out->ours = out->used && read_header(path, &out->header) && strcasecmp(out->header.path, place->path) == 0;
 }
 
@@ -211,12 +229,15 @@ static int our_versions (const place_t* place, slot_t slots[VERSIONS_KEPT], int 
 // the files a version was kept of lately, and when (see VERSIONS_GAP_MS)
 #define RECENT_MAX 8
 
+// a small ring: remember_kept() writes over the oldest place once all RECENT_MAX are in use
 static struct {
     uint32_t hash;
     uint32_t when;   // clkuptms() when it was kept, 0 for an empty place
 } recent[RECENT_MAX];
-static int recent_next = 0;
+static int recent_next = 0; // the place remember_kept() fills next
 
+// was a version of this file (by its path's hash) kept less than VERSIONS_GAP_MS ago?
+// (clkuptms() - when still works when the millisecond counter wraps round, as it is unsigned)
 static bool kept_lately (uint32_t hash) {
     for (int i = 0; i < RECENT_MAX; i++) {
         if (recent[i].when != 0 && recent[i].hash == hash && clkuptms() - recent[i].when < VERSIONS_GAP_MS) {
@@ -226,12 +247,15 @@ static bool kept_lately (uint32_t hash) {
     return false;
 }
 
+// note that a version of this file was kept just now, for kept_lately()
 static void remember_kept (uint32_t hash) {
     recent[recent_next].hash = hash;
     recent[recent_next].when = clkuptms();
     recent_next = (recent_next + 1) % RECENT_MAX;
 }
 
+// let the next change to this file keep a version straight away, however soon it comes
+// (when = 0 marks the place empty)
 static void forget_kept (uint32_t hash) {
     for (int i = 0; i < RECENT_MAX; i++) {
         if (recent[i].hash == hash) {
@@ -242,6 +266,7 @@ static void forget_kept (uint32_t hash) {
 
 // keep a version of the file now, whatever the time since the last one
 static void keep_now (const place_t* place, const char* folder, const char* name) {
+    // the file as it is now (before the change that is about to happen)
     uint32_t size;
     char* contents = fs_read_bytes(folder, name, &size);
     if (contents == NULL) {
@@ -268,7 +293,8 @@ static void keep_now (const place_t* place, const char* folder, const char* name
         return;
     }
 
-    // the first line, then the contents
+    // the first line, then the contents. The sequence number is one more than the newest
+    // version's, so the order survives slots being reused
     char saved[20];
     rtc_datetime(saved, sizeof(saved));
     uint32_t sequence = count > 0 ? slots[order[0]].header.sequence + 1 : 1;
@@ -284,11 +310,14 @@ static void keep_now (const place_t* place, const char* folder, const char* name
     memcpy(version + header_length, contents, size);
     free(contents);
 
+    // the versions folder is only made the first time something in the home folder changes
     if (!fs_dir_exists(place->versions)) {
         fs_create_d(place->versions, "old versions of files");
     }
     char file[16];
     slot_name(place, slot, file, sizeof(file));
+    // a slot that is already a file gets written over, an empty one is made
+    // (neither keeps a version of its own: versions_apply() says no for the versions folder)
     if (slots[slot].used) {
         fs_write_bytes(place->versions, file, version, header_length + size, false);
     } else {
@@ -303,8 +332,10 @@ static bool keepable (const place_t* place) {
     return fs_open(place->path, &file) && file.size <= VERSIONS_LARGEST;
 }
 
+// keep a copy of a file before it is changed or deleted (see versions.h for when it doesn't)
 void versions_keep (const char* folder, const char* name) {
     place_t place;
+    // paused, not in a home folder, or a version was kept only moments ago: nothing to do
     if (paused > 0 || !find_place(folder, name, &place) || kept_lately(place.hash)) {
         return;
     }
@@ -315,6 +346,7 @@ void versions_keep (const char* folder, const char* name) {
     remember_kept(place.hash);
 }
 
+// delete every version of a file, zeroing each one first
 void versions_forget (const char* folder, const char* name) {
     place_t place;
     if (paused > 0 || !find_place(folder, name, &place)) {
@@ -339,6 +371,7 @@ void versions_forget (const char* folder, const char* name) {
 //  Reading and bringing back versions
 // =================================================================================================
 
+// the versions of a file, newest first, into list. Returns how many
 int versions_list (const char* folder, const char* name, version_t* list) {
     place_t place;
     if (!find_place(folder, name, &place)) {
@@ -348,6 +381,7 @@ int versions_list (const char* folder, const char* name, version_t* list) {
     int order[VERSIONS_KEPT];
     int count = our_versions(&place, slots, order);
     for (int i = 0; i < count; i++) {
+        // numbers are by age, newest = 1, not the slot number or the sequence number
         const header_t* header = &slots[order[i]].header;
         list[i].number = i + 1;
         list[i].size = header->size;
@@ -356,6 +390,7 @@ int versions_list (const char* folder, const char* name, version_t* list) {
     return count;
 }
 
+// the contents of version `number` (1 = the newest), without its first line. free() it
 char* versions_read (const char* folder, const char* name, int number, uint32_t* size) {
     place_t place;
     if (!find_place(folder, name, &place)) {
@@ -378,12 +413,14 @@ char* versions_read (const char* folder, const char* name, int number, uint32_t*
     }
     uint32_t header_length = slots[order[number - 1]].header.header_length;
     uint32_t length = total > header_length ? total - header_length : 0;
+    // memmove rather than memcpy, because the two areas overlap
     memmove(bytes, bytes + header_length, length);
     bytes[length] = '\0'; // (fs_read_bytes leaves room for one after the end)
     *size = length;
     return bytes;
 }
 
+// put version `number` back as the file's contents (UNDO), or make the file again if it is gone
 int versions_restore (const char* folder, const char* name, int number) {
     place_t place;
     if (!find_place(folder, name, &place)) {
@@ -401,6 +438,7 @@ int versions_restore (const char* folder, const char* name, int number) {
     if (exists && keepable(&place)) {
         keep_now(&place, folder, name);
     }
+    // paused, so writing the old contents back doesn't keep yet another version
     versions_pause();
     int result;
     if (exists) {
@@ -414,11 +452,15 @@ int versions_restore (const char* folder, const char* name, int number) {
     return result;
 }
 
+// "notes.txt@2" -> "notes.txt" and 2, false if the name doesn't end in '@' and a number
 bool versions_split_name (const char* name, char* base, size_t size, int* number) {
+    // the last '@', so a name with an '@' of its own still works. It needs a name in front of
+    // it and a number after it
     const char* at = strrchr(name, '@');
     if (at == NULL || at == name || at[1] == '\0') {
         return false;
     }
+    // only digits after the '@', so "me@home.txt" is just an ordinary name
     for (const char* digit = at + 1; *digit != '\0'; digit++) {
         if (!isdigit((unsigned char)*digit)) {
             return false;
@@ -430,6 +472,7 @@ bool versions_split_name (const char* name, char* base, size_t size, int* number
     }
     memcpy(base, name, length);
     base[length] = '\0';
+    // there is no version 0 ("notes.txt@0" is an ordinary name)
     *number = atoi(at + 1);
     return *number >= 1;
 }
@@ -441,6 +484,8 @@ bool versions_split_name (const char* name, char* base, size_t size, int* number
 
 #define FILES_LISTED 64   // the most files versions_each_file reports
 
+// what versions_each_file() adds up while listing a versions folder: one path per file,
+// with how many versions of it were found
 typedef struct {
     const char* versions;  // the versions folder being listed
     char paths[FILES_LISTED][FULL_PATH_MAX];
@@ -459,8 +504,10 @@ static void tally_version (const char* name, bool is_dir, uint32_t size, void* c
     header_t header;
     sfmt(path, sizeof(path), "%s%s", tally->versions, name);
     if (!read_header(path, &header)) {
-        return;
+        return; // not a version (something else someone put in the folder)
     }
+    // the slot names are only hashes, the real path is in the first line.
+    // Seen this file before? Add one to its count, otherwise give it a new line
     for (int i = 0; i < tally->files; i++) {
         if (strcasecmp(tally->paths[i], header.path) == 0) {
             tally->counts[i]++;
@@ -474,6 +521,7 @@ static void tally_version (const char* name, bool is_dir, uint32_t size, void* c
     }
 }
 
+// call fn once for every file in a home folder that has versions, with how many it has
 int versions_each_file (const char* home, versions_file_fn fn, void* ctx) {
     char versions[FS_PATH_MAX];
     sfmt(versions, sizeof(versions), "%s%s", home, VERSIONS_FOLDER);
@@ -486,6 +534,7 @@ int versions_each_file (const char* home, versions_file_fn fn, void* ctx) {
     tally->files = 0;
     fs_list(versions, tally_version, tally);
 
+    // fn is only called once the listing has finished, so it is free to use the file system
     for (int i = 0; i < tally->files; i++) {
         fn(tally->paths[i], tally->counts[i], ctx);
     }

@@ -78,7 +78,12 @@
 #define EERD_DONE    (1u << 4)     // ...and done (on the 82540, which QEMU is)
 
 // ---- descriptors -----------------------------------------------------------------------------------
+//
+// The card reads and writes these itself, so their layout is fixed by the card, not by us:
+// 16 bytes each, exactly as below (packed, so the compiler adds no padding of its own). The
+// address is 64 bits because the card can reach that far; AerOS only ever uses the low 32
 
+// a receive descriptor: we give the card a buffer, it says what it put there
 typedef struct __attribute__((packed)) {
     uint64_t address;   // the buffer the card fills
     uint16_t length;    // set by the card: the frame's length
@@ -88,6 +93,8 @@ typedef struct __attribute__((packed)) {
     uint16_t special;
 } rx_descriptor_t;
 
+// a send descriptor: we give the card a frame and what to do with it, it says when it's sent
+// (cso and css are for checksums the card can work out itself, which AerOS doesn't ask for)
 typedef struct __attribute__((packed)) {
     uint64_t address;   // the frame to send
     uint16_t length;
@@ -109,11 +116,14 @@ typedef struct __attribute__((packed)) {
 
 // ---- the card --------------------------------------------------------------------------------------
 
-static bool ready = false;
+static bool ready = false;             // the rings are set up and the card is sending and receiving
 static pci_device_t card;
-static volatile uint32_t* registers;   // the card's memory
+// The card's memory. volatile, because reading or writing a register does something on the
+// card: the compiler must do every read and write, in order, and never keep a value aside
+static volatile uint32_t* registers;
 static uint8_t mac[6];
 
+// the rings are volatile too, since the card changes them behind the program's back
 static volatile rx_descriptor_t* rx_ring;
 static volatile tx_descriptor_t* tx_ring;
 static uint8_t* rx_buffers[RX_COUNT];
@@ -121,10 +131,13 @@ static uint8_t* tx_buffers[TX_COUNT];
 static int rx_next = 0;                // the next receive descriptor to look at
 static int tx_next = 0;                // the next send descriptor to use
 
+// read the card register at this byte offset (REG_ above). The offsets count bytes but
+// `registers` points at 32 bit words, hence the / 4
 static uint32_t read_register (uint32_t offset) {
     return registers[offset / 4];
 }
 
+// write a card register, which is how the card is told to do anything
 static void write_register (uint32_t offset, uint32_t value) {
     registers[offset / 4] = value;
 }
@@ -136,17 +149,23 @@ static int allocation_count = 0;
 // memory that the card reads or writes itself, `align` bytes aligned (malloc's 16 aren't enough
 // for the rings, which the manual wants on 128 byte boundaries). Kept until e1000_stop
 static void* card_memory (size_t size, size_t align) {
+    // `align` bytes more than needed, so an aligned start is sure to be somewhere inside
     uint8_t* raw = malloc(size + align);
     if (raw == NULL) {
         return NULL;
     }
+    // free() needs the address malloc gave, not the aligned one, so that is what is kept
     allocations[allocation_count++] = raw;
+    // Round up to the next multiple of align (a power of two): add align - 1, then clear the
+    // low bits. With align 128, ~127 is ...FF80, so 0x1234 + 127 = 0x12B3 becomes 0x1280
     uintptr_t aligned = ((uintptr_t)raw + align - 1) & ~(uintptr_t)(align - 1);
     memset((void*)aligned, 0, size);
     return (void*)aligned;
 }
 
-// The cards this driver knows: all of them work the same way for what AerOS needs
+// The cards this driver knows: all of them work the same way for what AerOS needs.
+// pci_each calls this for every device; the first one that is ours is copied into ctx (the
+// `card` above), and returning true stops the search there
 static bool is_e1000 (const pci_device_t* dev, void* ctx) {
     static const uint16_t devices[] = {
         0x100E,   // 82540EM, QEMU's and VirtualBox's "Intel PRO/1000 MT Desktop"
@@ -154,7 +173,7 @@ static bool is_e1000 (const pci_device_t* dev, void* ctx) {
         0x1004,   // 82543GC, VirtualBox's "PRO/1000 T Server"
     };
     if (dev->vendor != 0x8086) {
-        return false;
+        return false; // 0x8086 is Intel's vendor ID
     }
     for (size_t i = 0; i < sizeof(devices) / sizeof(devices[0]); i++) {
         if (dev->device == devices[i]) {
@@ -167,6 +186,8 @@ static bool is_e1000 (const pci_device_t* dev, void* ctx) {
 
 // the MAC address: in RAL / RAH if the card has put it there, otherwise in the EEPROM
 static void read_mac (void) {
+    // RAL holds the first four bytes, lowest first (00:11:22:33:44:55 reads as 0x33221100),
+    // and the bottom 16 bits of RAH the last two. RAH's top bit says whether they are filled in
     uint32_t low = read_register(REG_RAL);
     uint32_t high = read_register(REG_RAH);
     if (high & RAH_VALID) {
@@ -178,23 +199,35 @@ static void read_mac (void) {
         return;
     }
     // EEPROM words 0, 1 and 2 hold the six bytes, low byte first
+    //
+    // EERD works like this: write the word's number (bits 8 and up) with the start bit, wait
+    // for the done bit, and the 16 bit word is then in EERD's top half (bits 16-31)
     for (int word = 0; word < 3; word++) {
         write_register(REG_EERD, ((uint32_t)word << 8) | EERD_START);
+        // wait for "done", reading EERD again each time (the loop has nothing else to do). It
+        // gives up after a while rather than hang forever on a card that never answers
         uint32_t value = 0;
         for (int tries = 0; tries < 10000 && !((value = read_register(REG_EERD)) & EERD_DONE); tries++) {
         }
         mac[word * 2] = (uint8_t)(value >> 16);
         mac[word * 2 + 1] = (uint8_t)(value >> 24);
     }
+    // and put it in RAL / RAH the same way the card would, so the card receives frames sent
+    // to this address (it only takes frames for the address there, and broadcasts)
     write_register(REG_RAL, mac[0] | (mac[1] << 8) | (mac[2] << 16) | ((uint32_t)mac[3] << 24));
     write_register(REG_RAH, mac[4] | (mac[5] << 8) | RAH_VALID);
 }
 
+// Make the receive ring (32 descriptors, each with a 2048 byte buffer), tell the card where
+// it is, and switch receiving on
 static bool set_up_receiving (void) {
+    // 32 descriptors of 16 bytes is 512 bytes, a multiple of 128 as the card wants
     rx_ring = card_memory(sizeof(rx_descriptor_t) * RX_COUNT, 128);
     if (rx_ring == NULL) {
         return false;
     }
+    // Each descriptor points at its own buffer, and starts not "done" (nothing in it). AerOS
+    // has no paging, so the pointer is the physical address the card needs
     for (int i = 0; i < RX_COUNT; i++) {
         rx_buffers[i] = card_memory(BUFFER_SIZE, 16);
         if (rx_buffers[i] == NULL) {
@@ -203,17 +236,24 @@ static bool set_up_receiving (void) {
         rx_ring[i].address = (uint32_t)(uintptr_t)rx_buffers[i];
         rx_ring[i].status = 0;
     }
+    // where the ring is (a 32 bit address, so the high half is 0) and how many bytes long
     write_register(REG_RDBAL, (uint32_t)(uintptr_t)rx_ring);
     write_register(REG_RDBAH, 0);
     write_register(REG_RDLEN, sizeof(rx_descriptor_t) * RX_COUNT);
+    // The card fills from the head and stops when it reaches the tail. If the tail were 0 too,
+    // head == tail would mean "nothing to fill", so the tail goes one behind instead
     write_register(REG_RDH, 0);
     write_register(REG_RDT, RX_COUNT - 1);   // every buffer but one is the card's to fill
     rx_next = 0;
+    // and only now, with everything in place, switch receiving on
     write_register(REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_SECRC);
     return true;
 }
 
+// Make the send ring (8 descriptors, each with a 2048 byte buffer), tell the card where it
+// is, and switch sending on
 static bool set_up_sending (void) {
+    // 8 descriptors of 16 bytes is exactly 128 bytes
     tx_ring = card_memory(sizeof(tx_descriptor_t) * TX_COUNT, 128);
     if (tx_ring == NULL) {
         return false;
@@ -229,9 +269,11 @@ static bool set_up_sending (void) {
     write_register(REG_TDBAL, (uint32_t)(uintptr_t)tx_ring);
     write_register(REG_TDBAH, 0);
     write_register(REG_TDLEN, sizeof(tx_descriptor_t) * TX_COUNT);
+    // head == tail: nothing to send yet. e1000_send moves the tail on to send something
     write_register(REG_TDH, 0);
     write_register(REG_TDT, 0);
     tx_next = 0;
+    // switch sending on, with the settings the manual gives for a full duplex link
     write_register(REG_TCTL, TCTL_EN | TCTL_PSP | TCTL_CT | TCTL_COLD);
     write_register(REG_TIPG, TIPG_VALUE);
     return true;
@@ -242,36 +284,48 @@ static bool set_up_sending (void) {
 // and anything sent meanwhile would be lost
 static bool found = false;
 
+// Find an e1000 on the PCI bus, reset it, and read its MAC address (only ever done once, see
+// `found` above). False if there is no card, or its registers can't be reached
 static bool find_and_reset (void) {
     if (!pci_each(is_e1000, &card)) {
         return false;
     }
+    // BAR 0 is where the card's registers are in memory (0: not a 32 bit memory address)
     uint32_t address = pci_mem_bar(&card, 0);
     if (address == 0) {
         return false;
     }
+    // let it answer at that address, and read and write the rings itself (bus mastering):
+    // the BIOS doesn't always switch these on
     pci_enable_memory_and_dma(&card);
     registers = (volatile uint32_t*)(uintptr_t)address;
 
     // reset it, and wait (up to 10ms) for the reset to finish
+    //
+    // The card clears the reset bit itself once it is done. The other bits of CTRL are kept
+    // as they were (read, add the bit, write back)
     write_register(REG_CTRL, read_register(REG_CTRL) | CTRL_RST);
     for (int i = 0; i < 10 && (read_register(REG_CTRL) & CTRL_RST); i++) {
         sleep_ms(1);
     }
     write_register(REG_IMC, 0xFFFFFFFF);   // no interrupts: AerOS asks the card instead
+    // reading ICR clears any interrupt cause left over from before (the value isn't needed)
     read_register(REG_ICR);
+    // "set link up": tell the card to bring the connection to the network up
     write_register(REG_CTRL, read_register(REG_CTRL) | CTRL_SLU);
 
     read_mac();
+    // an empty multicast table: frames for multicast groups are all turned away
     for (int i = 0; i < 128; i++) {
         write_register(REG_MTA + i * 4, 0);
     }
     return true;
 }
 
+// start the card: found and reset the first time, then new rings and buffers every time
 bool e1000_init (void) {
     if (ready) {
-        return true;
+        return true; // already running
     }
     if (!found) {
         found = find_and_reset();
@@ -287,11 +341,16 @@ bool e1000_init (void) {
     return true;
 }
 
+// stop sending and receiving, and give the rings and buffers back (for app mode)
 void e1000_stop (void) {
     if (!ready) {
         return;
     }
     // stop the card using the rings before they go, then give the memory back
+    //
+    // Otherwise the card could carry on writing arriving frames into memory that malloc has
+    // since handed to someone else. The millisecond lets it finish a frame it was part way
+    // through
     write_register(REG_RCTL, 0);
     write_register(REG_TCTL, 0);
     sleep_ms(1);
@@ -302,21 +361,26 @@ void e1000_stop (void) {
     ready = false;
 }
 
+// the card's name and where it is on the PCI bus (bus:slot.function), as lspci writes it
 const char* e1000_name (void) {
     static char name[48];
     sfmt(name, sizeof(name), "Intel e1000 %04x (PCI %02x:%02x.%u)", card.device, card.bus, card.slot, card.function);
     return name;
 }
 
+// the card's MAC address, as read_mac found it
 void e1000_mac (uint8_t out[6]) {
     memcpy(out, mac, 6);
 }
 
+// is a cable plugged in (the link up)? The registers are only read while the card is running
 bool e1000_link_up (void) {
     return ready && (read_register(REG_STATUS) & STATUS_LU);
 }
 
+// hand one whole Ethernet frame to the card to send. True once the card has it, not once sent
 bool e1000_send (const void* frame, size_t length) {
+    // (the buffers are 2048 bytes, so this also keeps the memcpy below inside one)
     if (!ready || length > ETHERNET_FRAME_MAX) {
         return false;
     }
@@ -328,26 +392,37 @@ bool e1000_send (const void* frame, size_t length) {
     if (!(descriptor->status & DESC_DONE)) {
         return false;
     }
+    // copy the frame into the descriptor's own buffer (the caller's may not stay put), and
+    // fill in the descriptor: one whole frame, add the CRC, and say when it's done. "done"
+    // is cleared so the next e1000_send to use this descriptor waits for the card to set it
     memcpy(tx_buffers[tx_next], frame, length);
     descriptor->length = (uint16_t)length;
     descriptor->command = CMD_EOP | CMD_IFCS | CMD_RS;
     descriptor->status = 0;
 
     // the descriptor must be written before the card is told about it
+    //
+    // This empty asm with "memory" is a compiler barrier: it stops the compiler moving the
+    // writes above to after the register write below. (The x86 itself keeps writes in order)
     __asm__ volatile ("" ::: "memory");
+    // moving the tail past the descriptor is what tells the card there is a frame to send
     tx_next = (tx_next + 1) % TX_COUNT;
     write_register(REG_TDT, (uint32_t)tx_next);
     return true;
 }
 
+// take the next frame the card has received, if there is one: its length, or 0 for none
 size_t e1000_receive (void* buffer, size_t size) {
     if (!ready) {
         return 0;
     }
+    // frames come in ring order, so only the next descriptor needs looking at
     volatile rx_descriptor_t* descriptor = &rx_ring[rx_next];
     if (!(descriptor->status & DESC_DONE)) {
         return 0; // nothing has arrived
     }
+    // a frame too big for the caller's buffer is dropped, but its descriptor is still handed
+    // back below, or the ring would stay stuck on it
     size_t length = descriptor->length;
     bool fits = length <= size;
     if (fits) {
@@ -355,6 +430,9 @@ size_t e1000_receive (void* buffer, size_t size) {
     }
 
     // give the buffer back to the card: it becomes the new tail
+    //
+    // "done" is cleared first (and the barrier keeps it first), so when the card comes
+    // round to this descriptor again it is seen as empty until the card fills it
     descriptor->status = 0;
     __asm__ volatile ("" ::: "memory");
     write_register(REG_RDT, (uint32_t)rx_next);

@@ -204,6 +204,7 @@ int drive_probe_info(int bus, int slave, char* model, size_t model_size, uint32_
     if (status == 0 || status == 0xFF) {
         return DRIVE_NONE;
     }
+    // something answered but never finished: count it as there, but of an unknown kind
     if (!ata_wait_not_busy(io)) {
         return DRIVE_UNKNOWN;
     }
@@ -216,6 +217,9 @@ int drive_probe_info(int bus, int slave, char* model, size_t model_size, uint32_
     int type;
     bool ok;
 
+    // an ATA drive accepted IDENTIFY, so its answer is already waiting. The packet (CD) drives
+    // need the second command first. A SATA drive in this legacy mode can't be identified or used
+    // through these ports, so we only report that it is there
     if (mid == 0 && hi == 0) {
         type = DRIVE_ATA;
         ok = ata_read_identify(io, id);
@@ -231,6 +235,7 @@ int drive_probe_info(int bus, int slave, char* model, size_t model_size, uint32_
         return DRIVE_UNKNOWN;
     }
 
+    // the type is known even if the IDENTIFY data never came, so report it anyway
     if (!ok) {
         return type;
     }
@@ -259,11 +264,13 @@ static bool ata_pio_command(uint16_t io, uint16_t ctrl, int slave, uint32_t lba,
     if (!ata_wait_not_busy(io)) {
         return false;
     }
+    // keep the drive's IRQ off, we poll the status register instead
     outb(ctrl, ATA_CTRL_NIEN);
     // 0xE0 = the always-1 bits plus bit 6 (LBA mode), 0x10 for the slave, and the top 4 bits of the
     // 28 bit LBA go in the low nibble
     outb(io + ATA_REG_DRIVE, (uint8_t)(0xE0 | (slave ? 0x10 : 0x00) | ((lba >> 24) & 0x0F)));
     ata_delay(ctrl);
+    // READ / WRITE SECTORS take no features, 0 is the safe value
     outb(io + ATA_REG_FEATURES, 0);
     outb(io + ATA_REG_SECCOUNT, count);
     // the remaining 24 bits of the LBA, one byte per register
@@ -278,6 +285,7 @@ static bool ata_pio_command(uint16_t io, uint16_t ctrl, int slave, uint32_t lba,
 // wait until the drive is ready to transfer the next sector
 // true = DRQ is set and neither ERR nor DF is, so exactly one sector can now go through the data port
 static bool ata_pio_ready(uint16_t io, uint16_t ctrl) {
+    // give the status register its ~400ns to catch up with the last command / sector first
     ata_delay(ctrl);
     return ata_wait_not_busy(io) && (ata_wait_data(io) & (ATA_SR_ERR | ATA_SR_DF)) == 0;
 }
@@ -306,12 +314,14 @@ static bool ata_pio_transfer(int bus, int slave, uint32_t lba, uint32_t count, u
             if (!ata_pio_ready(io, ctrl)) {
                 return false;
             }
+            // 256 16 bit words = one 512 byte sector, moved with rep outsw / rep insw
             if (write) {
                 outsw(io + ATA_REG_DATA, data, SECTOR_WORDS);
             } else {
                 insw(io + ATA_REG_DATA, data, SECTOR_WORDS);
             }
         }
+        // move on to the next chunk (data has already been stepped forward by the loop above)
         lba += n;
         count -= n;
     }
@@ -360,6 +370,7 @@ bool drive_write(int bus, int slave, uint32_t lba, uint32_t count, const void* b
 // Real boot sectors pass easily, random data (or a non-FAT boot sector) almost never does.
 // The 0x55 0xAA signature is not checked here, drive_parse does that before calling us.
 bool drive_is_fat_boot_sector(const uint8_t* sector) {
+    // the 16 bit fields are little endian: low byte first, so the second byte is shifted up by 8
     uint16_t bytes_per_sector = (uint16_t)(sector[11] | (sector[12] << 8));
     uint8_t sectors_per_cluster = sector[13];
     uint16_t reserved = (uint16_t)(sector[14] | (sector[15] << 8));
@@ -394,6 +405,7 @@ static bool drive_is_fat_partition(uint8_t type) {
 int drive_parse(int bus, int slave, uint32_t* volume_lba) {
     uint8_t sector[SECTOR_SIZE];
 
+    // -1 = the drive couldn't even be read, which is different from "readable but not FAT"
     if (!drive_read(bus, slave, 0, 1, sector)) {
         return -1;
     }

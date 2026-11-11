@@ -78,9 +78,11 @@ static void add_frame (uint32_t i, const int16_t* frame, int volume) {
     sums[i * 2 + 1] += (frame[1] * volume) >> 8;
 }
 
-// add `count` frames of a sound voice into sums[]
+// add `count` frames of a sound voice into sums[]. A sound that isn't looped and runs out part
+// way through the block just stops adding, so the rest of the block is silence from this voice
 static void add_sound (voice_t* voice, uint32_t count) {
     for (uint32_t i = 0; i < count; i++) {
+        // at the end: loop back to the start, or mark the voice finished so its slot can be reused
         if (voice->position >= voice->count) {
             if (!voice->loop) {
                 voice->active = false; // played to the end
@@ -97,15 +99,20 @@ static void add_sound (voice_t* voice, uint32_t count) {
 // add up to `count` frames of a stream voice into sums[]: whatever is waiting in its ring
 // buffer. If there isn't enough, the rest of the block is silence from this voice
 static void add_stream (voice_t* voice, uint32_t count) {
+    // written - read still gives the right answer after either counter wraps round past 4 billion,
+    // because unsigned subtraction wraps the same way
     uint32_t waiting = voice->written - voice->read;
     if (count > waiting) {
         count = waiting;
     }
+    // the counters run on for ever, the mask turns one into a place in the ring
     uint32_t mask = voice->ring_frames - 1;
     for (uint32_t i = 0; i < count; i++) {
         uint32_t slot = (voice->read + i) & mask;
         add_frame(i, voice->ring + slot * 2, voice->volume);
     }
+    // only the interrupt side moves `read`, and only after the frames have been used, so the
+    // program can't write over them while they are still being read
     voice->read += count;
     voice->played += count;
 }
@@ -123,11 +130,15 @@ static int16_t clip (int32_t sample) {
     return (int16_t)sample;
 }
 
-// the sound card driver's fill function: the next `count` frames of every voice, added up
+// the sound card driver's fill function: the next `count` frames of every voice, added up.
+// Runs inside the timer interrupt, so it must be quick and must never wait for anything
 static void mix (int16_t* out, uint32_t count) {
+    // sums[] is only so big (the driver never asks for more, this is just in case)
     if (count > MOST_FRAMES) {
         count = MOST_FRAMES;
     }
+    // start from silence, then add each playing voice on top. The sums are 32 bit, so eight loud
+    // voices added together can't overflow before they are clipped
     memset(sums, 0, count * 2 * sizeof(sums[0]));
     for (int v = 0; v < MIXER_VOICES; v++) {
         voice_t* voice = &voices[v];
@@ -140,12 +151,15 @@ static void mix (int16_t* out, uint32_t count) {
             add_sound(voice, count);
         }
     }
+    // squeeze the total back into 16 bit samples for the card (count * 2: left and right)
     for (uint32_t i = 0; i < count * 2; i++) {
         out[i] = clip(sums[i]);
     }
 }
 
-// the timer interrupt calls this every millisecond; every other time, top up the sound card
+// the timer interrupt calls this every millisecond; every other time, top up the sound card.
+// Every 2ms is plenty: a block lasts about 10.7ms, and topping up more often would only spend
+// interrupt time finding there was nothing to do
 static void tick (void) {
     static uint32_t counter = 0;
     counter++;
@@ -156,13 +170,16 @@ static void tick (void) {
 
 // ---- the program side -------------------------------------------------------------------------
 
-// turn interrupts off, saying whether they were on, so voices can be changed safely
+// turn interrupts off, saying whether they were on, so voices can be changed safely.
+// Remembering keeps it safe to call when interrupts were already off: release_interrupts then
+// leaves them off rather than turning them on behind the caller's back
 static bool hold_interrupts (void) {
     bool were_on = interrupts_enabled();
     interrupts_disable();
     return were_on;
 }
 
+// the other half of hold_interrupts: turn interrupts back on, but only if they were on before
 static void release_interrupts (bool were_on) {
     if (were_on) {
         interrupts_enable();
@@ -171,10 +188,13 @@ static void release_interrupts (bool were_on) {
 
 // get the sound card, if the mixer hasn't got it already (or something else took it back)
 static bool take_card (void) {
+    // both are checked: PLY (ac97_play) or the startup sound can stop streaming without the
+    // mixer knowing, and then `running` alone would be out of date
     if (running && ac97_streaming()) {
         return true;
     }
     sound_stop(); // the startup sound, if it is still playing
+    // the card plays mix()'s output from now on, and the timer keeps it topped up
     if (!ac97_stream_start(mix)) {
         return false;
     }
@@ -183,6 +203,7 @@ static bool take_card (void) {
     return true;
 }
 
+// a volume kept between 0 (silent) and MIXER_FULL_VOLUME, so add_frame can never make a sound louder
 static int clamp_volume (int volume) {
     if (volume < 0) {
         return 0;
@@ -200,19 +221,24 @@ static voice_t* claim_slot (int* number) {
         if (voice->active) {
             continue;
         }
+        // wipe whatever the last sound left behind, but keep counting the generation on
         uint32_t generation = voice->generation + 1;
         memset(voice, 0, sizeof(*voice));
         voice->generation = generation;
+        // the generation wraps at a million so that 8 times it always fits in a positive int
+        // (a negative number means "no voice" to the callers)
         *number = slot + MIXER_VOICES * (int)(generation % 1000000);
         return voice;
     }
     return NULL;
 }
 
+// start a sound that is already in memory on a free voice, returning its number (-1 if none)
 int mixer_play (const int16_t* frames, uint32_t count, bool loop, int volume) {
     if (frames == NULL || count == 0 || !take_card()) {
         return -1;
     }
+    // the sound isn't copied: the caller's frames must stay put until the voice has finished
     bool were_on = hold_interrupts();
     int number = -1;
     voice_t* voice = claim_slot(&number);
@@ -227,12 +253,15 @@ int mixer_play (const int16_t* frames, uint32_t count, bool loop, int volume) {
     return number;
 }
 
+// start a stream voice with a ring buffer of at least buffer_frames, returning its number (-1 if none)
 int mixer_stream_open (uint32_t buffer_frames, int volume) {
-    // round the buffer up to a power of two (see the top of the file)
+    // round the buffer up to a power of two (see the top of the file), at least 1024 frames and
+    // at most 1 << 22 (about 87 seconds at 48000 Hz, 16MB), so a silly size can't eat the heap
     uint32_t frames = 1024;
     while (frames < buffer_frames && frames < (1u << 22)) {
         frames *= 2;
     }
+    // two 16 bit samples (left and right) per frame
     int16_t* ring = malloc(frames * 2 * sizeof(int16_t));
     if (ring == NULL) {
         return -1;
@@ -250,10 +279,11 @@ int mixer_stream_open (uint32_t buffer_frames, int volume) {
         voice->ring = ring;
         voice->ring_frames = frames;
         voice->volume = clamp_volume(volume);
-        voice->active = true;
+        voice->active = true; // last, as in mixer_play
     }
     release_interrupts(were_on);
 
+    // every voice was busy: the ring buffer isn't needed after all
     if (voice == NULL) {
         free(ring);
     }
@@ -265,23 +295,28 @@ static voice_t* find_voice (int number) {
     if (number < 0) {
         return NULL;
     }
+    // undo what claim_slot did: the low part is the slot, the rest the generation
     int slot = number % MIXER_VOICES;
     uint32_t generation = (uint32_t)(number / MIXER_VOICES);
     voice_t* voice = &voices[slot];
+    // the slot has been reused since this number was handed out, so it is another sound now
     if (voice->generation % 1000000 != generation) {
         return NULL;
     }
     return voice;
 }
 
+// how many frames a stream can take right now without writing over ones not yet played
 uint32_t mixer_stream_room (int number) {
     voice_t* voice = find_voice(number);
     if (voice == NULL || !voice->stream || !voice->active) {
         return 0;
     }
+    // the whole ring, less what is still waiting to be played
     return voice->ring_frames - (voice->written - voice->read);
 }
 
+// how many frames of a stream are written but not yet played
 uint32_t mixer_stream_queued (int number) {
     voice_t* voice = find_voice(number);
     if (voice == NULL || !voice->stream || !voice->active) {
@@ -290,7 +325,10 @@ uint32_t mixer_stream_queued (int number) {
     return voice->written - voice->read;
 }
 
+// add frames to a stream's ring buffer, as many as fit, returning how many went in.
+// Interrupts stay on: the interrupt only ever reads frames below `written`, and these are above it
 uint32_t mixer_stream_write (int number, const int16_t* frames, uint32_t count) {
+    // only as many as there is room for, the rest is the caller's to try again later
     uint32_t room = mixer_stream_room(number);
     if (count > room) {
         count = room;
@@ -299,6 +337,8 @@ uint32_t mixer_stream_write (int number, const int16_t* frames, uint32_t count) 
     if (voice == NULL || count == 0) {
         return 0;
     }
+    // copy them in one frame at a time, so wrapping from the end of the ring to the start is
+    // just the mask, with no special case
     uint32_t mask = voice->ring_frames - 1;
     for (uint32_t i = 0; i < count; i++) {
         uint32_t slot = (voice->written + i) & mask;
@@ -310,6 +350,8 @@ uint32_t mixer_stream_write (int number, const int16_t* frames, uint32_t count) 
     return count;
 }
 
+// throw away everything waiting in a stream (a video jumping to a new place, say).
+// Interrupts are held because this moves `read`, which is normally only the interrupt's to move
 void mixer_stream_clear (int number) {
     bool were_on = hold_interrupts();
     voice_t* voice = find_voice(number);
@@ -320,6 +362,7 @@ void mixer_stream_clear (int number) {
     release_interrupts(were_on);
 }
 
+// pause or carry on a voice, keeping its place
 void mixer_pause (int number, bool paused) {
     bool were_on = hold_interrupts();
     voice_t* voice = find_voice(number);
@@ -329,6 +372,7 @@ void mixer_pause (int number, bool paused) {
     release_interrupts(were_on);
 }
 
+// how many frames a voice has played so far (0 for an out of date number)
 uint32_t mixer_played (int number) {
     voice_t* voice = find_voice(number);
     if (voice == NULL) {
@@ -337,6 +381,7 @@ uint32_t mixer_played (int number) {
     return voice->played;
 }
 
+// how many frames behind the speakers are: mixed already, but still queued in the card
 uint32_t mixer_delay (void) {
     return ac97_stream_delay();
 }
@@ -349,9 +394,12 @@ static void stop_voice (voice_t* voice) {
     int16_t* ring = voice->ring;
     voice->ring = NULL;
     release_interrupts(were_on);
+    // outside the held part, so the interrupts are off for as short a time as possible.
+    // free(NULL) does nothing, so a sound voice (which has no ring) is fine here too
     free(ring);
 }
 
+// stop a voice, if the number still stands for one
 void mixer_stop (int number) {
     voice_t* voice = find_voice(number);
     if (voice != NULL) {
@@ -359,15 +407,18 @@ void mixer_stop (int number) {
     }
 }
 
+// whether a voice is still going (a finished sound, or a reused slot, says no)
 bool mixer_playing (int number) {
     voice_t* voice = find_voice(number);
     return voice != NULL && voice->active;
 }
 
+// stop every voice and give the sound card back (a program ending, for example)
 void mixer_stop_all (void) {
     for (int slot = 0; slot < MIXER_VOICES; slot++) {
         stop_voice(&voices[slot]);
     }
+    // unhook the timer first, so it can't top up the card while it is being stopped
     if (running) {
         clck_tick_hook = NULL;
         ac97_stream_stop();

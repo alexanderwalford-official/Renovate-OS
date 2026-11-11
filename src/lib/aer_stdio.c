@@ -280,6 +280,7 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
                     value = (unsigned char)value;
                 }
 
+                // pick the base from the conversion character, 'u' stays decimal
                 uint32_t base = 10;
                 if (spec == 'x' || spec == 'X' || spec == 'p') {
                     base = 16;
@@ -324,6 +325,7 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
                 len = (precision >= 0) ? (int)strnlen(body, (size_t)precision) : (int)slen(body);
                 break;
             case '%':
+                // "%%" prints one literal '%' (width still applies, like the other conversions)
                 body = "%";
                 len = 1;
                 break;
@@ -351,6 +353,7 @@ static int vformat(out_fn out, void* ctx, const char* fmt, va_list ap) {
                 zeros = precision - len;
             }
         }
+        // e.g. "%5d" with -42: prefix "-" (1) + digits "42" (2) leaves 2 spaces of padding
         int prefix_len = (int)slen(prefix);
         // whatever the width asks for beyond what we already have becomes padding
         int pad = width - prefix_len - zeros - len;
@@ -405,6 +408,7 @@ static void buffer_out(char c, void* ctx) {
 // isn't touched at all (so buf may be NULL). A neat trick: vsnprintf(NULL, 0, ...) + 1 tells you
 // exactly how big a buffer to malloc.
 int vsnprintf(char* buf, size_t size, const char* fmt, va_list ap) {
+    // start with nothing written; buffer_out never touches buf when size is 0
     buffer_ctx_t ctx = { buf, size, 0 };
     int n = vformat(buffer_out, &ctx, fmt, ap);
     if (size > 0) {
@@ -470,6 +474,7 @@ int prtf(const char* fmt, ...) {
 // returns the character as an unsigned value (0..255), like the standard, so a successful
 // putchar(0xFF) can never be mistaken for EOF (-1)
 int putchar(int c) {
+    // the cooked console_putchar, which also moves the hardware cursor
     console_putchar((char)c);
     return (unsigned char)c;
 }

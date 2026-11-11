@@ -88,6 +88,7 @@ static void make_room (line_t* line, int length) {
     if (needed <= line->capacity) {
         return;
     }
+    // a line that has never had a buffer starts at 16 bytes, as doubling 0 would stay 0
     int capacity = line->capacity;
     if (capacity == 0) {
         capacity = 16;
@@ -95,6 +96,8 @@ static void make_room (line_t* line, int length) {
     while (capacity < needed) {
         capacity *= 2;
     }
+    // realloc keeps what the line already holds (and with NULL, as for a new line, it just
+    // allocates)
     line->text = realloc(line->text, (size_t)capacity);
     line->capacity = capacity;
 }
@@ -117,6 +120,8 @@ static void insert_line (int at, const char* text, int length) {
     memmove(&lines[at + 1], &lines[at], (size_t)lines_after * sizeof(line_t));
     line_count++;
 
+    // the gap still holds a copy of the line that moved down (its pointer too), so it is
+    // cleared first, or make_room() would grow that other line's buffer
     line_t* line = &lines[at];
     memset(line, 0, sizeof(*line)); // a brand new, empty buffer
     make_room(line, length);
@@ -127,6 +132,7 @@ static void insert_line (int at, const char* text, int length) {
 
 // remove line `at` (the lines after it move up one)
 static void delete_line (int at) {
+    // its text buffer first, then close the gap so the lines after it move up
     free(lines[at].text);
     int lines_after = line_count - at - 1;
     memmove(&lines[at], &lines[at + 1], (size_t)lines_after * sizeof(line_t));
@@ -139,6 +145,7 @@ static void free_lines (void) {
         free(lines[i].text);
     }
     free(lines);
+    // back to "no lines", so the next file opened starts the array again from nothing
     lines = NULL;
     line_count = 0;
     lines_capacity = 0;
@@ -159,6 +166,8 @@ static void load (void) {
         return;
     }
 
+    // cut the text at each '\n'. A file ending in '\n' gives an empty last line, which is
+    // right: save() puts the '\n' back between it and the line before
     const char* line_start = text;
     for (;;) {
         const char* newline = strchr(line_start, '\n');
@@ -192,12 +201,16 @@ static void save (void) {
         total += lines[i].length + 1;
     }
 
+    // + 1 for the '\0'. total counted a '\n' after the last line too, which isn't written,
+    // so there is a byte to spare
     char* text = malloc((size_t)total + 1);
     if (text == NULL) {
         sfmt(message, sizeof(message), "Can't save: out of memory");
         return;
     }
 
+    // a '\n' goes between lines, not after the last one, so loading and saving a file
+    // without changing it gives back exactly the same bytes
     int size = 0;
     for (int i = 0; i < line_count; i++) {
         memcpy(text + size, lines[i].text, (size_t)lines[i].length);
@@ -210,6 +223,7 @@ static void save (void) {
     }
     text[size] = '\0';
 
+    // replace the file if it is there (false = don't add to the end), or make it
     int result;
     if (fs_file_exists(folder, file_name)) {
         result = fs_write_f(folder, file_name, text, false);
@@ -217,6 +231,7 @@ static void save (void) {
         result = fs_create_f(folder, file_name, text);
     }
 
+    // only a good save clears the '*': run_program() relies on that to spot a failed save
     if (result >= 0) {
         modified = false;
         sfmt(message, sizeof(message), "Saved %d bytes", size);
@@ -233,6 +248,7 @@ static void save (void) {
 
 // type a character at the cursor. The rest of the line moves one place right to make room
 static void insert_character (char c) {
+    // room for one more character first, as the move below needs it
     line_t* line = &lines[cursor_line];
     make_room(line, line->length + 1);
 
@@ -251,6 +267,8 @@ static void insert_character (char c) {
 static void split_line (void) {
     line_t* line = &lines[cursor_line];
 
+    // count the leading spaces, but only up to the cursor: pressing Enter in the middle of the
+    // indentation shouldn't give the new line more spaces than were before the cursor
     int indent = 0;
     while (indent < line->length && indent < cursor_column && line->text[indent] == ' ') {
         indent++;
@@ -286,10 +304,12 @@ static void join_next_line (void) {
     line_t* line = &lines[cursor_line];
     line_t* next = &lines[cursor_line + 1];
 
+    // grow the cursor's line to fit both, then copy the next line onto its end
     make_room(line, line->length + next->length);
     memcpy(line->text + line->length, next->text, (size_t)next->length + 1); // + 1: the '\0' too
     line->length += next->length;
 
+    // the cursor stays where it was, which is now the join between the two
     delete_line(cursor_line + 1);
     modified = true;
 }
@@ -306,6 +326,8 @@ static void backspace (void) {
         cursor_column--;
         modified = true;
     } else if (cursor_line > 0) {
+        // step to the end of the line above, then pull this line up onto it, which leaves
+        // the cursor at the join. (At the very start of the file there is nothing to do)
         cursor_line--;
         cursor_column = lines[cursor_line].length;
         join_next_line();
@@ -328,6 +350,7 @@ static void delete_forward (void) {
 
 // Tab: add spaces up to the next tab stop (always at least one)
 static void insert_tab (void) {
+    // do ... while, so a Tab at a tab stop still moves on to the next one
     do {
         insert_character(' ');
     } while (cursor_column % TAB_WIDTH != 0);
@@ -347,6 +370,8 @@ static bool is_keyword (const char* word, int length) {
     };
     int keyword_count = (int)(sizeof(keywords) / sizeof(keywords[0]));
 
+    // word isn't '\0' ended (it points into a line), so the lengths are compared first, then
+    // strncmp checks just that many characters: "do" mustn't match the start of "done"
     for (int i = 0; i < keyword_count; i++) {
         bool same_length = (int)slen(keywords[i]) == length;
         if (same_length && strncmp(keywords[i], word, (size_t)length) == 0) {
@@ -361,6 +386,7 @@ static bool is_keyword (const char* word, int length) {
 // This looks at each line on its own, so it is not a full AerLang lexer, but it is plenty for
 // colouring. Files that aren't AerLang stay plain light grey
 static void colour_line (const line_t* line, enum color* colours) {
+    // everything starts light grey, and the loop below only colours over the parts it knows
     for (int i = 0; i < line->length; i++) {
         colours[i] = BRIGHT;
     }
@@ -368,6 +394,8 @@ static void colour_line (const line_t* line, enum color* colours) {
         return;
     }
 
+    // each time round, the character at i decides what kind of piece starts here, and the
+    // branch moves i past the end of that piece. start remembers where it began
     const char* text = line->text;
     int i = 0;
     while (i < line->length) {
@@ -392,6 +420,8 @@ static void colour_line (const line_t* line, enum color* colours) {
             if (i < line->length) {
                 i++; // the closing '"'
             }
+            // a backslash as the line's last character can push i one past the end, hence the
+            // extra k < line->length. A string with no closing '"' is green to the end of the line
             for (int k = start; k < i && k < line->length; k++) {
                 colours[k] = LIGHT_GREEN;
             }
@@ -402,7 +432,8 @@ static void colour_line (const line_t* line, enum color* colours) {
                 i++;
             }
         } else if (isalpha((unsigned char)c) || c == '_') {
-            // a word: only keywords are coloured
+            // a word: only keywords are coloured. Reading the whole word first means a name like
+            // "endless" isn't half coloured as the keyword "end"
             while (i < line->length && (isalnum((unsigned char)text[i]) || text[i] == '_')) {
                 i++;
             }
@@ -450,9 +481,11 @@ static void draw_title_bar (void) {
     char title[COLS + 1];
     sfmt(title, sizeof(title), " %s%s%s", folder, file_name, modified ? " *" : "");
 
+    // + 1, as people count lines and columns from 1, while the cursor counts from 0
     char position[24];
     sfmt(position, sizeof(position), "Line %d, Col %d ", cursor_line + 1, cursor_column + 1);
 
+    // black on light grey: the bar is drawn the other way round from the text, so it stands out
     blank_row(TITLE_ROW, BLACK, BRIGHT);
     puts(0, TITLE_ROW, BLACK, BRIGHT, title);
     puts((uint8_t)(COLS - slen(position)), TITLE_ROW, BLACK, BRIGHT, position); // right aligned
@@ -461,6 +494,7 @@ static void draw_title_bar (void) {
 // the text: one screen row for each line in view
 static void draw_text (void) {
     // the colour of each character of one line. Lines longer than this just aren't coloured
+    // (it lives on the stack, so it has a fixed size rather than growing with the line)
     enum color colours[COLS + 512];
     int most_colours = (int)(sizeof(colours) / sizeof(colours[0]));
 
@@ -481,6 +515,8 @@ static void draw_text (void) {
             colour_line(line, colours);
         }
 
+        // every cell of the row is drawn, with spaces after the line's end, so nothing is left
+        // over from what was there before. column is the place in the line, x on the screen
         for (int x = 0; x < COLS; x++) {
             int column = first_column + x;
             char c = ' ';
@@ -498,6 +534,7 @@ static void draw_text (void) {
 
 // the help bar: the keys, with a message on the left when there is one
 static void draw_help_bar (void) {
+    // ^R only means something for an AerLang file, so it is only shown for one
     const char* keys;
     if (is_aerlang) {
         keys = " ^S Save   ^R Run   ^Q Quit";
@@ -516,11 +553,14 @@ static void draw_help_bar (void) {
 
 // redraw everything, then put the blinking cursor where the text cursor is
 static void draw (void) {
+    // the view first, as everything else is drawn from it
     scroll_to_cursor();
     draw_title_bar();
     draw_text();
     draw_help_bar();
 
+    // the file position minus the view's corner gives the screen position. scroll_to_cursor()
+    // made sure this lands inside the text area
     colour(BRIGHT, BLACK);
     uint8_t screen_x = (uint8_t)(cursor_column - first_column);
     uint8_t screen_y = (uint8_t)(TEXT_TOP + cursor_line - first_line);
@@ -539,12 +579,15 @@ static void run_program (void) {
         return; // the save failed (the help bar says why), so don't run an old copy
     }
 
+    // run the file just saved on the disk, with no arguments
     char path[FS_PATH_MAX + FS_NAME_MAX];
     sfmt(path, sizeof(path), "%s%s", folder, file_name);
 
     colour(BRIGHT, BLACK);
     console_clear();
     aer_run_file(path, "");
+
+    // wait, so the program's output can be read before the editor covers it up
 
     colour(DARK_GRAY, BLACK);
     prtf("\n-- press any key to go back to the editor --");
@@ -557,6 +600,7 @@ static void run_program (void) {
 
 // the arrow keys, Home / End and Page Up / Down: move the cursor
 static void move_cursor (int key) {
+    // the line the cursor was on before moving (used for Right and End)
     const line_t* line = &lines[cursor_line];
 
     switch (key) {
@@ -641,6 +685,8 @@ static void handle_key (int key) {
             move_cursor(key);
             break;
 
+        // any other key types itself, if it is a printable character. Other Ctrl keys and the
+        // KEY_ special values (F1 and so on) are ignored
         default:
             if (isprint(key)) {
                 insert_character((char)key);
@@ -651,6 +697,8 @@ static void handle_key (int key) {
 
 // open the editor on a file, and stay in it until Ctrl+Q
 void editor_open (const char* path) {
+    // the file needn't exist yet (load() starts a new one), but its folder must, or it could
+    // never be saved
     bool path_ok = fs_split_path(path, folder, sizeof(folder), file_name, sizeof(file_name))
                    && fs_dir_exists(folder);
     if (!path_ok) {
@@ -658,6 +706,7 @@ void editor_open (const char* path) {
         return;
     }
 
+    // start fresh: these are all static, so they still hold whatever the last file left
     is_aerlang = aer_is_program_name(file_name, slen(file_name));
     cursor_line = 0;
     cursor_column = 0;
@@ -693,5 +742,6 @@ void editor_open (const char* path) {
         handle_key(key);
         warned_about_quitting = false; // any other key means the next Ctrl+Q warns again
     }
+    // quitting doesn't save: anything unsaved was warned about above
     free_lines();
 }

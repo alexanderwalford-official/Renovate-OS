@@ -160,6 +160,8 @@ static const command_t* find_command (const char* name);
 
 // write a command's name in capitals followed by its arguments, e.g. "DEL <NAME>", into out
 static void command_usage (const command_t* command, char* out, size_t size) {
+    // the name, one letter at a time in capitals, stopping one short of the end of `out` so
+    // there is always room for the '\0'
     size_t i = 0;
     while (command->name[i] != '\0' && i < size - 1) {
         out[i] = (char)toupper((unsigned char)command->name[i]);
@@ -167,15 +169,17 @@ static void command_usage (const command_t* command, char* out, size_t size) {
     }
     out[i] = '\0';
 
+    // then its arguments after a space, unless it takes none (so HELP shows "LA", not "LA ")
     if (command->arguments[0] != '\0') {
         scat(out, " ", size);
         scat(out, command->arguments, size);
     }
 }
 
-// print "Usage: DEL <NAME>" for the command that is running, plus an optional hint after it
-// (hint may be NULL). Every command uses this when it was typed without what it needs
+// print the running command's usage line, like "Usage: DEL <NAME>", plus an optional hint
+// after it (hint may be NULL). Every command uses this when it was typed without what it needs
 static void show_usage (const char* hint) {
+    // only set while HandleInput() is running a command, so there is nothing to say outside one
     if (running_command == NULL) {
         return;
     }
@@ -205,7 +209,8 @@ static void ask_secret (const char* question, char* answer, int size) {
     GetSecret(answer, size);
 }
 
-// ask "(y/n)" and wait for one key. Prints the answer so it stays on the screen
+// ask "(y/n)" and wait for one key. Prints the answer so it stays on the screen.
+// Only y or Y means yes: any other key is a no, the safe answer for "delete everything?"
 static bool ask_yes_no (void) {
     int key = getk();
     bool yes = key == 'y' || key == 'Y';
@@ -362,6 +367,8 @@ static void read_encrypted_file (const char* path) {
     }
     print_text_block((char*)contents, length);
 
+    // `contents` is the decrypted text, so it is wiped too: free() only hands the memory back,
+    // it doesn't clear it, and the next thing to use that memory could find the secret there
     wipe(contents, length);
     free(contents);
 }
@@ -373,6 +380,7 @@ static void cli_encrypt (char* arguments) {
         return;
     }
 
+    // check the file is there before asking for a password, so nobody types one for nothing
     char folder[FS_PATH_MAX];
     char name[FS_NAME_MAX];
     bool found = fs_split_path(arguments, folder, sizeof(folder), name, sizeof(name))
@@ -381,11 +389,13 @@ static void cli_encrypt (char* arguments) {
         explain_say(PROBLEM_NOT_FOUND, arguments, "File not found: %s", arguments);
         return;
     }
+    // locking it a second time would mean two passwords to get it back, so that is refused
     if (fcrypt_file_is_encrypted(arguments)) {
         prtf("%s is already encrypted.\n", arguments);
         return;
     }
 
+    // the password twice: a typing mistake here would lock the file with a password nobody knows
     char password[CLI_PASSWORD_MAX];
     char again[CLI_PASSWORD_MAX];
     ask_secret("Password: ", password, sizeof(password));
@@ -406,11 +416,13 @@ static void cli_encrypt (char* arguments) {
         }
     }
 
+    // whatever happened, clear both copies of the password out of memory
     wipe(password, sizeof(password));
     wipe(again, sizeof(again));
 }
 
-// DEC <FILE>: turn an encrypted file back into a normal one
+// DEC <FILE>: turn an encrypted file back into a normal one. It asks for the password once:
+// a wrong one changes nothing, the file just stays encrypted
 static void cli_decrypt (char* arguments) {
     if (arguments[0] == '\0') {
         show_usage(NULL);
@@ -446,7 +458,10 @@ static void cli_decrypt (char* arguments) {
 // ("some text here", with its spaces kept). The line is cut in place. *rest is "" if there was
 // nothing after the first word
 static char* split_first_word (char* line, char** rest) {
+    // static, so the "" that *rest points at is still there after this function returns
+    // (a plain local would be gone). Commands may write into *rest, so it isn't a literal
     static char nothing[1] = "";
+    // split into at most 2 pieces: the first space cuts the line, any later ones stay in rest
     char* words[2] = { line, NULL };
     int word_count = split(line, ' ', words, 2);
 
@@ -487,6 +502,7 @@ static void cli_read_file (char* arguments) {
         return;
     }
 
+    // an encrypted file read as it is would just be scrambled bytes, so it gets its password
     if (fcrypt_file_is_encrypted(arguments)) {
         read_encrypted_file(arguments);
         return;
@@ -599,13 +615,14 @@ static void cli_make_directory (char* arguments) {
 
 // ---- DEL ----------------------------------------------------------------------------------------
 
-// fs_empty_dir() calls this after each file it deletes, to move DEL's progress bar along.
-// `context` is whatever DEL handed to fs_empty_dir: here, a delete_progress_t
+// what DEL keeps while it empties a folder: its progress bar, and how many files have gone
 typedef struct {
     ui_progress_t bar;
     uint32_t files_done;
 } delete_progress_t;
 
+// fs_empty_dir() calls this after each file it deletes, to move DEL's progress bar along.
+// `context` is whatever DEL handed to fs_empty_dir: here, a delete_progress_t
 static void delete_progress_step (const char* name, void* context) {
     delete_progress_t* progress = context;
     progress->files_done++;
@@ -647,10 +664,14 @@ static void delete_folder (const char* path) {
         prtf("The top folder, /, can't be deleted.\n");
         return;
     }
+    // /src/ holds AerOS's own source code, built in rather than kept on the disk, so it can
+    // only be read
     if (source_in(path)) {
         explain_say_fs(FS_ERR_READ_ONLY, path, "Can't delete %s", path);
         return;
     }
+    // both paths end in '/', so if the current folder starts with the whole of `path` it is
+    // that folder or somewhere inside it ("/home/" and "/home/alex/" both start "/home/")
     bool standing_in_it = strncmp(cd, path, slen(path)) == 0;
     if (standing_in_it) {
         explain_say(PROBLEM_IN_USE, path, "Can't delete %s: you are in it (%s somewhere else first).", path,
@@ -665,10 +686,12 @@ static void delete_folder (const char* path) {
     int entry_count = fs_list(path, ignore_entry, NULL);
     ui_busy_end();
 
+    // a negative count means the folder couldn't be read: say 0 rather than print "-1 file(s)"
     if (file_count < 0) {
         file_count = 0;
     }
 
+    // something inside: ask first, then empty it with a progress bar
     if (entry_count > 0) {
         prtf("%s has %d file(s) in it. Delete it and everything in it? (y/n) ", path, file_count);
         if (!ask_yes_no()) {
@@ -676,6 +699,7 @@ static void delete_folder (const char* path) {
             return;
         }
 
+        // a bar out of 0 makes no sense (only empty sub folders inside), so it is out of 1
         delete_progress_t progress = { { 0, 0, 0 }, 0 };
         uint32_t bar_total = file_count > 0 ? (uint32_t)file_count : 1;
         bool zero_files_first = false; // a normal delete, not the secure wipe
@@ -683,6 +707,7 @@ static void delete_folder (const char* path) {
         int deleted = fs_empty_dir(path, zero_files_first, delete_progress_step, &progress);
         ui_progress_end(&progress.bar);
 
+        // fs_empty_dir gives back how many files it deleted, or a negative number on a problem
         if (deleted < 0) {
             deleted = 0;
         }
@@ -706,6 +731,7 @@ static void cli_delete (char* arguments) {
         return;
     }
 
+    // a file? (if a file and a folder share a name, the file goes first)
     char folder[FS_PATH_MAX];
     char name[FS_NAME_MAX];
     bool is_file = fs_split_path(arguments, folder, sizeof(folder), name, sizeof(name))
@@ -715,6 +741,7 @@ static void cli_delete (char* arguments) {
         return;
     }
 
+    // a folder? fs_resolve_dir gives its full path, ending in '/'
     char path[FS_PATH_MAX];
     bool is_folder = fs_resolve_dir(arguments, path, sizeof(path)) && fs_dir_exists(path);
     if (is_folder) {
@@ -738,6 +765,8 @@ static void readable_time (const char* saved, char* out, size_t size) {
     scpy(out, saved, size);
     char* dashes = strstr(out, "--");
     if (dashes != NULL) {
+        // the first '-' becomes the space, and everything after the second one moves back a
+        // place over it (the +1 brings the '\0' along). memmove, not memcpy: the two overlap
         dashes[0] = ' ';
         memmove(dashes + 1, dashes + 2, slen(dashes + 2) + 1);
     }
@@ -746,6 +775,7 @@ static void readable_time (const char* saved, char* out, size_t size) {
 // VERS [FILE]: a file's old versions, newest first. On its own: every file in your home folder
 // that has any
 static void cli_versions (char* arguments) {
+    // no file given: every file in your home folder that has old versions, one line each
     if (arguments[0] == '\0') {
         char home[FS_PATH_MAX];
         if (!auth_home(auth_user, home, sizeof(home))) {
@@ -760,6 +790,7 @@ static void cli_versions (char* arguments) {
         return;
     }
 
+    // one file: fill `list` with its versions, newest (number 1) first
     char folder[FS_PATH_MAX];
     char name[FS_NAME_MAX];
     if (!fs_split_path(arguments, folder, sizeof(folder), name, sizeof(name))) {
@@ -773,12 +804,14 @@ static void cli_versions (char* arguments) {
         return;
     }
 
+    // a line for each, as "notes.txt@2" so it can be typed straight after RD
     prtf("Versions of %s%s, newest first:\n", folder, name);
     for (int i = 0; i < count; i++) {
         char when[20];
         readable_time(list[i].saved, when, sizeof(when));
         prtf("  %s@%-3d  %s  %8u bytes\n", name, list[i].number, when, list[i].size);
     }
+    // the versions outlive the file itself, so a deleted file can still be listed and brought back
     if (!fs_file_exists(folder, name)) {
         prtf("%s was deleted: %s %s brings it back.\n", name, command_name(cli_undo), arguments);
     }
@@ -789,6 +822,8 @@ static void cli_versions (char* arguments) {
 // UNDO <FILE> [N]: bring back version N of a file (1, the newest, without N). What it replaces
 // is kept as a version first, so another UNDO puts it back
 static void cli_undo (char* arguments) {
+    // "notes.txt 2" -> the file and the version number, 1 (the newest) when there isn't one.
+    // Something that isn't a number gives 0, which the check below turns away
     char* number_text;
     char* file = split_first_word(arguments, &number_text);
     int number = number_text[0] != '\0' ? atoi(number_text) : 1;
@@ -812,6 +847,7 @@ static void cli_undo (char* arguments) {
         }
         return;
     }
+    // both looked at now, before versions_restore changes them. Version 1 is list[0]
     bool was_there = fs_file_exists(folder, name);
     char when[20];
     readable_time(list[number - 1].saved, when, sizeof(when));
@@ -822,6 +858,7 @@ static void cli_undo (char* arguments) {
         return;
     }
     prtf("%s is back as it was at %s.\n", file, when);
+    // a file that had been deleted replaced nothing, so there is nothing to mention
     if (was_there) {
         prtf("(What it replaced is %s@1 now, %s %s puts that back.)\n", file, command_name(cli_undo), file);
     }
@@ -970,11 +1007,15 @@ static bool save_resolution (uint32_t width, uint32_t height) {
         return false; // nowhere to save it
     }
 
+    // 1024 bytes for GRUB, plus one for the '\0' the file functions need to find the end.
+    // "x32" asks for 32 bits per pixel. sfmt returns how much it wrote, and the '#'s fill
+    // everything from there up to byte 1024
     char block[1025];
     int used = sfmt(block, sizeof(block), "# GRUB Environment Block\naeros_mode=%ux%ux32\n", width, height);
     memset(block + used, '#', (size_t)(1024 - used));
     block[1024] = '\0';
 
+    // replace the whole file (append is false) if it is there already, or make it
     int result;
     if (fs_file_exists("/", "grubenv")) {
         result = fs_write_f("/", "grubenv", block, false);
@@ -986,13 +1027,15 @@ static bool save_resolution (uint32_t width, uint32_t height) {
 
 // read "1280x720" into width and height, false if it isn't a size AerOS can use
 static bool parse_resolution (const char* text, long* width, long* height) {
+    // strtol reads a number and sets `end` to the first character after it: here, the 'x'
     char* end;
     *width = strtol(text, &end, 10);
-    *height = 0;
+    *height = 0; // stays 0 without an 'x', so "1280" on its own fails the size check below
     if (*end == 'x' || *end == 'X') {
         *height = strtol(end + 1, &end, 10);
     }
 
+    // turned away: anything after the size ("1280x720p"), and sizes too small or too big to use
     bool nothing_after = *end == '\0';
     bool big_enough = *width >= 640 && *height >= 400;
     bool small_enough = *width <= 4096 && *height <= 4096;
@@ -1027,10 +1070,13 @@ static void cli_resolution (char* arguments) {
     bool changed = bga_set_mode((uint32_t)width, (uint32_t)height);
     bool saved = save_resolution((uint32_t)width, (uint32_t)height);
 
+    // ask the screen again rather than trust what was asked for, so the message says what it
+    // really is
     if (changed) {
         vga_framebuffer_info(&screen);
         prtf("The screen is now %ux%u.\n", screen.width, screen.height);
     }
+    // then say which of the two worked
     if (saved) {
         prtf("Saved: AerOS will start at %ldx%ld from now on.\n", width, height);
     } else if (changed) {
@@ -1076,6 +1122,8 @@ static bool play_should_stop (void) {
         play_status.last_drawn_ms = 0;
     }
 
+    // this is called far more often than the line needs drawing, and drawing it every time
+    // would take time away from the sound. 0 means it hasn't been drawn yet
     bool time_to_redraw = play_status.last_drawn_ms == 0 || now - play_status.last_drawn_ms >= 100;
     if (time_to_redraw) {
         play_status.last_drawn_ms = now;
@@ -1093,6 +1141,8 @@ static bool play_should_stop (void) {
     if (kb_take_break()) {
         return true; // Ctrl+C
     }
+    // only take a key if one is waiting: getk() would wait for one, and the sound with it.
+    // Keys other than Esc are taken and thrown away
     return kb_haschar() && getk() == KEY_ESCAPE;
 }
 
@@ -1114,6 +1164,8 @@ static void cli_play (char* arguments) {
         return;
     }
 
+    // a sound: get the status line ready for play_should_stop(), and turn the "Reading"
+    // spinner until the sound card starts. sound_play_file only comes back once it has finished
     play_status.file = arguments;
     play_status.playing = false;
 
@@ -1149,6 +1201,7 @@ static void show_network (void) {
         explain_say(PROBLEM_NO_NETWORK, NULL, "There is no network card AerOS can use.");
         return;
     }
+    // 16 characters is room for the longest address, "255.255.255.255", and its '\0'
     char address[16], netmask[16], gateway[16], dns[16];
     net_format_address(status.address, address);
     net_format_address(status.netmask, netmask);
@@ -1164,6 +1217,8 @@ static void show_network (void) {
     prtf("Messages:     %u sent, %u received, all sealed\n", status.sent, status.received);
     prtf("Kept out:     %u packet(s) no rule allows, %u with the wrong password\n",
          status.blocked, status.rejected);
+    // the last computer the firewall turned away, if any. A port of 0 means it wasn't a UDP
+    // message (a ping, say), so there is no port to show
     if (status.last_blocked != 0) {
         char from[16];
         net_format_address(status.last_blocked, from);
@@ -1178,17 +1233,22 @@ static void show_network (void) {
 // NET IP <ADDRESS>[/BITS] <GATEWAY> <DNS>: set AerOS's address. There is no DHCP: asking the
 // network for an address would mean sending something before anything is allowed
 static void set_network_address (char* arguments) {
+    // room for 4 pieces though only 3 are wanted: anything extra ends up in a 4th, so
+    // count comes out as 4 and the line is turned away rather than quietly cut short
     char* words[4] = { 0 };
     int count = split(arguments, ' ', words, 4);
 
-    // "10.0.2.15/24": the address, and how many of its bits are the network's part
+    // "10.0.2.15/24": the address, and how many of its bits are the network's part.
+    // Without a "/", 24 (a netmask of 255.255.255.0) is the usual choice
     uint32_t address, gateway, dns;
     uint32_t bits = 24;
     char* slash = count > 0 ? strchr(words[0], '/') : NULL;
     if (slash != NULL) {
-        *slash = '\0';
+        *slash = '\0'; // cut the "/24" off, so words[0] is just the address
         bits = (uint32_t)atoi(slash + 1);
     }
+    // bits from 1 to 30: 0 would mean shifting by 32 below, which C doesn't allow, and 31 or 32
+    // leave no addresses for a gateway and the other computers
     bool good = count == 3 && bits >= 1 && bits <= 30
                 && net_parse_address(words[0], &address)
                 && net_parse_address(trim(words[1]), &gateway)
@@ -1197,6 +1257,7 @@ static void set_network_address (char* arguments) {
         show_usage("NET IP 10.0.2.15/24 10.0.2.2 10.0.2.3: address, gateway, DNS server");
         return;
     }
+    // `bits` ones from the left, then zeros: 24 gives 0xFFFFFF00, 255.255.255.0
     uint32_t netmask = 0xFFFFFFFFu << (32 - bits);
     net_set_address(address, netmask, gateway, dns);
     prtf("AerOS is %s now (kept in /acc/network).\n", words[0]);
@@ -1245,6 +1306,8 @@ static void allow_computer (char* arguments) {
         return;
     }
 
+    // an address like 10.0.2.2 is used as it is, and the rule has no name. Anything else is
+    // taken to be a name, looked up, and kept with the rule so FW can show it
     uint32_t address;
     char name[FW_NAME_MAX] = "";
     if (!net_parse_address(host, &address)) {
@@ -1274,10 +1337,13 @@ static void allow_computer (char* arguments) {
     bool same = scmp(password, again) == 0;
     bool long_enough = slen(password) >= 8;
     if (same && long_enough) {
+        // the rule keeps a key made from the password, never the password itself. Making it
+        // is slow on purpose, so guessing passwords is slow too
         uint8_t key[NETSEAL_KEY_SIZE];
         ui_busy_begin("Making the key");
         netseal_key(password, key);
         ui_busy_end();
+        // fw_allow keeps its own copy of the key, so this one can be wiped below
         if (fw_allow(address, (uint16_t)port, name, key)) {
             char allowed[16];
             net_format_address(address, allowed);
@@ -1316,6 +1382,7 @@ static void cli_firewall (char* arguments) {
 
 // MSG <ADDRESS OR NAME> <PORT> <TEXT>: send a sealed message to a computer the firewall allows
 static void cli_message (char* arguments) {
+    // two splits: "10.0.2.2 5000 hello there" -> "10.0.2.2", then "5000" and "hello there"
     char* rest;
     char* host = split_first_word(arguments, &rest);
     char* text;
@@ -1325,6 +1392,8 @@ static void cli_message (char* arguments) {
         show_usage("e.g. MSG 10.0.2.2 5000 hello");
         return;
     }
+    // the firewall decides where it goes: an address it has a rule for, or a name a rule was
+    // made with (names are never looked up here, see FW ALLOW)
     uint32_t address;
     if (!fw_resolve(host, (uint16_t)port, &address)) {
         explain_say(PROBLEM_BLOCKED, host, "Can't send to %s: the firewall blocks port %d", host, port);
@@ -1355,6 +1424,8 @@ static void cli_listen (char* arguments) {
     }
     prtf("Waiting for messages on port %d (Esc stops)...\n", port);
     for (;;) {
+        // wait a tenth of a second at most for a message (-1 if none came), so Esc is checked
+        // ten times a second however quiet the network is
         char message[NET_MESSAGE_MAX + 1];
         uint32_t from;
         if (net_receive((uint16_t)port, 100, message, sizeof(message), &from) >= 0) {
@@ -1364,8 +1435,9 @@ static void cli_listen (char* arguments) {
             prtf("[%s] ", sender);
             colour(BRIGHT, BLACK);
             prtf("%s\n", message);
-            wipe(message, sizeof(message));
+            wipe(message, sizeof(message)); // it was sealed for a reason, so don't leave it in memory
         }
+        // only read a key if one is waiting, or getk() would stop and wait for one
         if (kb_haschar() && getk() == KEY_ESCAPE) {
             break;
         }
@@ -1384,6 +1456,8 @@ static void cli_realtime (char* arguments) {
         prtf("RT mode is off. To try it, press X on the splash screen as AerOS starts, then 6.\n");
         return;
     }
+    // RT STRESS: rt_add_stress refuses if the tasks there are already use too much of the
+    // processor for one more to fit
     if (strcasecmp(arguments, "stress") == 0) {
         int result = rt_add_stress();
         prtf(result == RT_OK ? "Added \"stress\": it overruns its budget every time, watch the watchdog stop it.\n"
@@ -1395,6 +1469,8 @@ static void cli_realtime (char* arguments) {
         return;
     }
 
+    // RT on its own: a table of the tasks. EVERY is how often each runs, BUDGET the longest it
+    // is allowed, WORST the longest it has really taken, OVER how often it went past its budget
     prtf("Real-time tasks, most urgent first:\n");
     prtf("  %-10s %7s %8s %8s %8s %6s\n", "TASK", "EVERY", "BUDGET", "WORST", "RUNS", "OVER");
     for (int i = 0; i < rt_count(); i++) {
@@ -1402,6 +1478,7 @@ static void cli_realtime (char* arguments) {
         prtf("  %-10s %5ums %6uus %6uus %8u %6u%s\n", task->name, task->period_ms, task->budget_us,
              task->worst_us, task->runs, task->overruns, task->stopped ? "  stopped by the watchdog" : "");
     }
+    // both in tenths of a percent (whole numbers, no floating point), so 123 is printed as 12.3%
     uint32_t load = rt_load();
     uint32_t limit = rt_limit(rt_count());
     prtf("They need %u.%u%% of the processor, of the %u.%u%% that keeps every deadline safe.\n",
@@ -1484,6 +1561,8 @@ static void cli_why (char* arguments) {
         explain_last();
         return;
     }
+    // turn what was typed into a C function's name ("del" -> "cli_delete"), then make sure
+    // that function really is in the source before saying anything about it
     char function[64];
     const command_t* command;
     code_behind(arguments, function, sizeof(function), &command);
@@ -1495,7 +1574,9 @@ static void cli_why (char* arguments) {
         return;
     }
 
-    // say what the name is first, then let explain_function() take over
+    // say what the name is first, then let explain_function() take over. Each line here
+    // stops part way, "The command runs " or "It is ", for explain_function to finish with
+    // the function and where it is. A plain C function needs no introduction
     if (command != NULL) {
         char usage[64];
         command_usage(command, usage, sizeof(usage));
@@ -1520,6 +1601,7 @@ static void cli_src (char* arguments) {
         show_usage("e.g. SRC DEL, SRC FS_LIST or SRC FAT.C");
         return;
     }
+    // first as a function: explain_show_code prints it and returns true if there is one
     char function[64];
     const command_t* command;
     code_behind(arguments, function, sizeof(function), &command);
@@ -1528,7 +1610,8 @@ static void cli_src (char* arguments) {
         return;
     }
 
-    // not a function: a file?
+    // not a function: a file? The source files' paths start below /src/ ("sys/fat.c"), so the
+    // folder goes on the front before the reader is given it
     const source_file_t* file = source_search(arguments);
     if (file != NULL) {
         char path[FS_PATH_MAX];
@@ -1554,6 +1637,7 @@ static void cli_permissions (char* arguments) {
     char* rest;
     char* word = split_first_word(arguments, &rest);
 
+    // PERM on its own: the list, numbered for PERM DEL
     if (word[0] == '\0') {
         prtf("Programs you have always allowed:\n");
         if (perm_each(print_permission, NULL) == 0) {
@@ -1566,6 +1650,9 @@ static void cli_permissions (char* arguments) {
         return;
     }
 
+    // PERM DEL <N> or PERM DEL ALL. perm_forget(0) forgets every answer, but atoi also gives
+    // 0 for anything that isn't a number, so "PERM DEL x" is turned away below rather than
+    // forgetting everything
     bool all = strcasecmp(rest, "all") == 0;
     int number = all ? 0 : atoi(rest);
     if (strcasecmp(word, "del") != 0 || (!all && number < 1)) {
@@ -1613,9 +1700,12 @@ static bool program_exists (const char* file) {
     if (!fs_split_path(file, folder, sizeof(folder), name, sizeof(name))) {
         return false;
     }
+    // the current folder (or wherever a path points) comes first...
     if (fs_file_exists(folder, name)) {
         return true;
     }
+    // ...then the app folders, in order, but only for a plain name: a path says exactly
+    // where to look already
     bool plain_name = strchr(file, '/') == NULL; // "hello", not "games/hello"
     for (int f = 0; plain_name && aer_app_folders[f] != NULL; f++) {
         if (fs_file_exists(aer_app_folders[f], name)) {
@@ -1691,6 +1781,8 @@ static void cli_queue (char* arguments) {
         return;
     }
 
+    // the line the queued process will run: "s:..." is queued as it is, anything else has to
+    // be a program that exists now, so a typing mistake is caught here rather than during GO
     char line[P_INST_MAX];
     bool is_message = strncmp(arguments, "s:", 2) == 0;
     if (is_message) {
@@ -1704,6 +1796,7 @@ static void cli_queue (char* arguments) {
         }
     }
 
+    // queued programs wait on the process stack, so a full stack means no room in the queue
     int queued = p_queue_add(line);
     if (queued < 0) {
         prtf("The process stack is full.\n");
@@ -1733,6 +1826,8 @@ static void cli_go (char* arguments) {
     }
 
     aer_take_stopped(); // forget a Ctrl+C from before GO started
+    // p_queue_run returns how many it ran. If it stopped early, the ones it didn't get to are
+    // still queued, so another GO carries on from there
     int ran = p_queue_run(announce_queued_program, queue_should_stop);
     int left = p_queue_count();
 
@@ -1764,6 +1859,8 @@ static bool ask_new_password (char* password, int size) {
     ask_secret("New password: ", password, size);
     ask_secret("Again:        ", again, sizeof(again));
 
+    // `again` is only needed for the comparison, so it is wiped straight away. `password`
+    // is the caller's, and the caller wipes it once it has been used
     bool empty = password[0] == '\0';
     bool match = scmp(password, again) == 0;
     wipe(again, sizeof(again));
@@ -1820,7 +1917,8 @@ static void cli_users (char* arguments) {
     }
 }
 
-// make a new account: <NAME>, then a password asked for twice
+// MKU <NAME>: make a new account, with a home folder of its own. Its password is asked for
+// twice, to catch typing mistakes
 static void cli_add_user (char* arguments) {
     if (!accounts_available()) {
         return;
@@ -1860,13 +1958,13 @@ static void cli_add_user (char* arguments) {
     wipe(password, sizeof(password));
 }
 
-// delete someone else's account (your own password is asked for first). Their home folder
-// is left as it is
+// DELU <NAME>: delete someone else's account (your own password is asked for first, so nobody
+// can do it at a computer you left logged in). Their home folder is left as it is
 static void cli_delete_user (char* arguments) {
     if (!accounts_available()) {
         return;
     }
-    char* name = strlwr(arguments);
+    char* name = strlwr(arguments); // names are kept in lower case, so DELU ALEX finds alex
     if (name[0] == '\0') {
         show_usage(NULL);
         return;
@@ -1890,7 +1988,7 @@ static void cli_delete_user (char* arguments) {
     }
 }
 
-// change your own password (the old one is asked for first)
+// PW: change your own password. The old one is asked for first, then the new one twice
 static void cli_password (char* arguments) {
     (void)arguments;
     if (!accounts_available() || !confirm_own_password()) {
@@ -1912,9 +2010,10 @@ static void cli_password (char* arguments) {
     wipe(password, sizeof(password));
 }
 
-// log out, back to the login screen
+// OUT: log out, back to the login screen
 static void cli_logout (char* arguments) {
     (void)arguments;
+    // without a disk there is no login screen to go back to: everyone is guest
     if (!accounts_available()) {
         return;
     }
@@ -2012,9 +2111,11 @@ static const char* command_name (void (*run)(char* arguments)) {
     static char names[4][16];
     static int next = 0;
     const command_t* command = command_running(run);
+    // only if the function was taken out of the table: a "?" in a message beats a crash
     if (command == NULL) {
         return "?";
     }
+    // take the next buffer, going back to the first after the fourth
     char* name = names[next];
     next = (next + 1) % 4;
     scpy(name, command->name, sizeof(names[0]));
@@ -2043,8 +2144,10 @@ static void cli_help (char* arguments) {
     for (size_t i = 0; i < command_count; i++) {
         char usage[64];
         command_usage(&commands[i], usage, sizeof(usage));
+        // "%-*s" pads the usage out to HELP_COLUMN characters, so the descriptions line up
         prtf("%-*s - %s\n", HELP_COLUMN, usage, commands[i].description);
     }
+    // apps aren't in the table, so they get a line of their own at the end
     prtf("%-*s - %s\n", HELP_COLUMN, "<APP> [ARGS]", "RUN AN AERLANG PROGRAM, e.g. HELLO (/bin/hello.aer)");
 }
 
@@ -2092,12 +2195,14 @@ static struct {
 // add a name that fits what was typed (unless it is already there: an app in /bin/ and a
 // program here can share a name)
 static void add_completion (const char* name, size_t length) {
+    // the list is full, or the name wouldn't fit in it: quietly leave it out
     if (completion.count == COMPLETE_MAX || length > FS_NAME_MAX) {
         return;
     }
     if (strncasecmp(name, completion.typed, completion.typed_length) != 0) {
         return; // doesn't start with what was typed
     }
+    // already in the list?
     for (int i = 0; i < completion.count; i++) {
         bool same = slen(completion.names[i]) == length
                     && strncasecmp(completion.names[i], name, length) == 0;
@@ -2105,6 +2210,8 @@ static void add_completion (const char* name, size_t length) {
             return;
         }
     }
+    // memcpy and our own '\0', rather than scpy, because `name` may carry on past `length`
+    // (a program's ".aer" is left off that way, see add_completion_program)
     memcpy(completion.names[completion.count], name, length);
     completion.names[completion.count][length] = '\0';
     completion.count++;
@@ -2118,6 +2225,7 @@ static void add_completion_entry (const char* name, bool is_dir, uint32_t size, 
     if (completion.folders_only && !is_dir) {
         return;
     }
+    // room for the longest name, a '/' and the '\0'
     char full_name[FS_NAME_MAX + 2];
     sfmt(full_name, sizeof(full_name), "%s%s", name, is_dir ? "/" : "");
     add_completion(full_name, slen(full_name));
@@ -2130,7 +2238,7 @@ static void add_completion_program (const char* name, bool is_dir, uint32_t size
     (void)context;
     size_t length = slen(name);
     if (!is_dir && aer_is_program_name(name, length)) {
-        add_completion(name, length - 4);
+        add_completion(name, length - 4); // 4 is the length of ".aer"
     }
 }
 
@@ -2140,6 +2248,8 @@ static void gather_commands (const char* word) {
     completion.typed = word;
     completion.typed_length = slen(word);
 
+    // add_completion skips anything that doesn't start with `word`, so everything can be
+    // offered to it and only the names that fit are kept
     for (size_t i = 0; i < command_count; i++) {
         add_completion(commands[i].name, slen(commands[i].name));
     }
@@ -2162,14 +2272,14 @@ static void gather_files (const char* word, const char* command) {
         char typed_folder[FS_PATH_MAX];
         size_t folder_length = (size_t)(last_slash - word) + 1;
         if (folder_length >= sizeof(typed_folder)) {
-            return;
+            return; // too long to be a folder's path, so nothing can fit
         }
         memcpy(typed_folder, word, folder_length);
         typed_folder[folder_length] = '\0';
         if (!fs_resolve_dir(typed_folder, folder, sizeof(folder))) {
             return; // no such folder
         }
-        completion.typed = last_slash + 1;
+        completion.typed = last_slash + 1; // only the part after the '/' is matched against names
     } else {
         scpy(folder, cd, sizeof(folder));
         completion.typed = word;
@@ -2190,6 +2300,9 @@ static void gather_files (const char* word, const char* command) {
 // how many characters all the gathered names have in common (they all start with what was
 // typed, so at least that many)
 static size_t shared_length (void) {
+    // start with the whole of the first name, and cut it down to what each other name agrees
+    // with, letter by letter (upper or lower case alike). The typed part is skipped, as every
+    // name already matches it
     size_t shared = slen(completion.names[0]);
     for (int i = 1; i < completion.count; i++) {
         const char* name = completion.names[i];
@@ -2205,6 +2318,8 @@ static size_t shared_length (void) {
 
 // list the gathered names in columns under the line, then print the prompt and the line again
 static void list_completions (const char* line) {
+    // every column is as wide as the longest name plus 2 spaces, and as many columns as fit
+    // across the screen go on each row (at least one, however long the name)
     size_t widest = 0;
     for (int i = 0; i < completion.count; i++) {
         size_t width = slen(completion.names[i]);
@@ -2218,6 +2333,8 @@ static void list_completions (const char* line) {
         per_row = 1;
     }
 
+    // down a line from what was typed, then the names. The last name in a row (or of all)
+    // ends the line instead of being padded
     prtf("\n");
     for (int i = 0; i < completion.count; i++) {
         bool end_of_row = (i + 1) % per_row == 0 || i + 1 == completion.count;
@@ -2227,12 +2344,15 @@ static void list_completions (const char* line) {
             prtf("%-*s", column_width, completion.names[i]); // padded out to the column width
         }
     }
+    // the cursor is under the list now, so print the prompt and the line again there, for
+    // typing to carry on
     cli_prompt();
     prtf("%s", line);
 }
 
 // add characters to the end of the line, showing them as they go. Returns the new length
 static int type_into_line (char* line, int length, int size, const char* add, size_t add_length) {
+    // stop one short of `size`, so the line can't overflow and there is room for its '\0'
     for (size_t i = 0; i < add_length && length < size - 1; i++) {
         line[length] = add[i];
         length++;
@@ -2260,6 +2380,7 @@ static int cli_complete (char* line, int length, int size) {
         }
     }
 
+    // start each press of Tab with an empty list, then gather the names that fit
     completion.count = 0;
     completion.folders_only = false;
 
@@ -2284,6 +2405,7 @@ static int cli_complete (char* line, int length, int size) {
         return length; // nothing starts like that
     }
 
+    // can anything be filled in? Yes if the names agree on more than what was typed
     size_t shared = shared_length();
     bool can_add_more = shared > completion.typed_length;
 
@@ -2321,15 +2443,19 @@ static void run_code (const char* first_line) {
     char code[CODE_MAX];
     scpy(code, first_line, sizeof(code));
 
+    // aer_open_blocks counts the blocks opened ("do", "then"...) that have no "end" yet
     while (aer_open_blocks(code) > 0) {
         colour(DARK_GRAY, BLACK);
         prtf("   ... ");
         colour(BRIGHT, BLACK);
+        // NULL: no Tab completion here, it only knows about commands and files
         char more[CLI_INPUT_MAX];
         GetLine(more, sizeof(more), NULL);
         if (trim(more)[0] == '\0') {
             break;
         }
+        // each line joins the code on a line of its own, as it was typed. scat stops at
+        // CODE_MAX, so a very long block is cut short rather than running past the end
         scat(code, "\n", sizeof(code));
         scat(code, more, sizeof(code));
     }
@@ -2346,6 +2472,8 @@ typedef struct {
     int distance;           // how far best is from typed (see sdist)
 } suggestion_t;
 
+// try one more name: if it is closer to what was typed than the best so far, it becomes the
+// best. A tie keeps the earlier one, so commands (tried first) win over apps
 static void consider (suggestion_t* suggestion, const char* name, bool is_command) {
     int distance = sdist(name, suggestion->typed);
     if (distance < suggestion->distance) {
@@ -2355,10 +2483,11 @@ static void consider (suggestion_t* suggestion, const char* name, bool is_comman
     }
 }
 
-// fs_list() calls this for each file in /bin/: an app is a name to consider too, without its
-// ".aer" ("hello.aer" -> "hello")
+// fs_list() calls this for each file in the app folders (/bin/, /bin/games/): an app is a name
+// to consider too, without its ".aer" ("hello.aer" -> "hello"). `context` is the suggestion_t
 static void consider_app (const char* name, bool is_dir, uint32_t size, void* context) {
     (void)size;
+    // only programs, and only ones whose name (less ".aer") fits in `app` with its '\0'
     size_t length = slen(name);
     if (is_dir || !aer_is_program_name(name, length) || length - 4 >= FS_NAME_MAX) {
         return;
@@ -2373,6 +2502,8 @@ static void consider_app (const char* name, bool is_dir, uint32_t size, void* co
 // is most like, if one is close (one letter out for a short name of 3 letters or fewer, two
 // for a longer one). "dle" -> "Did you mean DEL?"
 static void unknown_command (const char* word) {
+    // the best so far starts just out of reach (allowed + 1), so only a name within `allowed`
+    // can beat it. If none does, best stays "" and there is no suggestion
     int allowed = slen(word) <= 3 ? 1 : 2;
     suggestion_t suggestion = { word, "", false, allowed + 1 };
     for (size_t i = 0; i < command_count; i++) {
@@ -2386,6 +2517,7 @@ static void unknown_command (const char* word) {
         explain_say(PROBLEM_UNKNOWN_COMMAND, word, "Unrecognised command: %s", word);
         return;
     }
+    // commands are shown in capitals like everywhere else, apps as their files are named
     if (suggestion.best_is_command) {
         strupr(suggestion.best);
     }
@@ -2417,6 +2549,7 @@ void HandleInput (char* in) {
     // remember how many full screen clears there have been, to compare once the command is done
     unsigned int clears_before = vga_clear_count;
 
+    // try each kind in turn. running_command is set only while a command runs, for show_usage
     const command_t* command = find_command(command_name);
     if (command != NULL) {
         running_command = command;
@@ -2437,9 +2570,13 @@ void HandleInput (char* in) {
     }
 }
 
+// run a line as if it had been typed, but keep what it prints in `out` instead of showing it.
+// AerLang's cmd() uses this, so a program can run a command and look at what it said.
+// While it runs the keyboard counts as unplugged, so a command that asks a question gets no answer
 void cli_capture (const char* line, char* out, size_t size) {
     char copy[CLI_INPUT_MAX];
     scpy(copy, line, sizeof(copy)); // HandleInput cuts the line up, and `line` is the caller's
+    // from here until console_capture_end, everything printed goes into `out`
     console_capture_begin(out, size);
     HandleInput(copy);
     console_capture_end();

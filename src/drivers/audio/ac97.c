@@ -89,33 +89,43 @@ static pci_device_t card;          // where the card is on the PCI bus, for ac97
 // the descriptor list the card reads by DMA (it must be 8 byte aligned)
 static descriptor_t list[DESCRIPTORS] __attribute__((aligned(8)));
 
+// find the AC'97 card on the PCI bus and set it up, see ac97.h
 bool ac97_init (void) {
     if (ac97_ready) {
         return true; // already set up (resetting now would cut off a sound that's playing)
     }
+    // the first PCI device that calls itself a multimedia audio device
     if (!pci_find_class(PCI_CLASS_MULTIMEDIA, PCI_SUBCLASS_AUDIO, &card)) {
         return false;
     }
+    // BAR 0 is the mixer's I/O ports, BAR 1 the bus master's (the ones that move the samples)
     nam = pci_io_bar(&card, 0);
     nabm = pci_io_bar(&card, 1);
     if (nam == 0 || nabm == 0) {
         return false;
     }
+    // PCI devices start with their I/O ports and DMA switched off, so turn both on
     pci_enable_io_and_dma(&card);
 
     // take the codec out of reset and wait (up to 100ms) for it to say it's ready
+    // (0x02 = global control bit 1, "cold reset off". 0x100 = global status bit 8, "codec ready".
+    // If it never says so we carry on anyway: the worst that happens is that nothing is heard)
     outl(nabm + NABM_GLOBAL_CTRL, 0x02);
     for (int i = 0; i < 100 && !(inl(nabm + NABM_GLOBAL_STATUS) & 0x100); i++) {
         sleep_ms(1);
     }
+    // put the mixer's registers back to their defaults, whatever the BIOS left in them
     outw(nam + NAM_RESET, 0);
 
     // everything as loud as it goes without distorting, and unmuted
+    // (the volume registers hold an attenuation, how much quieter: 0 is none. In the PCM one each
+    // side has 5 bits where 8 means 0 dB, left in the high byte and right in the low one)
     outw(nam + NAM_MASTER_VOLUME, 0x0000);
     outw(nam + NAM_HEADPHONE, 0x0000);
     outw(nam + NAM_PCM_VOLUME, 0x0808);
 
-    // turn on variable sample rates if the codec has them
+    // turn on variable sample rates if the codec has them (bit 0 of both registers, see the top
+    // of the file). Without VRA the codec only ever plays 48000 Hz
     variable_rate = inw(nam + NAM_EXT_ID) & 1;
     if (variable_rate) {
         outw(nam + NAM_EXT_CONTROL, inw(nam + NAM_EXT_CONTROL) | 1);
@@ -124,12 +134,15 @@ bool ac97_init (void) {
     return true;
 }
 
+// the card's name and where it is on the PCI bus (bus:slot.function), for the boot log.
+// The text is kept in a static buffer, so it stays valid after this returns
 const char* ac97_name (void) {
     static char name[32];
     sfmt(name, sizeof(name), "AC'97 (PCI %02x:%02x.%u)", card.bus, card.slot, card.function);
     return name;
 }
 
+// ask the codec to play at hz, returning the rate it will really play at
 uint32_t ac97_set_rate (uint32_t hz) {
     // codecs handle 8000 to 48000 Hz, anything else has to be converted to 48000 by the caller
     if (hz < 8000 || hz > 48000) {
@@ -143,7 +156,8 @@ uint32_t ac97_set_rate (uint32_t hz) {
     return inw(nam + NAM_FRONT_RATE); // the codec may round it to a rate it can do
 }
 
-// reset the PCM out channel: stops it and clears its registers
+// reset the PCM out channel: stops it and clears its registers.
+// The card clears the reset bit itself once it is done, so wait (up to 100ms) for that
 static void reset_channel (void) {
     outb(nabm + NABM_PO_CONTROL, CONTROL_RESET);
     for (int i = 0; i < 100 && (inb(nabm + NABM_PO_CONTROL) & CONTROL_RESET); i++) {
@@ -153,8 +167,10 @@ static void reset_channel (void) {
 
 // point descriptor slot at piece number chunk of the sound
 static void fill (int slot, const int16_t* frames, uint32_t count, uint32_t chunk) {
+    // every chunk is CHUNK_FRAMES long except the last, which is whatever is left over
     uint32_t first = chunk * CHUNK_FRAMES;
     uint32_t length = count - first < CHUNK_FRAMES ? count - first : CHUNK_FRAMES;
+    // frames holds left and right, so frame number `first` is 2 * first samples in
     list[slot].address = (uint32_t)(uintptr_t)(frames + first * 2);
     list[slot].samples = (uint16_t)(length * 2);
     list[slot].flags = FLAG_SILENCE_IF_EMPTY;
@@ -168,6 +184,8 @@ uint32_t ac97_start (const int16_t* frames, uint32_t count) {
     }
     ac97_stream_stop(); // the card plays one thing at a time
     reset_channel();
+    // cut the sound into the biggest pieces a descriptor takes, until it is all queued or the
+    // list is full (anything past AC97_START_MAX frames is simply not played)
     uint32_t queued = 0, slots = 0;
     while (queued < count && slots < DESCRIPTORS) {
         uint32_t length = count - queued < DESCRIPTOR_MAX_FRAMES ? count - queued : DESCRIPTOR_MAX_FRAMES;
@@ -177,6 +195,8 @@ uint32_t ac97_start (const int16_t* frames, uint32_t count) {
         queued += length;
         slots++;
     }
+    // tell the card where the list is and which entry is the last, clear any old status flags,
+    // then set it running. It halts by itself after the last descriptor
     outl(nabm + NABM_PO_BDBAR, (uint32_t)(uintptr_t)list);
     outb(nabm + NABM_PO_LVI, (uint8_t)(slots - 1));
     outw(nabm + NABM_PO_STATUS, STATUS_CLEAR_ALL);
@@ -184,6 +204,7 @@ uint32_t ac97_start (const int16_t* frames, uint32_t count) {
     return queued;
 }
 
+// stop whatever the card is playing (a sound, or a stream)
 void ac97_stop (void) {
     if (ac97_ready) {
         ac97_stream_stop();
@@ -215,12 +236,16 @@ void ac97_stop (void) {
 #define STREAM_BLOCK_FRAMES 512 // stereo frames per block: about 10.7ms at 48000 Hz
 #define STREAM_AHEAD        8   // blocks kept queued after the one playing: about 85ms
 
+// one block of samples per descriptor, 2KB each (left and right, 16 bits). Static, so the card
+// can read them by DMA for as long as streaming lasts
 static int16_t stream_blocks[DESCRIPTORS][STREAM_BLOCK_FRAMES * 2] __attribute__((aligned(16)));
 static ac97_fill_fn stream_fill = NULL;
+// volatile: the timer interrupt reads it, and the program side changes it
 static volatile bool streaming = false;
 static uint8_t stream_next = 0; // the next descriptor to fill
 
-// fill one descriptor's block with the next piece of sound and make it the last valid one
+// fill one descriptor's block with the next piece of sound and make it the last valid one.
+// The descriptor is set up before LVI moves, so the card never sees it half written
 static void stream_queue (uint8_t slot) {
     stream_fill(stream_blocks[slot], STREAM_BLOCK_FRAMES);
     list[slot].address = (uint32_t)(uintptr_t)stream_blocks[slot];
@@ -229,21 +254,25 @@ static void stream_queue (uint8_t slot) {
     outb(nabm + NABM_PO_LVI, slot);
 }
 
-// how many descriptors there are from `from` up to (not including) `to`, going round the ring
+// how many descriptors there are from `from` up to (not including) `to`, going round the ring.
+// Adding DESCRIPTORS first keeps it from going negative when `to` has wrapped past 31 to 0
 static uint8_t slots_between (uint8_t from, uint8_t to) {
     return (uint8_t)((to + DESCRIPTORS - from) % DESCRIPTORS);
 }
 
+// start streaming: from now on fill is asked for each block of sound, see ac97.h
 bool ac97_stream_start (ac97_fill_fn fill) {
     if (!ac97_ready || fill == NULL) {
         return false;
     }
     streaming = false; // keep the timer's service out until everything is set up
     reset_channel();
+    // always the same rate, so every program's sound can be mixed together as it is
     ac97_set_rate(AC97_STREAM_RATE);
     stream_fill = fill;
 
-    // queue the first blocks, then start the card on them
+    // queue the first blocks, then start the card on them. stream_next is the descriptor after
+    // the last one queued, where the service carries on from
     outl(nabm + NABM_PO_BDBAR, (uint32_t)(uintptr_t)list);
     for (uint8_t slot = 0; slot < STREAM_AHEAD; slot++) {
         stream_queue(slot);
@@ -255,10 +284,12 @@ bool ac97_stream_start (ac97_fill_fn fill) {
     return true;
 }
 
+// top up the stream, called from the timer interrupt (see the streaming notes above)
 void ac97_stream_service (void) {
     if (!streaming) {
         return;
     }
+    // CIV only ever counts 0 to 31, the % is just in case a card reports more
     uint8_t playing = inb(nabm + NABM_PO_CIV) % DESCRIPTORS;
 
     // ran dry: the card played everything it had and halted. Queue some more after the block
@@ -274,13 +305,16 @@ void ac97_stream_service (void) {
         return;
     }
 
-    // keep STREAM_AHEAD blocks queued after the one playing
+    // keep STREAM_AHEAD blocks queued after the one playing. slots_between counts the playing
+    // block too, hence <=. Usually this queues one block, or none if the card hasn't moved on
     while (slots_between(playing, stream_next) <= STREAM_AHEAD) {
         stream_queue(stream_next);
         stream_next = (uint8_t)((stream_next + 1) % DESCRIPTORS);
     }
 }
 
+// stop streaming. `streaming` goes false before the reset, so a timer interrupt arriving in
+// between finds nothing to do instead of starting the card up again
 void ac97_stream_stop (void) {
     if (!streaming) {
         return;
@@ -289,10 +323,12 @@ void ac97_stream_stop (void) {
     reset_channel();
 }
 
+// whether the card is streaming right now (something else may have taken it since)
 bool ac97_streaming (void) {
     return streaming;
 }
 
+// how many frames a sound handed to the fill function now waits before it is heard
 uint32_t ac97_stream_delay (void) {
     // the blocks queued ahead of the one playing, plus about half of the one playing
     return STREAM_AHEAD * STREAM_BLOCK_FRAMES + STREAM_BLOCK_FRAMES / 2;
@@ -303,6 +339,7 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
     if (!ac97_ready || count == 0) {
         return ac97_ready;
     }
+    // how many chunks the sound needs, rounding up so a short last piece still counts
     uint32_t chunks = (count + CHUNK_FRAMES - 1) / CHUNK_FRAMES;
     ac97_stream_stop(); // the card plays one thing at a time
 
@@ -325,6 +362,8 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
     bool ok = true;
     while (!(inw(nabm + NABM_PO_STATUS) & STATUS_HALTED)) {
         uint8_t current = inb(nabm + NABM_PO_CIV) % DESCRIPTORS;
+        // catch up with every slot the card has finished since last time (more than one if we
+        // were slow to look). Once all chunks are queued the slots are just stepped past
         while (done != current) {
             if (queued < chunks) {
                 fill(done, frames, count, queued++);
@@ -333,15 +372,20 @@ bool ac97_play (const int16_t* frames, uint32_t count, bool (*should_stop)(void)
             done = (uint8_t)((done + 1) % DESCRIPTORS);
             last_progress = clkuptms();
         }
+        // the caller's way out, e.g. a key pressed to stop the sound
         if (should_stop && should_stop()) {
             break;
         }
+        // CIV hasn't moved for 2 seconds, longer than any one chunk lasts: the card is stuck,
+        // so give up rather than wait for ever
         if (clkuptms() - last_progress > STALL_MS) {
             ok = false;
             break;
         }
+        // a chunk lasts about 85ms, so looking every 5ms is far more than enough
         sleep_ms(5);
     }
+    // stops the card if we left early, and leaves the channel tidy for the next sound
     reset_channel();
     return ok;
 }

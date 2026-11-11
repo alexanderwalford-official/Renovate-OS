@@ -80,11 +80,14 @@ EMBEDDED(docs_sample_htm)
 EMBEDDED(apps_sleep_aer)
 EMBEDDED(apps_snake_aer)
 
+// every built-in file, where it goes and where its bytes are. Apps and system files (refresh
+// false) follow the record rules at the top of this file, the manual (refresh true) is simply
+// kept the same as the built-in copy
 static const struct {
     const char* dir;
     const char* name;
-    const char* start;
-    const char* end;
+    const char* start; // the first byte of the built-in copy
+    const char* end;   // one past the last byte, so end - start is its size
     bool refresh; // replace the copy on the disk when it differs from the built-in one
 } files[] = {
     FILE_ENTRY("/bin/", "hello.aer", apps_hello_aer, false),
@@ -124,9 +127,12 @@ static const struct {
 #define FILE_COUNT (sizeof(files) / sizeof(files[0]))
 
 // is the copy on the disk exactly the built-in one?
+// i = the file's place in files[], length = the size of its built-in copy
 static bool same_as_disk (unsigned int i, uint32_t length) {
     uint32_t size = 0;
     char* data = fs_read_bytes(files[i].dir, files[i].name, &size);
+    // a file that can't be read counts as different. The size is compared first, so memcmp
+    // never reads past the end of a shorter file
     bool same = data && size == length && memcmp(data, files[i].start, length) == 0;
     free(data);
     return same;
@@ -137,12 +143,15 @@ static bool same_as_disk (unsigned int i, uint32_t length) {
 #define RECORD_NAME "apps.lst"
 #define HASH_HEX (SHA256_SIZE * 2)                 // a SHA-256 written out in hex
 #define RECORD_LINE 96                             // a path, a space, the hash and a newline
+// (the hash and the space, newline and '\0' take 67 of the 96, which leaves 29 for the path)
 
 // SHA-256 of some bytes, written as 64 lowercase hex digits
 static void hash_hex (const void* data, uint32_t length, char out[HASH_HEX + 1]) {
     static const char digits[] = "0123456789abcdef";
     uint8_t hash[SHA256_SIZE];
     sha256(data, length, hash);
+    // each byte becomes two hex digits: >> 4 picks out its top 4 bits (the first digit) and
+    // & 0x0F its bottom 4 bits (the second), each a number from 0 to 15 to look up in digits
     for (int i = 0; i < SHA256_SIZE; i++) {
         out[i * 2] = digits[hash[i] >> 4];
         out[i * 2 + 1] = digits[hash[i] & 0x0F];
@@ -150,7 +159,10 @@ static void hash_hex (const void* data, uint32_t length, char out[HASH_HEX + 1])
     out[HASH_HEX] = '\0';
 }
 
-// what the copy on the disk is
+// what the copy on the disk is (what disk_copy() found)
+//   DISK_UNREADABLE  it is there but couldn't be read
+//   DISK_SAME        exactly the built-in copy
+//   DISK_DIFFERENT   anything else, and its hash has been worked out
 enum { DISK_UNREADABLE, DISK_SAME, DISK_DIFFERENT };
 
 // compare the copy on the disk with the built-in one, and hash it (into out) when it differs.
@@ -162,6 +174,7 @@ static int disk_copy (unsigned int i, uint32_t length, char out[HASH_HEX + 1]) {
         return DISK_UNREADABLE;
     }
     int what = DISK_SAME;
+    // || stops at a different size, so memcmp only runs when both are the same length
     if (size != length || memcmp(data, files[i].start, length) != 0) {
         hash_hex(data, size, out);
         what = DISK_DIFFERENT;
@@ -173,10 +186,15 @@ static int disk_copy (unsigned int i, uint32_t length, char out[HASH_HEX + 1]) {
 // look up a path's line in the record, false if it has none (or there is no record)
 static bool recorded_hash (const char* record, const char* path, char out[HASH_HEX + 1]) {
     size_t path_length = slen(path);
+    // record is NULL when there is no record at all, which the loop treats as an empty one
     const char* line = record;
     while (line && *line) {
+        // the line must start with the whole path followed by a space, so "/bin/a.aer" doesn't
+        // match a line for "/bin/a.aer2"
         if (strncmp(line, path, path_length) == 0 && line[path_length] == ' ') {
             const char* hash = line + path_length + 1;
+            // a record cut short (fewer than 64 characters left) has no proper hash, so it
+            // counts as no record, rather than reading past the end
             if (strnlen(hash, HASH_HEX) < HASH_HEX) {
                 return false;
             }
@@ -184,6 +202,7 @@ static bool recorded_hash (const char* record, const char* path, char out[HASH_H
             out[HASH_HEX] = '\0';
             return true;
         }
+        // on to the start of the next line (strchr gives NULL after the last line, which ends the loop)
         line = strchr(line, '\n');
         if (line) {
             line++;
@@ -199,22 +218,28 @@ static void install_app (unsigned int i, const char* record, char keep[HASH_HEX 
     uint32_t length = (uint32_t)(files[i].end - files[i].start);
     char path[RECORD_LINE];
     char builtin[HASH_HEX + 1], ondisk[HASH_HEX + 1], recorded[HASH_HEX + 1];
+    // the full path, the way it is written in the record ("/bin/hello.aer")
     sprintf(path, "%s%s", files[i].dir, files[i].name);
     hash_hex(files[i].start, length, builtin);
+    // start from "record nothing, nothing written", each case below changes what it needs to
     keep[0] = '\0';
     *changed = false;
 
     bool has_record = recorded_hash(record, path, recorded);
 
+    // the cases below follow the table at the top of this file
     if (!fs_file_exists(files[i].dir, files[i].name)) {
         // missing (a new disk, a new app, or one you deleted to get the built-in copy back)
         if (fs_create_bytes(files[i].dir, files[i].name, files[i].start, length) == FS_OK) {
             strcpy(keep, builtin);
             *changed = true;
         }
+        // if the create failed keep stays "" (nothing to record), and as the file is still
+        // missing the next boot simply tries again
         return;
     }
 
+    // ondisk is only filled in when the copy is DISK_DIFFERENT
     int disk = disk_copy(i, length, ondisk);
     if (disk == DISK_UNREADABLE) {
         // can't read it: leave the file and what we knew about it as they are
@@ -229,6 +254,8 @@ static void install_app (unsigned int i, const char* record, char keep[HASH_HEX 
             strcpy(keep, builtin);
             *changed = true;
         } else {
+            // the write failed, so the old version is still there: keep its record, and it
+            // will be tried again next boot
             strcpy(keep, recorded);
         }
     }
@@ -241,6 +268,8 @@ static void install_app (unsigned int i, const char* record, char keep[HASH_HEX 
 // changed is yours, so it stays (and, as /bin/ is looked in first, it is the one that runs)
 static void tidy_old_copy (unsigned int i, const char* record) {
     const char* old_dir = "/bin/";
+    // only files in a folder inside /bin/ ("/bin/games/"): one that lives in /bin/ itself, or
+    // somewhere else entirely (/sys/, /docs/), has no old copy to tidy up
     if (seq(files[i].dir, old_dir) || strncmp(files[i].dir, old_dir, slen(old_dir)) != 0) {
         return; // not an app that moved out of /bin/
     }
@@ -249,6 +278,8 @@ static void tidy_old_copy (unsigned int i, const char* record) {
     if (data == NULL) {
         return; // no old copy
     }
+    // hash the old copy and the built-in one, so they can be compared with each other and with
+    // the record. The old copy's bytes aren't needed after that
     char path[RECORD_LINE];
     char ondisk[HASH_HEX + 1], recorded[HASH_HEX + 1], builtin[HASH_HEX + 1];
     sprintf(path, "%s%s", old_dir, files[i].name);
@@ -256,6 +287,8 @@ static void tidy_old_copy (unsigned int i, const char* record) {
     hash_hex(files[i].start, (uint32_t)(files[i].end - files[i].start), builtin);
     free(data);
 
+    // untouched if it is the current built-in copy, or the version the record says AerOS put
+    // there. (The old /bin/ line then drops out of the record, as nothing writes it again)
     bool untouched = scmp(ondisk, builtin) == 0
                      || (recorded_hash(record, path, recorded) && scmp(ondisk, recorded) == 0);
     if (untouched) {
@@ -263,17 +296,22 @@ static void tidy_old_copy (unsigned int i, const char* record) {
     }
 }
 
+// copy the built-in files to the disk where needed (see the top of this file), returns how many were written
 int apps_install (void) {
     int installed = 0;
 
     // what was installed last time (NULL on a new disk, or one from before records were kept)
     char* old_record = fs_read_f(RECORD_DIR, RECORD_NAME);
+    // the new record is built up from scratch, one line per file, so a file that is no longer
+    // AerOS's version (or no longer built in) simply drops out of it. Room for a full line
+    // for every file, + 1 for the '\0'
     char new_record[FILE_COUNT * RECORD_LINE + 1];
     new_record[0] = '\0';
 
     for (unsigned int i = 0; i < FILE_COUNT; i++) {
         uint32_t length = (uint32_t)(files[i].end - files[i].start);
 
+        // the manual isn't in the record: it is always replaced, so there is nothing to remember
         if (files[i].refresh) {
             // the manual: always the built-in copy
             int result;
@@ -282,7 +320,7 @@ int apps_install (void) {
             } else if (!same_as_disk(i, length)) {
                 result = fs_write_bytes(files[i].dir, files[i].name, files[i].start, length, false);
             } else {
-                continue;
+                continue; // already the same, nothing to write
             }
             if (result == FS_OK) {
                 installed++;
@@ -290,6 +328,7 @@ int apps_install (void) {
             continue;
         }
 
+        // an app or system file: tidy away an old copy left in /bin/ first, then install or update it
         char keep[HASH_HEX + 1];
         bool changed;
         tidy_old_copy(i, old_record);
@@ -297,6 +336,7 @@ int apps_install (void) {
         if (changed) {
             installed++;
         }
+        // keep is "" for a copy you changed, which then gets no line in the record
         if (keep[0]) {
             char line[RECORD_LINE];
             sprintf(line, "%s%s %s\n", files[i].dir, files[i].name, keep);
@@ -305,18 +345,23 @@ int apps_install (void) {
     }
 
     // only write the record when it says something new
+    // (so a normal boot, with everything up to date, writes nothing to the disk at all)
     if (!old_record || scmp(old_record, new_record) != 0) {
+        // write needs an existing file, so the first time round it is created instead
         if (fs_file_exists(RECORD_DIR, RECORD_NAME)) {
             fs_write_f(RECORD_DIR, RECORD_NAME, new_record, false);
         } else {
             fs_create_f(RECORD_DIR, RECORD_NAME, new_record);
         }
     }
+    // free(NULL) does nothing, so this is safe when there was no old record
     free(old_record);
     return installed;
 }
 
+// the built-in copy of a file by its name ("hello.aer"), and its size in *size. 0 (NULL) if there is none
 const void* apps_builtin (const char* name, uint32_t* size) {
+    // matched by name alone, not folder, so the first file in the table with that name wins
     for (unsigned int i = 0; i < FILE_COUNT; i++) {
         if (seq(files[i].name, name)) {
             *size = (uint32_t)(files[i].end - files[i].start);

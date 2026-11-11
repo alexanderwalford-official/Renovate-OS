@@ -87,7 +87,10 @@ uint32_t boot_heap_extra_kb = 0;
 // give the heap the biggest stretch of free RAM above the kernel (the built-in 4MB is only enough
 // to get going: pictures, programs and their data need far more)
 static void boot_add_memory (const multiboot_info_t* info) {
+    // the biggest usable stretch found so far (64 bit, as the map can describe memory past 4GB)
     uint64_t best_start = 0, best_end = 0;
+    // walk the entries one by one. They are stepped over by their own size field rather than
+    // sizeof, because a bootloader is allowed to make the entries bigger than this struct
     uint32_t offset = 0;
     while (offset + sizeof(multiboot_mmap_entry_t) <= info->mmap_length) {
         const multiboot_mmap_entry_t* e = (const multiboot_mmap_entry_t*)(uintptr_t)(info->mmap_addr + offset);
@@ -104,11 +107,13 @@ static void boot_add_memory (const multiboot_info_t* info) {
         if (stop > 0x100000000ULL) {
             stop = 0x100000000ULL;
         }
+        // keep it if anything is left after the trimming and it beats the best so far
         if (stop > start && stop - start > best_end - best_start) {
             best_start = start;
             best_end = stop;
         }
     }
+    // only worth adding if it is at least 1MB (on a tiny machine there may be nothing past the kernel)
     if (best_end - best_start >= 1024 * 1024) {
         heap_add_region((void*)(uintptr_t)best_start, (size_t)(best_end - best_start));
         boot_heap_extra_kb = (uint32_t)((best_end - best_start) / 1024);
@@ -151,6 +156,8 @@ void boot_parse_multiboot (uint32_t magic, uint32_t info_addr) {
     // framebuffer above that can't be used and we stay with VGA text mode
     if ((info->flags & MULTIBOOT_INFO_FRAMEBUFFER) && info->framebuffer_type == MULTIBOOT_FRAMEBUFFER_RGB &&
         info->framebuffer_addr < 0x100000000ULL) {
+        // copy it all out, since GRUB's structure may be written over later. The *_pos and
+        // *_size pairs say which bits of a pixel hold each colour (e.g. red at bit 16, 8 bits)
         boot_framebuffer.address = (uint32_t)info->framebuffer_addr;
         boot_framebuffer.pitch = info->framebuffer_pitch;
         boot_framebuffer.width = info->framebuffer_width;

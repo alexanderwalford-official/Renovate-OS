@@ -50,8 +50,11 @@ typedef struct {
 static void derive_keys (const char* password, const uint8_t* salt, uint32_t rounds, keys_t* keys) {
     uint8_t master[SHA256_SIZE];
     pbkdf2_sha256(password, slen(password), salt, SALT_SIZE, rounds, master, sizeof(master));
+    // 14 is the length of each label. HMAC with the master key as the key gives two keys that
+    // look unrelated, even though they come from the same master
     hmac_sha256(master, sizeof(master), "AerOS file key", 14, keys->aes);
     hmac_sha256(master, sizeof(master), "AerOS file mac", 14, keys->mac);
+    // the master key would unlock both, so it goes as soon as it has done its job
     wipe(master, sizeof(master));
 }
 
@@ -60,20 +63,27 @@ static uint32_t read_u32 (const uint8_t* p) {
     return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
 }
 
+// the other way round: write a number as 4 bytes, least significant byte first
 static void write_u32 (uint8_t* p, uint32_t value) {
+    // byte i is bits 8i to 8i + 7 of the number
     for (int i = 0; i < 4; i++) {
         p[i] = (uint8_t)(value >> (8 * i));
     }
 }
 
+// does this look like an encrypted file? It must start with the magic and be long enough to
+// hold a header and a tag (the length check comes first so short data is never read past)
 bool fcrypt_is_sealed (const void* data, uint32_t length) {
     return length >= HEADER_SIZE + TAG_SIZE && memcmp(data, MAGIC, MAGIC_SIZE) == 0;
 }
 
+// encrypt plain into a new buffer laid out as header || encrypted contents || tag
 int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8_t** out, uint32_t* out_length) {
+    // an empty password would lock the file with something anyone can type
     if (password[0] == '\0') {
         return FCRYPT_ERR_NO_PASSWORD;
     }
+    // the whole sealed file is built in one buffer, so the tag can cover header and contents
     uint32_t total = HEADER_SIZE + length + TAG_SIZE;
     uint8_t* sealed = malloc(total);
     if (sealed == 0) {
@@ -86,6 +96,8 @@ int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8
     crypto_random(sealed + OFFSET_SALT, SALT_SIZE);
     crypto_random(sealed + OFFSET_NONCE, NONCE_SIZE);
 
+    // the keys come from the password and the salt just written to the header, so opening
+    // the file later can make the very same keys from it
     keys_t keys;
     aes256_t aes;
     derive_keys(password, sealed + OFFSET_SALT, ROUNDS, &keys);
@@ -97,6 +109,7 @@ int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8
     aes256_ctr(&aes, sealed + OFFSET_NONCE, contents, length);
     hmac_sha256(keys.mac, sizeof(keys.mac), sealed, HEADER_SIZE + length, contents + length);
 
+    // the keys and the expanded AES key would decrypt the file without the password
     wipe(&keys, sizeof(keys));
     wipe(&aes, sizeof(aes));
     *out = sealed;
@@ -104,18 +117,24 @@ int fcrypt_seal (const void* plain, uint32_t length, const char* password, uint8
     return FCRYPT_OK;
 }
 
+// check and decrypt a sealed buffer into a new '\0' ended buffer
 int fcrypt_open (const void* sealed_data, uint32_t length, const char* password, uint8_t** out, uint32_t* out_length) {
     const uint8_t* sealed = sealed_data;
+    // this also makes sure length is big enough for the sums below not to go negative
     if (!fcrypt_is_sealed(sealed, length)) {
         return FCRYPT_ERR_NOT_ENCRYPTED;
     }
+    // the rounds count isn't covered by anything until the tag is checked, and checking the tag
+    // needs the keys, which needs the rounds, so a silly value is caught here first
     uint32_t rounds = read_u32(sealed + OFFSET_ROUNDS);
     if (rounds == 0 || rounds > ROUNDS_MAX) {
         return FCRYPT_ERR_DAMAGED;
     }
+    // the tag is the last TAG_SIZE bytes, everything between the header and it is contents
     uint32_t plain_length = length - HEADER_SIZE - TAG_SIZE;
     const uint8_t* stored_tag = sealed + HEADER_SIZE + plain_length;
 
+    // the same key steps as sealing, with the salt and rounds the file was sealed with
     keys_t keys;
     derive_keys(password, sealed + OFFSET_SALT, rounds, &keys);
 
@@ -123,6 +142,7 @@ int fcrypt_open (const void* sealed_data, uint32_t length, const char* password,
     // A wrong password gives different keys, so the tag doesn't match either
     uint8_t tag[TAG_SIZE];
     hmac_sha256(keys.mac, sizeof(keys.mac), sealed, HEADER_SIZE + plain_length, tag);
+    // crypto_equal rather than memcmp, so the time taken gives away nothing about the right tag
     bool ok = crypto_equal(tag, stored_tag, TAG_SIZE);
     wipe(tag, sizeof(tag));
     if (!ok) {
@@ -135,11 +155,13 @@ int fcrypt_open (const void* sealed_data, uint32_t length, const char* password,
         wipe(&keys, sizeof(keys));
         return FCRYPT_ERR_NO_MEMORY;
     }
+    // the tag matched: decrypt a copy of the contents, leaving the caller's buffer alone
     aes256_t aes;
     aes256_init(&aes, keys.aes);
     memcpy(plain, sealed + HEADER_SIZE, plain_length);
     aes256_ctr(&aes, sealed + OFFSET_NONCE, plain, plain_length); // CTR decrypts the same way it encrypts
     plain[plain_length] = '\0';
+    // the decrypted contents go back to the caller, who has to wipe them, but the keys stop here
     wipe(&keys, sizeof(keys));
     wipe(&aes, sizeof(aes));
     *out = plain;
@@ -149,8 +171,8 @@ int fcrypt_open (const void* sealed_data, uint32_t length, const char* password,
 
 // ---- whole files ------------------------------------------------------------------------------
 
-// read the whole file the user named, filling in its directory and name for writing it back
-// NULL if it isn't there
+// read the whole file the user named, filling in its directory and name for writing it back.
+// NULL if it isn't there (or the path can't be split into a folder and a name)
 static char* load (const char* path, char* dir, char* name, uint32_t* size) {
     if (!fs_split_path(path, dir, FS_PATH_MAX, name, FS_NAME_MAX) || !fs_file_exists(dir, name)) {
         return 0;
@@ -158,15 +180,18 @@ static char* load (const char* path, char* dir, char* name, uint32_t* size) {
     return fs_read_bytes(dir, name, size);
 }
 
+// is the file at path an encrypted one? (false if it doesn't exist)
 bool fcrypt_file_is_encrypted (const char* path) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
     char* data = load(path, dir, name, &size);
     bool sealed = data && fcrypt_is_sealed(data, size);
+    // free(0) does nothing, so this is safe when the file wasn't found
     free(data);
     return sealed;
 }
 
+// encrypt a file on disk with a password, replacing its contents with the sealed version
 int fcrypt_encrypt_file (const char* path, const char* password) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
@@ -193,6 +218,7 @@ int fcrypt_encrypt_file (const char* path, const char* password) {
     return result;
 }
 
+// decrypt a file into memory without changing it on disk (for reading or editing it)
 int fcrypt_read_file (const char* path, const char* password, uint8_t** out, uint32_t* out_length) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
@@ -201,10 +227,12 @@ int fcrypt_read_file (const char* path, const char* password, uint8_t** out, uin
         return FCRYPT_ERR_NOT_FOUND;
     }
     int result = fcrypt_open(data, size, password, out, out_length);
+    // data is still encrypted, so it can be freed without wiping
     free(data);
     return result;
 }
 
+// decrypt a file on disk for good, putting its plain contents back
 int fcrypt_decrypt_file (const char* path, const char* password) {
     char dir[FS_PATH_MAX], name[FS_NAME_MAX];
     uint32_t size = 0;
@@ -221,11 +249,13 @@ int fcrypt_decrypt_file (const char* path, const char* password) {
     }
     // the old contents were encrypted, so they don't need wiping
     result = fs_write_bytes(dir, name, plain, length, false) == FS_OK ? FCRYPT_OK : FCRYPT_ERR_SAVE;
+    // whether or not saving worked, the decrypted copy in memory isn't left lying about
     wipe(plain, length);
     free(plain);
     return result;
 }
 
+// a short, plain message for one of the FCRYPT_ codes, for showing to the user
 const char* fcrypt_strerror (int error) {
     switch (error) {
         case FCRYPT_OK: return "ok";
