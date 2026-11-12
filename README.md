@@ -51,7 +51,7 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Successful build for printing text.
 - [x] Implement boot process that calls the main methods.
 - [x] Implement a memory pool and a way to assign / un-assign memory. (kernel heap: malloc / free / realloc, a 4MB pool plus the free RAM found at boot)
-- [x] Hardware drivers for user input. (PS/2 keyboard on IRQ1)
+- [x] Hardware drivers for user input. (PS/2 keyboard on IRQ1, and a PS/2 mouse on IRQ12 for AerLang programs)
 - [x] Switch to interrupt instead of maths for delays. (PIT timer at 1000Hz)
 - [x] Sound driver for error reporting. (PC speaker beep)
 - [x] Implement local filesystem. (FAT16 / FAT32 on IDE disks labelled AEROS, temporary VFS without one)
@@ -74,6 +74,6 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] File versions. (the last 10 versions of every file in a home folder: VERS, file@N and UNDO)
 - [x] RT mode, experimental. (boot option 6: real-time tasks from the timer, a schedulability check and a watchdog; RT lists them)
 - [x] Decimal numbers in AerLang. (3.14, 7 / 2.0, sqrt, sin, cos, atan2, floor, round, PI, on the x87 FPU)
-- [x] A 3D game demo. (MAZE3D, a first-person maze drawn with ray casting, written in AerLang to show what it can do)
+- [x] A 3D game demo. (MAZE3D, a first-person maze drawn with ray casting, with mouse look, written in AerLang to show what it can do)
 - [x] Ethernet network driver. (Intel e1000, sealed messages only, and a firewall that blocks everything until FW ALLOW; see docs/NETWORK.md)
 - [ ] More in the pipeline coming soon..

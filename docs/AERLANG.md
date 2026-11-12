@@ -302,6 +302,20 @@ Two ways to read keys, for two jobs: `keydown()` for things that last while a ke
 sees the moment it is asked, so a quick tap between two frames can slip past it, while every
 press waits for `key()` until it is read.
 
+**The mouse** (for programs only: the terminal never uses it)
+`mouse()` where the pointer is and which buttons are held, as `[x, y, buttons]`: pixels from
+the top left of the screen, starting in the middle, and `buttons` adds up `MOUSE_LEFT` (1),
+`MOUSE_RIGHT` (2) and `MOUSE_MIDDLE` (4). nil if there is no mouse · `mousemove()` how far the
+mouse has moved since the last `mousemove()`, as `[dx, dy]` (right and down are positive). It
+never stops at the edge of the screen, so it is the one for turning a camera: `[0, 0]` with no
+mouse, so a game still works with the keys alone · `mousedown(button)` is that button held?
+AerOS draws no pointer: a program draws its own, e.g. `rect(m[0], m[1], 4, 4, 0xFFFFFF)`.
+
+The mouse switches on the first time a program asks about it and off when the program ends.
+It is a PS/2 mouse (`src/drivers/input/mouse.c`). In QEMU, click inside the window so it takes
+the mouse, and press Ctrl+Alt+G to let go. On a real computer a USB mouse usually works too, as
+long as the computer's firmware offers "legacy USB" (it then looks like a PS/2 mouse).
+
 ```
 gopen()
 gbuf(true)
@@ -333,7 +347,8 @@ smoothly whatever the program is doing.
 ray casting the way early 3D games were. For each strip of the screen it sends a ray across a
 grid of squares until it hits a wall, and draws that wall shorter the further away it is. The
 crystals are sprites, placed with the same maths backwards and hidden behind nearer walls. It
-uses decimals, `sin` / `cos`, `keydown`, `gbuf` and `frame`, and its comments explain each step,
+uses decimals, `sin` / `cos`, `keydown`, `mousemove` (for looking around), `gbuf` and `frame`,
+and its comments explain each step,
 so it is meant to be read and changed: draw your own maze in `MAP`, add wall colours, or widen
 `STRIP_WIDTH` for more speed on a slow computer.
 

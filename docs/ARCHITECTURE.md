@@ -54,6 +54,7 @@ src/
 
   drivers/              talking to hardware
     input/    IO.c        PS/2 keyboard: scancodes -> ring buffer -> getk / getln / GetSecret
+              mouse.c     PS/2 mouse on IRQ12, only on while a program uses it (mouse() in AerLang)
               GIO.h       inb / outb port I/O and other one-instruction helpers
     video/    VGA_linear.c  the text console: VGA text mode, or 80x25 cells drawn on a framebuffer
               gfx.c       pixels, rectangles, lines, text, BMP pictures and scaled pixel blocks for

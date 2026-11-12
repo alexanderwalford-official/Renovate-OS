@@ -25,6 +25,33 @@
 #define IO_H
 
 #include <stdbool.h>
+#include <stdint.h>
+
+// The 8042 PS/2 controller. The keyboard is on its first port and the mouse on its second, and
+// both share these ports (0x64 is the status register on read and the command register on write)
+#define KBC_DATA    0x60
+#define KBC_STATUS  0x64
+#define KBC_COMMAND 0x64
+
+// controller status bits
+#define KBC_OUTPUT_FULL 0x01 // a byte is waiting for us
+#define KBC_INPUT_FULL  0x02 // the controller has not taken the last byte yet
+#define KBC_FROM_MOUSE  0x20 // the waiting byte came from the second port (the mouse)
+
+// send a byte to the controller once it can take one: port is KBC_COMMAND for a command or
+// KBC_DATA for a command's data byte. False if it never became ready (no controller)
+bool kbc_write(uint16_t port, uint8_t value);
+
+// wait until the controller has a byte to read from KBC_DATA. False if none came in time
+bool kbc_wait_read(void);
+
+// read the controller's waiting byte and hand it on: to the keyboard, or to the mouse sink if it
+// came from the second port. The keyboard's IRQ1 handler and the mouse's IRQ12 handler both use it
+void ps2_service(void);
+
+// where mouse bytes go (drivers/input/mouse.c sets it while the mouse is on, NULL turns it off).
+// Mouse bytes are never treated as key presses, whether or not there is a sink
+void kb_set_mouse_sink(void (*sink)(uint8_t byte));
 
 // special (non-ASCII) keys returned by getk()
 // they start at 0x80 so they can never be confused with a normal 7 bit ASCII character

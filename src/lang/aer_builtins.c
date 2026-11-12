@@ -23,6 +23,7 @@
 #include "../drivers/video/VGA_linear.h"
 #include "../drivers/video/gfx.h"
 #include "../drivers/input/IO.h"
+#include "../drivers/input/mouse.h"
 #include "../drivers/audio/tone.h"
 #include "../sys/sys_clck.h"
 #include "../sys/f_sys.h"
@@ -1288,6 +1289,70 @@ static value_t bi_keydown (int argc, value_t* argv, int line) {
     return aer_bool(kb_is_down(key));
 }
 
+// ---- the mouse (only for programs: see drivers/input/mouse.h) ----------------------------------
+
+// switch the mouse on if it isn't yet, the first time a program asks about it. The pointer moves
+// over the screen in pixels, starting in the middle. False if there is no mouse.
+// aer_builtins_finish switches it off again when the program ends
+static bool mouse_on (void) {
+    if (mouse_ready()) {
+        return true;
+    }
+    if (!mouse_start()) {
+        return false;
+    }
+    // the screen's size in pixels (VGA text mode has none, so a 640 x 480 area stands in)
+    int width = (int)gfx_width();
+    int height = (int)gfx_height();
+    mouse_set_area(width > 0 ? width : 640, height > 0 ? height : 480);
+    return true;
+}
+
+// mouse(): where the pointer is and which buttons are held, as [x, y, buttons]. x and y are
+// pixels from the top left of the screen, and buttons adds up MOUSE_LEFT (1), MOUSE_RIGHT (2)
+// and MOUSE_MIDDLE (4). nil if there is no mouse. The program draws its own pointer
+static value_t bi_mouse (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    if (!mouse_on()) {
+        return aer_nil();
+    }
+    int x, y, buttons;
+    mouse_position(&x, &y, &buttons);
+    value_t result = aer_list(3);
+    aer_list_push(result.as.obj, aer_int(x));
+    aer_list_push(result.as.obj, aer_int(y));
+    aer_list_push(result.as.obj, aer_int(buttons));
+    return result;
+}
+
+// mousemove(): how far the mouse has moved since the last mousemove(), as [dx, dy] (right and
+// down are positive). It never stops at the edge of the screen, so it is the one for turning a
+// camera. [0, 0] if there is no mouse, so a game still works with the keys alone
+static value_t bi_mousemove (int argc, value_t* argv, int line) {
+    (void)argc; (void)argv; (void)line;
+    int dx = 0, dy = 0;
+    if (mouse_on()) {
+        mouse_motion(&dx, &dy);
+    }
+    value_t result = aer_list(2);
+    aer_list_push(result.as.obj, aer_int(dx));
+    aer_list_push(result.as.obj, aer_int(dy));
+    return result;
+}
+
+// mousedown(button): is this button held right now? button is MOUSE_LEFT, MOUSE_RIGHT or
+// MOUSE_MIDDLE (false if there is no mouse)
+static value_t bi_mousedown (int argc, value_t* argv, int line) {
+    (void)argc;
+    int32_t button = int_arg(argv, 0, line, "mousedown");
+    if (!mouse_on()) {
+        return aer_bool(false);
+    }
+    int x, y, buttons;
+    mouse_position(&x, &y, &buttons);
+    return aer_bool((buttons & button) != 0);
+}
+
 // sload(path): load a WAV or MP3 file, ready for splay(). Gives back the sound (as bytes), or
 // nil if it can't be loaded
 static value_t bi_sload (int argc, value_t* argv, int line) {
@@ -1454,6 +1519,9 @@ const aer_builtin_t aer_builtins[] = {
     BUILTIN("gbuf", bi_gbuf, 1, 1),
     BUILTIN("gshow", bi_gshow, 0, 0),
     BUILTIN("keydown", bi_keydown, 1, 1),
+    BUILTIN("mouse", bi_mouse, 0, 0),
+    BUILTIN("mousemove", bi_mousemove, 0, 0),
+    BUILTIN("mousedown", bi_mousedown, 1, 1),
     BUILTIN("sload", bi_sload, 1, 1),
     BUILTIN("splay", bi_splay, 1, 3),
     BUILTIN("sstop", bi_sstop, 0, 1),
@@ -1562,6 +1630,7 @@ void aer_define_constants (void) {
         { "KEY_DELETE", KEY_DELETE }, { "KEY_ESCAPE", KEY_ESCAPE }, { "KEY_ENTER", '\n' },
         { "KEY_BACKSPACE", '\b' }, { "KEY_TAB", '\t' }, { "KEY_PGUP", KEY_PGUP }, { "KEY_PGDN", KEY_PGDN },
         { "KEY_SHIFT", KEY_SHIFT }, { "KEY_CTRL", KEY_CTRL }, { "KEY_ALT", KEY_ALT }, { "KEY_SPACE", ' ' },
+        { "MOUSE_LEFT", MOUSE_LEFT }, { "MOUSE_RIGHT", MOUSE_RIGHT }, { "MOUSE_MIDDLE", MOUSE_MIDDLE },
         { "BLACK", BLACK }, { "DARK_BLUE", DARK_BLUE }, { "GREEN", GREEN }, { "CYAN", CYAN },
         { "RED", RED }, { "PURPLE", PURPLE }, { "ORANGE", ORANGE }, { "BROWN", BROWN }, { "BRIGHT", BRIGHT },
         { "DARK_GRAY", DARK_GRAY }, { "LIGHT_BLUE", LIGHT_BLUE }, { "LIGHT_GREEN", LIGHT_GREEN },
@@ -1586,5 +1655,6 @@ void aer_give_screen_back (void) {
 // a program that ends (or crashes) in graphics mode gets the terminal back automatically
 void aer_builtins_finish (void) {
     mixer_stop_all(); // sounds from splay() stop with the program (their memory is about to go)
+    mouse_stop();     // the mouse is only for programs: the terminal goes back to not having it
     aer_give_screen_back();
 }

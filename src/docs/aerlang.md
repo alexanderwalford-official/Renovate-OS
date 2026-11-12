@@ -189,6 +189,15 @@ plays. Use `keydown` for things that last (moving) and `haskey()` / `key()` for 
 presses (jumping): every press waits there until it is read, so a quick tap is never missed.
 `/bin/games/move.aer` uses them all.
 
+**The mouse:** `mouse()` gives `[x, y, buttons]`, where the pointer is in pixels and which
+buttons are held (`MOUSE_LEFT` 1, `MOUSE_RIGHT` 2, `MOUSE_MIDDLE` 4 added up), or nil if there
+is no mouse. `mousemove()` gives `[dx, dy]`, how far it moved since the last time: it never
+stops at the edge of the screen, so it is the one for turning a camera, and it gives `[0, 0]`
+with no mouse. `mousedown(MOUSE_LEFT)` asks if a button is held. AerOS draws no pointer, so a
+program draws its own. Only programs have the mouse: it switches on when one asks about it and
+off when it ends. In QEMU, click the window first (Ctrl+Alt+G lets go). `/bin/games/maze3d.aer`
+looks around with it.
+
 ```
 gopen()
 gbuf(true)
@@ -213,7 +222,7 @@ end
 | `/bin/viewer.aer` | graphics, pictures and a menu |
 | `/bin/games/move.aer` | smooth movement, held keys and mixed sounds |
 | `/bin/games/snake.aer` | a whole game: graphics, a back buffer, held keys and lists |
-| `/bin/games/maze3d.aer` | a 3D maze drawn with ray casting: decimals, sin / cos and sprites |
+| `/bin/games/maze3d.aer` | a 3D maze drawn with ray casting: decimals, sin / cos, sprites and mouse look |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
 | `/bin/anim.aer` | spinners, progress bars and moving text |

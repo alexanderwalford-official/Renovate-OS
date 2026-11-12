@@ -44,14 +44,11 @@
 #include "../../sys/interrupts.h"
 #include "../../lib/crypto.h"
 
-// 8042 PS/2 controller ports (0x64 is the status register on read and the command register on write)
-#define KBC_DATA    0x60
-#define KBC_STATUS  0x64
-#define KBC_COMMAND 0x64
+// (the 8042 controller's ports and status bits are in IO.h, as the mouse driver uses them too)
 
-// controller status bits
-#define KBC_OUTPUT_FULL 0x01 // a byte is waiting for us
-#define KBC_INPUT_FULL  0x02 // the controller has not taken the last byte yet
+// where bytes from the controller's second port go: the mouse driver's packet reader while a
+// program has the mouse on, NULL the rest of the time (see kb_set_mouse_sink)
+static void (*volatile mouse_sink)(uint8_t byte) = NULL;
 
 // number of slots in the key ring buffer, one is always left empty so it holds up to 127 keys
 #define KB_BUFFER_SIZE 128
@@ -304,9 +301,35 @@ bool kb_take_break(void) {
 static void keyboard_handler(struct regs* r) {
     // the saved registers are not needed, this just silences the unused parameter warning
     (void)r;
-    uint8_t scancode = inb(KBC_DATA);
-    crypto_add_entropy(scancode); // key press timing feeds the random number generator
-    kb_process_scancode(scancode);
+    ps2_service();
+}
+
+// read the byte the controller is holding and hand it to whichever device sent it. The keyboard
+// and the mouse share one data port, so the status register's "from the second port" bit is the
+// only way to tell a mouse byte from a key press
+void ps2_service(void) {
+    uint8_t status = inb(KBC_STATUS);
+    // nothing waiting (another handler already took it): reading now would give the last byte
+    // a second time, which would type a key twice
+    if (!(status & KBC_OUTPUT_FULL)) {
+        return;
+    }
+    uint8_t byte = inb(KBC_DATA);
+    crypto_add_entropy(byte); // key press and mouse timing feed the random number generator
+    if (status & KBC_FROM_MOUSE) {
+        // a mouse byte is never a key, even when no one is listening for the mouse
+        void (*sink)(uint8_t) = mouse_sink;
+        if (sink != NULL) {
+            sink(byte);
+        }
+        return;
+    }
+    kb_process_scancode(byte);
+}
+
+// see IO.h. One pointer write, so an IRQ in the middle sees the old sink or the new one
+void kb_set_mouse_sink(void (*sink)(uint8_t byte)) {
+    mouse_sink = sink;
 }
 
 // like getln, but shows '*' for every character and keeps no history (for passwords)
@@ -514,7 +537,7 @@ void ClearInputbuffer(void) {
 // send a byte to the 8042 controller once it is ready to take one
 // port: KBC_COMMAND for a command, KBC_DATA for a command's data byte
 // returns false if the controller never became ready (e.g. there is no PS/2 controller at all)
-static bool kbc_write(uint16_t port, uint8_t value) {
+bool kbc_write(uint16_t port, uint8_t value) {
     // poll the status register (capped, so a missing controller can't hang the boot) until the
     // controller has taken its previous byte
     for (int i = 0; i < 100000; i++) {
@@ -528,7 +551,7 @@ static bool kbc_write(uint16_t port, uint8_t value) {
 
 // wait until the controller has a byte for us
 // returns false on timeout, true when the byte can be read from KBC_DATA
-static bool kbc_wait_read(void) {
+bool kbc_wait_read(void) {
     // the same capped poll as kbc_write, this time for the output full bit
     for (int i = 0; i < 100000; i++) {
         if (inb(KBC_STATUS) & KBC_OUTPUT_FULL) {

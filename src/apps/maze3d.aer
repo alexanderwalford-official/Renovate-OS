@@ -5,6 +5,7 @@
 # Controls:
 #     Up / W, Down / S     - walk forwards and backwards
 #     Left / Right         - turn
+#     Mouse                - look around (in QEMU, click the window first: Ctrl+Alt+G lets go)
 #     A / D                - step sideways
 #     M                    - show or hide the map
 #     Escape               - quit
@@ -21,6 +22,11 @@
 #   The crystals are "sprites": flat shapes that always face you. Each one is placed on the
 #   screen with a little maths, and is drawn only in the columns where it is nearer than the
 #   wall that ray hit, so walls hide them properly.
+#
+#   Looking up and down is a trick too: rays can only go across the grid, so instead the whole
+#   picture is drawn higher or lower on the screen. The horizon (where the walls' middles line up)
+#   moves down when you look up, which shows more ceiling, and up when you look down. It isn't
+#   true perspective, but it looks right for small angles, and some early 3D games did just this.
 #
 #   Changing it:
 #     - Draw your own maze in MAP: '#', 'B' and 'G' are walls, 'o' is a crystal, 'P' is where
@@ -62,6 +68,8 @@ let VIEW_WIDTH = 0.66       # how wide the view is: 0.66 gives about 66 degrees
 let FOG_DISTANCE = 14.0     # walls fade to their darkest this far away
 let STRIP_WIDTH = 8         # pixels per ray (see the notes at the top)
 let PICK_UP_DISTANCE = 0.5  # how close you must be to take a crystal
+let MOUSE_TURN = 0.004      # radians of turn for each step the mouse moves across
+let MOUSE_LOOK = 1.5        # pixels the horizon moves for each step the mouse moves up or down
 
 # Wall colours as [red, green, blue], by the number read_map() gives each kind of wall
 # (0 is empty floor, so it has no colour)
@@ -209,21 +217,38 @@ func handle_movement(seconds)
     # it one square long, like dir)
     if keydown("d") then move(plane_x / VIEW_WIDTH * walk, plane_y / VIEW_WIDTH * walk) end
     if keydown("a") then move(-plane_x / VIEW_WIDTH * walk, -plane_y / VIEW_WIDTH * walk) end
+
+    # The mouse: moving it across turns, moving it up and down looks up and down. mousemove()
+    # gives how far it moved since the last frame, and never stops at the edge of the screen,
+    # so you can keep turning. (With no mouse it gives [0, 0], and the keys still work)
+    let moved = mousemove()
+    if moved[0] != 0 then face(angle + moved[0] * MOUSE_TURN) end
+    # Up on the mouse is negative, and looking up moves the horizon down: hence the minus.
+    # It stops a third of the screen either way, past which the trick stops looking right
+    look = bigger(smaller(look - moved[1] * MOUSE_LOOK, SCREEN_H / 3), -SCREEN_H / 3)
+end
+
+# Where the horizon is on the screen: the middle, moved by looking up or down
+func horizon()
+    return SCREEN_H / 2 + look
 end
 
 # ---------------------------------------------------------------------------
 # Drawing the walls (ray casting)
 # ---------------------------------------------------------------------------
 
-# The ceiling and floor: a few bands each, darker towards the middle of the screen, which is
-# far away. The walls are drawn on top.
+# The ceiling and floor: a few bands each, darker towards the horizon, which is far away. The
+# ceiling fills the screen above the horizon and the floor below it, so looking up or down
+# changes how tall their bands are. The walls are drawn on top.
 func draw_backdrop()
     let bands = 8
-    let band_height = SCREEN_H / 2 / bands + 1
+    let middle = horizon()
+    let ceiling_band = middle / bands + 1
+    let floor_band = (SCREEN_H - middle) / bands + 1
     for i = 0 to bands - 1 do
         let light = 1.0 - i / (bands * 1.6)
-        rect(0, i * band_height, SCREEN_W, band_height, shade(CEILING, light))
-        rect(0, SCREEN_H - (i + 1) * band_height, SCREEN_W, band_height, shade(FLOOR, light))
+        rect(0, i * ceiling_band, SCREEN_W, ceiling_band, shade(CEILING, light))
+        rect(0, SCREEN_H - (i + 1) * floor_band, SCREEN_W, floor_band, shade(FLOOR, light))
     end
 end
 
@@ -232,6 +257,8 @@ end
 func draw_walls(now)
     # The door glows once every crystal has been picked up (sin swings from -1 to 1)
     let door_light = 0.75
+    # worked out once here rather than for every ray
+    let middle = horizon()
     if taken == len(crystals) then
         door_light = 0.85 + sin(now / 150.0) * 0.15
     end
@@ -297,7 +324,8 @@ func draw_walls(now)
 
         # A wall one square away fills the screen's height. Twice as far, half as tall.
         let height = SCREEN_H / distance
-        let top = (SCREEN_H - height) / 2
+        # (its middle is on the horizon)
+        let top = middle - height / 2
 
         # Further walls are darker, and north-south faces are a little darker than east-west
         # ones, which is what makes corners easy to see
@@ -364,7 +392,7 @@ func draw_crystals(now)
         let size = SCREEN_H / depth * 0.35
         # It floats just above the floor and bobs gently (each one a little out of step)
         let bob = sin(now / 300.0 + number) * size * 0.12
-        let centre_y = SCREEN_H / 2 + SCREEN_H / depth * 0.18 + bob
+        let centre_y = horizon() + SCREEN_H / depth * 0.18 + bob
 
         # A diamond, drawn one strip at a time: tallest in the middle, nothing at its sides.
         # A strip is only drawn where this crystal is nearer than the wall that ray hit.
@@ -456,14 +484,14 @@ func title_screen()
     centre(SCREEN_H / 2, "Pick up every crystal, then find the gold door", TEXT, 1)
     # The controls in two columns: keys on the left, what they do on the right. Centring each
     # line on its own would make the columns wander, so the block is centred as a whole
-    let keys = ["UP / DOWN or W / S", "LEFT / RIGHT", "A / D", "M", "ESC"]
-    let actions = ["walk", "turn", "step sideways", "show or hide the map", "quit"]
+    let keys = ["UP / DOWN or W / S", "LEFT / RIGHT", "MOUSE", "A / D", "M", "ESC"]
+    let actions = ["walk", "turn", "look around", "step sideways", "show or hide the map", "quit"]
     let left = (SCREEN_W - 42 * 8) / 2
     for i = 0 to len(keys) - 1 do
         text(left, SCREEN_H / 2 + 40 + i * 18, keys[i], TEXT, 1)
         text(left + 22 * 8, SCREEN_H / 2 + 40 + i * 18, actions[i], DIM_TEXT, 1)
     end
-    centre(SCREEN_H / 2 + 160, "Press any key to start", CRYSTAL, 2)
+    centre(SCREEN_H / 2 + 175, "Press any key to start", CRYSTAL, 2)
     gshow()
     return key() != KEY_ESCAPE
 end
@@ -476,6 +504,9 @@ func play()
     picked = list(len(crystals), false)
     taken = 0
     started = time()
+    # look straight ahead, and forget any mouse movement from before the game started
+    look = 0
+    mousemove()
 
     let last = time()
     let fps = 0
@@ -565,6 +596,7 @@ let plane_x = 0.0
 let plane_y = VIEW_WIDTH
 let started = 0
 let show_map = true
+let look = 0                # how far the horizon is moved down by looking up, in pixels
 
 read_map()
 

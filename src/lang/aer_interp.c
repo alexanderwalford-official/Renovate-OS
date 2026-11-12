@@ -42,6 +42,7 @@
 #include "../lib/fpu.h"
 #include "../drivers/video/VGA_linear.h"
 #include "../drivers/input/IO.h"
+#include "../drivers/input/mouse.h"
 #include "../sys/f_sys.h"
 #include "../sys/explain.h"
 #include "../sys/perm.h"
@@ -1483,6 +1484,10 @@ void aer_shell_run (const char* code) {
     aer->source = outer_source;
     aer->locals = outer_locals;
     aer_give_screen_back(); // a line that used graphics gives the screen back when it is done
+    // and one that used the mouse switches it off again: the terminal itself never has it
+    if (shell_lines_running == 0) {
+        mouse_stop();
+    }
 
     // a logout asked for while code was running happens now, once the outermost line is done
     if (shell_stop_wanted && shell_lines_running == 0) {
