@@ -44,6 +44,11 @@ GUEST_PROMPT = 'guest@0//: '
 # finished. A new one in the serial log means the line before it has finished
 PROMPT = re.compile(r'\S+@\d+//\S*: |aer> |   \.\.\. ')
 
+# The questions AerOS asks for a name or a password: "User name: " (a new account), "Username: "
+# (logging in), "Password: ", "Again: ",
+# "Your password: ", "New password: ", "Password both ends will use: " (see answer())
+QUESTION = re.compile(r'(?:User ?name|[Pp]assword|Again)[^:\n]*: ')
+
 # how long QEMU holds each typed key down, in milliseconds. QEMU presses keys one after another
 # from a queue, so this sets the typing speed (its own default, 100, is ten keys a second)
 KEY_HOLD_MS = 10
@@ -67,13 +72,15 @@ def free_port():
 class AerOS:
     """One running copy of AerOS in QEMU."""
 
-    def __init__(self, workdir, kernel=None, iso=None, disk=None, memory=256, network=None):
+    def __init__(self, workdir, kernel=None, iso=None, disk=None, memory=256, network=None, sound=None):
         """Start QEMU. Give either kernel (main.elf: VGA text mode, the screen can be read) or iso
         (main.iso: GRUB sets up graphics, read text with serial()). disk is a disk image to
-        attach (see make_disk), network a QEMU -nic setting."""
+        attach (see make_disk), network a QEMU -nic setting. sound gives AerOS an AC'97 sound
+        card: a file name records everything it plays to that WAV file, True plays nowhere."""
         self.workdir = workdir
         self.serial_path = os.path.join(workdir, 'serial.log')
         self.graphics = iso is not None
+        self.answered = 0   # questions answered so far (see answer())
         port = free_port()
         args = [os.environ.get('QEMU', 'qemu-system-i386'), '-display', 'none', '-m', str(memory),
                 '-monitor', f'tcp:127.0.0.1:{port},server,nowait',
@@ -90,6 +97,10 @@ class AerOS:
             args += ['-drive', f'file={disk},format=raw,if=ide,index=0']
         if network:
             args += ['-nic', network]
+        if sound:
+            # QEMU's "wav" audio backend writes the card's output to a file instead of speakers
+            backend = f'wav,id=snd0,path={sound}' if isinstance(sound, str) else 'none,id=snd0'
+            args += ['-audiodev', backend, '-device', 'AC97,audiodev=snd0']
         self.proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
         # the monitor socket takes a moment to appear
@@ -165,24 +176,41 @@ class AerOS:
         if settle is not None:
             time.sleep(settle)
             return
+        self.wait_prompt(before, timeout, what=repr(line))
+
+    def wait_prompt(self, since, timeout=60, what='it'):
+        """Wait for a new prompt, after `since` of them (from prompts()): the way to wait for a
+        program to end after a key, e.g. Escape in a game."""
         start = time.time()
-        while self.prompts() <= before:
+        while self.prompts() <= since:
             if time.time() - start > timeout:
-                self.fail(f'{line!r} did not finish in {timeout}s')
+                self.fail(f'{what} did not finish in {timeout}s')
             if self.proc.poll() is not None:
-                self.fail(f'QEMU stopped while running {line!r}')
+                self.fail(f'QEMU stopped while waiting for {what} to finish')
             time.sleep(0.05)
 
-    def ask(self, line, pause=0.5):
-        """Type a line that asks a question (a password, Y / N) and give it time to ask. Its
-        answers are typed with answer(), and nothing waits for a prompt in between"""
+    def ask(self, line, pause=0):
+        """Type a line that asks something (a password, Y / N) or keeps running (an app), without
+        waiting for the next prompt. Answer its questions with answer()."""
         self.run(line, settle=pause)
 
-    def answer(self, text, pause=0.4):
-        """Type an answer to the question on the screen and press Enter, then give AerOS a moment
-        to read it (some questions throw away keys typed before they ask)."""
+    def questions(self):
+        """How many questions AerOS has asked so far (see QUESTION)."""
+        return len(QUESTION.findall(self.serial()))
+
+    def answer(self, text, timeout=120):
+        """Wait until AerOS asks a question this hasn't answered yet ("Password: "...), then type
+        the answer and press Enter. Waiting for the question matters: AerOS throws away keys
+        typed before a password question, so typing early would lose them."""
+        start = time.time()
+        while self.questions() <= self.answered:
+            if time.time() - start > timeout:
+                self.fail(f'waited {timeout}s for a question to answer with {text!r}')
+            if self.proc.poll() is not None:
+                self.fail('QEMU stopped while waiting for a question')
+            time.sleep(0.05)
+        self.answered += 1
         self.type(text + '\n')
-        time.sleep(pause)
 
     def cls(self):
         """Clear the screen, so the next checks only see what comes after."""
@@ -269,6 +297,14 @@ class AerOS:
             time.sleep(0.3)
         self.fail(f'waited {timeout}s for {text!r}')
 
+    def wait_gone(self, text, timeout=30):
+        """Wait until text is no longer showing."""
+        start = time.time()
+        while text in self.text():
+            if time.time() - start > timeout:
+                self.fail(f'{text!r} was still showing after {timeout}s')
+            time.sleep(0.1)
+
     def expect(self, *texts):
         """Each text must be somewhere on the screen (or in the serial log in graphics mode)."""
         shown = self.text()
@@ -316,14 +352,14 @@ class AerOS:
         self.answer(name)
         self.answer(password)
         self.answer(password)
-        self.wait_for(f'{name}@0//home/{name}/: ', 90)
+        self.wait_for(f'{name}@0//home/{name}/: ', 180)
 
     def login(self, name='tester', password='secret1'):
         """Log in at the login screen, and wait for the prompt."""
         self.wait_for('Authentication required', 60)
         self.answer(name)
         self.answer(password)
-        self.wait_for(f'{name}@0//home/{name}/: ', 60)
+        self.wait_for(f'{name}@0//home/{name}/: ', 120)
 
     def quit(self):
         """Stop QEMU (fine to call more than once)."""
@@ -337,6 +373,26 @@ class AerOS:
             self.sock.close()
         except Exception:
             pass
+
+
+def read_disk_file(disk, path):
+    """A file's bytes from a disk image (with QEMU stopped), or None if it isn't there."""
+    result = subprocess.run(['mtype', '-i', disk, '::' + path], capture_output=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def write_disk_file(disk, path, data):
+    """Put a file on a disk image (with QEMU stopped), replacing one that is there."""
+    source = disk + '.put'
+    with open(source, 'wb') as f:
+        f.write(data if isinstance(data, bytes) else data.encode())
+    subprocess.run(['mcopy', '-o', '-i', disk, source, '::' + path], check=True, capture_output=True)
+    os.remove(source)
+
+
+def delete_disk_file(disk, path):
+    """Delete a file from a disk image (with QEMU stopped)."""
+    subprocess.run(['mdel', '-i', disk, '::' + path], check=True, capture_output=True)
 
 
 def make_disk(path, size_mb=32, fat32=False, files=None):

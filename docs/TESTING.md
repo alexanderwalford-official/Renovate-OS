@@ -24,9 +24,9 @@ Then, from `src/`:
 Each test prints `PASS`, `FAIL` or `SKIP` with how long it took, and a summary comes at the
 end. `make test` fails (exit code 1) if any test failed, so it can be used before a commit.
 
-On a computer with plenty of cores the whole suite takes well under a minute, which is about
-as long as its slowest test (the file versions test waits out an 11 second gap on purpose). One
-at a time it takes three or four minutes.
+On a computer with plenty of cores the whole suite takes under a minute, which is about as long
+as its slowest test (the file versions test waits out an 11 second gap on purpose). One at a time
+it takes about six minutes.
 
 **Faster still, with KVM.** QEMU normally imitates the processor in software. If your Linux
 user may use `/dev/kvm`, the tests switch KVM on by themselves and AerOS runs on the real
@@ -38,21 +38,31 @@ When a test fails, the report says what it expected and shows the screen as it w
 is kept in `tools/test/out/<test name>/`, with AerOS's serial log (everything AerOS printed)
 and any screenshots, so you can see what happened.
 
-The network test needs Python's `cryptography` package (`pip install cryptography`), like
-`tools/aernet.py`. Without it, it is skipped rather than failed.
+The network test and the test of the decryptor in `docs/SECURITY.md` need Python's
+`cryptography` package (`pip install cryptography`), like `tools/aernet.py`. Without it, they
+are skipped rather than failed.
 
 ## What is tested
 
 | File | Tests |
 | --- | --- |
 | `test_basics.py` | booting, commands, files without a disk, "did you mean" |
+| `test_terminal.py` | usage messages, Tab completion, Page Up / Page Down, and the editor (save, run, quit) |
 | `test_aerlang.py` | the language (`files/langtest.aer` checks every statement and expression), and AerLang at the prompt |
 | `test_explain.py` | WHY, SRC and the read-only `/src/` folder |
 | `test_processes.py` | RUN, and the queue: QUE, GO, Ctrl+C, `queue()` |
-| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, permissions |
+| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, DEL on big files and folders, the wipe after three wrong passwords, permissions |
+| `test_apps.py` | the DOC reader, the animation demo, and how built-in apps are installed and kept up to date on a disk |
+| `test_crypto.py` | the boot's crypto self-test, and the decryptor printed in `docs/SECURITY.md` run on a file AerOS encrypted |
+| `test_media.py` | WAV files in three formats and an MP3 (recorded and checked for the right notes), the startup sound, and video |
 | `test_input.py` | the mouse in AerLang, and held keys |
-| `test_games.py` | Maze 3D and Snake, booted from the ISO in graphics mode |
+| `test_games.py` | Maze 3D, Snake and `move.aer`, booted from the ISO in graphics mode |
 | `test_network.py` | the firewall and sealed messages, against `tools/aernet.py` |
+
+Every test that writes to a disk finishes by checking the disk is still a consistent FAT volume:
+`tools/test/fatcheck.py` walks every folder and checks the FAT copies agree, each file's
+clusters match its size, and no cluster is lost or used twice. It also runs on its own:
+`python3 tools/test/fatcheck.py disk.img`.
 
 ## How it works
 
@@ -105,7 +115,10 @@ The machine (`aeros.py` explains each one):
 | `t.boot(disk=t.disk())` | with a new, empty AEROS disk (`files={'/bin/x.aer': path}` copies files onto it) |
 | `aeros.first_login()` | make the first account on a new disk, and wait for its prompt |
 | `aeros.run(line)` | type a line, press Enter, and wait for the next prompt |
-| `aeros.ask(line)`, `aeros.answer(text)` | a line that asks a question (a password), and each answer |
+| `t.boot(sound='out.wav')` | with a sound card, recording everything AerOS plays (`sound=True` plays nowhere) |
+| `aeros.ask(line)`, `aeros.answer(text)` | a line that asks a question or keeps running (an app), and each answer: `answer()` waits for AerOS to ask ("Password: "...) before it types |
+| `aeros.wait_prompt(since)` | wait for the next prompt after a key ends a program (`since = aeros.prompts()` first) |
+| `aeros.wait_gone(text)` | wait until text is no longer showing |
 | `aeros.type(text)` | just type |
 | `aeros.login(name, password)` | log in at the login screen |
 | `aeros.key('esc')`, `aeros.key('up', 800)` | press a key, or hold it for 800 ms |
@@ -118,11 +131,15 @@ The machine (`aeros.py` explains each one):
 | `aeros.screen()`, `aeros.serial()` | the text screen, or everything printed so far |
 | `aeros.screenshot()` | `(width, height, pixels)`, three bytes a pixel |
 | `aeros.fail(message)` | stop the test, showing the screen |
+| `t.check_disk(disk)` | fail unless the disk is a consistent FAT volume (stop the machine first) |
+| `read_disk_file(disk, path)`, `write_disk_file(...)`, `delete_disk_file(...)` | a file on a disk image, between boots |
+| `t.path(name)`, `t.repo('src', ...)`, `t.files` | a file in the test's folder, in the repository, or in `tools/test/files/` |
 
 `run()` only waits for a prompt, so a line that asks something (a password, Y / N) or keeps
-running (a game, `lsn`) never gives one: use `ask()`, or `run(line, settle=2)` to just wait 2
-seconds. Otherwise, wait for text with `wait_for()` rather than sleeping: it carries on as soon
-as the text appears, and fails clearly if it never does.
+running (a game, `lsn`) never gives one: use `ask()`. Then wait for what should happen with
+`wait_for()` rather than sleeping: it carries on as soon as the text appears, and fails clearly
+if it never does. Fixed sleeps are what make tests fail when the computer is busy, because
+everything takes longer than the sleep allowed for.
 
 Raise `Skip('why')` (from `aeros`) when a test can't run on this computer, as the network test
 does without the `cryptography` package.

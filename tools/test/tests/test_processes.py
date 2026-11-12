@@ -44,9 +44,12 @@ def test_queue_stops_on_ctrl_c(t):
     aeros.run('que a')
     aeros.run('que loop')
     aeros.run('que a')
-    aeros.run('go', 2)
+    # the first one runs, then the loop never ends until Ctrl+C
+    before = aeros.prompts()
+    aeros.ask('go')
+    aeros.wait_for('A ran')
     aeros.key('ctrl-c')
-    time.sleep(1.5)
+    aeros.wait_prompt(before)
     aeros.run('que')
     # the first ran, the loop was stopped, and the last one is still waiting
     aeros.expect('stopped (Ctrl+C)', '1. a.aer')

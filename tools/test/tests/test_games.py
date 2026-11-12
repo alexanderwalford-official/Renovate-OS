@@ -47,6 +47,22 @@ def test_maze3d(t):
     aeros.expect_not('Error')
 
 
+def test_move(t):
+    # move.aer: a square that moves while an arrow key is held, drawn with a back buffer
+    aeros = t.boot(graphics=True, sound=True)
+    aeros.wait_for(GUEST_PROMPT, 60)
+    aeros.ask('move', 3)
+    first = aeros.screenshot('start')
+    aeros.key('right', 1000)
+    time.sleep(1.5)
+    if aeros.screenshot('moved')[2] == first[2]:
+        aeros.fail('holding Right did not move the square')
+    before = aeros.prompts()
+    aeros.key('esc')
+    aeros.wait_prompt(before, 20)
+    aeros.expect_not('Error')
+
+
 def test_snake(t):
     aeros = t.boot(graphics=True)
     aeros.wait_for(GUEST_PROMPT, 60)

@@ -1,12 +1,15 @@
 """A real FAT disk: accounts and logging in, file versions, file encryption, and permissions."""
 
+import os
+import subprocess
 import time
 
-from aeros import GUEST_PROMPT
+from aeros import GUEST_PROMPT, read_disk_file
 
 
 def test_accounts(t):
-    aeros = t.boot(disk=t.disk())
+    disk = t.disk()
+    aeros = t.boot(disk=disk)
     aeros.first_login('tester', 'secret1')
 
     # a second account
@@ -35,6 +38,8 @@ def test_accounts(t):
     aeros.ask('delu tester')
     aeros.answer('pw2')
     aeros.wait_for('Deleted tester', 60)
+    aeros.quit()
+    t.check_disk(disk)
 
 
 def test_accounts_survive_a_restart(t):
@@ -53,7 +58,8 @@ def test_accounts_survive_a_restart(t):
 
 
 def test_versions(t):
-    aeros = t.boot(disk=t.disk())
+    disk = t.disk()
+    aeros = t.boot(disk=disk)
     aeros.first_login()
 
     aeros.run('mkf notes.txt one')
@@ -93,6 +99,8 @@ def test_versions(t):
     aeros.cls()
     aeros.run('vers /out.txt')
     aeros.expect('/out.txt has no old versions.')
+    aeros.quit()
+    t.check_disk(disk)
 
 
 def test_encryption(t):
@@ -120,6 +128,74 @@ def test_encryption(t):
         aeros.fail('the plain text is still on the disk after ENC')
 
 
+def test_delete(t):
+    # a 20 MB file, a folder with files in folders inside it, and an empty folder
+    with open(t.path('big.bin'), 'wb') as f:
+        f.write(os.urandom(20 * 1024 * 1024))
+    small = t.path('small.txt')
+    with open(small, 'w') as f:
+        f.write('a small file\n')
+    files = {'/big.bin': t.path('big.bin')}
+    for i in range(8):
+        files[f'/stuff/f{i}.txt'] = small
+        files[f'/stuff/sub/f{i}.txt'] = small
+    disk = t.disk(files=files)
+    subprocess.run(['mmd', '-i', disk, '::/empty'], check=True, capture_output=True)
+
+    aeros = t.boot(disk=disk)
+    aeros.first_login()
+    aeros.cls()
+    aeros.run('del /big.bin')
+    aeros.expect('Deleted big.bin.')
+
+    # a folder with something in it asks first: no, then yes
+    aeros.ask('del /stuff')
+    aeros.wait_for('/stuff/ has 16 file(s) in it. Delete it and everything in it? (y/n)')
+    aeros.key('n')
+    aeros.wait_for('Nothing was deleted.')
+    aeros.cls()
+    aeros.ask('del /stuff')
+    aeros.wait_for('(y/n)')
+    before = aeros.prompts()
+    aeros.key('y')
+    aeros.wait_prompt(before)
+    aeros.expect('Deleted 16 file(s).', 'Deleted /stuff/.')
+    aeros.run('del /empty')
+    aeros.expect('Deleted /empty/.')
+
+    # all of it is gone from the disk, and the disk is still in good order
+    aeros.quit()
+    for gone in ['/big.bin', '/stuff/f0.txt']:
+        if read_disk_file(disk, gone) is not None:
+            aeros.fail(f'{gone} is still on the disk')
+    t.check_disk(disk)
+
+
+def test_three_wrong_passwords_wipe_the_home_folder(t):
+    # after the third wrong password in a row, the account's own files are securely deleted
+    disk = t.disk()
+    aeros = t.boot(disk=disk)
+    aeros.first_login('tester', 'secret1')
+    for i in range(5):
+        aeros.run(f'mkf note{i}.txt private note {i}')
+    aeros.ask('out')
+    for attempt in range(3):
+        aeros.wait_for('Authentication required', 30)
+        aeros.answer('tester')
+        aeros.answer(f'wrong{attempt}')
+        if attempt < 2:
+            aeros.wait_for(f'{attempt + 1} of 3', 60)
+    aeros.wait_for('have been securely deleted', 60)
+
+    # the right password still works, and says what happened
+    aeros.login('tester', 'secret1')
+    aeros.expect('wrong password(s) were typed for tester', 'wiped 1 time(s)')
+    aeros.quit()
+    if b'private note' in open(disk, 'rb').read():
+        aeros.fail('the notes can still be read on the disk')
+    t.check_disk(disk)
+
+
 def test_permissions(t):
     # a program asks before reading the user's files: N, then Y, then A (always)
     aeros = t.boot()
@@ -127,20 +203,14 @@ def test_permissions(t):
     aeros.run('mkd /data')
     aeros.run('mkf /data/n.txt hello')
     aeros.run('mkf t.aer print(rdf("/data/n.txt"))')
-    aeros.cls()
-    aeros.ask('t', 1.5)
-    aeros.expect('[ ? ] t.aer wants to read files in /data/ (n.txt)')
-    aeros.key('n')
-    time.sleep(1)
-    aeros.expect_line('nil')
-    aeros.cls()
-    aeros.ask('t', 1.5)
-    aeros.key('y')
-    time.sleep(1)
-    aeros.expect_line('hello')
-    aeros.ask('t', 1.5)
-    aeros.key('a')
-    time.sleep(1)
+    for key, shows in [('n', 'nil'), ('y', 'hello'), ('a', 'hello')]:
+        aeros.cls()
+        aeros.ask('t')
+        aeros.wait_for('[ ? ] t.aer wants to read files in /data/ (n.txt)')
+        before = aeros.prompts()
+        aeros.key(key)
+        aeros.wait_prompt(before)
+        aeros.expect_line(shows)
     # always: no question the next time
     aeros.cls()
     aeros.run('t')

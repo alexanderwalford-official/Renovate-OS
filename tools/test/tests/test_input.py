@@ -43,15 +43,16 @@ def test_mouse_is_off_after_a_program(t):
 
 
 def test_keys_held(t):
-    # keydown() sees a key while it is held, without waiting. The loop looks for about 1.5
-    # seconds (300 times, sleeping 5 ms each time keydown is false) while Q is held for one
+    # keydown() sees a key while it is held, without waiting. The loop looks for about 5
+    # seconds (1000 times, sleeping 5 ms each time keydown is false) while Q is held for one.
+    # QEMU presses keys in order, so Q goes down straight after the Enter that starts the loop
     aeros = t.boot()
     aeros.wait_for(GUEST_PROMPT, 60)
     aeros.run('let seen = false')
-    aeros.type('for i = 1 to 300 do if keydown("q") or sleep(5) then seen = true end end\n')
-    time.sleep(0.2)
+    before = aeros.prompts()
+    aeros.type('for i = 1 to 1000 do if keydown("q") or sleep(5) then seen = true end end\n')
     aeros.key('q', 1000)
-    time.sleep(2)
+    aeros.wait_prompt(before, 30)
     # the held Q also typed some q's, which wait at the prompt: rub them out
     for _ in range(30):
         aeros.key('backspace')

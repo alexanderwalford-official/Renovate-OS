@@ -51,15 +51,16 @@ def test_sealed_messages(t):
         # a message out and its echo back, then one from here to AerOS
         aeros.cls()
         aeros.run('msg 10.0.2.2 5000 hello from AerOS')
-        aeros.run('lsn 5000', 1.5)
+        before = aeros.prompts()
+        aeros.ask('lsn 5000')
+        aeros.wait_for('[10.0.2.2] echo: hello from AerOS', 30)
         aernet('send', '127.0.0.1', str(forward), 'hi from the host')
-        time.sleep(1.5)
+        aeros.wait_for('[10.0.2.2] hi from the host', 30)
         # the wrong password is kept out, so nothing is shown for it
         aernet('send', '127.0.0.1', str(forward), 'sneaky', password='wrongpass')
         time.sleep(1.5)
         aeros.key('esc')
-        time.sleep(1)
-        aeros.expect('[10.0.2.2] echo: hello from AerOS', '[10.0.2.2] hi from the host')
+        aeros.wait_prompt(before)
         aeros.expect_not('sneaky')
 
         # AerLang's nsend and nrecv

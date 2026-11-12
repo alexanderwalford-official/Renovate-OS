@@ -33,6 +33,7 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 
 from aeros import AerOS, Failure, Skip, make_disk  # noqa: E402  (needs the path above)
+import fatcheck  # noqa: E402
 
 
 class Test:
@@ -61,6 +62,17 @@ class Test:
     def path(self, name):
         """A file in this test's own folder."""
         return os.path.join(self.workdir, name)
+
+    def repo(self, *parts):
+        """A file in the repository, e.g. t.repo('src', 'apps', 'viewer.aer')."""
+        return os.path.join(REPO, *parts)
+
+    def check_disk(self, disk):
+        """Fail the test if the disk image isn't a consistent FAT volume (see fatcheck.py).
+        Stop the machine using it first, so everything has been written."""
+        errors, _ = fatcheck.check(disk)
+        if errors:
+            raise Failure('the disk is damaged:\n  ' + '\n  '.join(errors))
 
     def finish(self, keep):
         """Stop every machine, then tidy the folder away (or keep it to look at)."""
