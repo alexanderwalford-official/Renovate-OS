@@ -80,17 +80,23 @@ int p_create (const char* c_p_inst) {
     return -1;
 }
 
-// destroy a process, its ID can then be re-used
-// zeroing the slot also clears p_used, which is what marks it as free for p_create()
-// gotcha: nothing stops this being called on a RUNNING process (one further up the call stack).
-// Its slot is wiped, and when its code finishes p_stack_exec still marks that slot DEAD, which
-// would land on a new process if p_create() had re-used the slot in the meantime
-void p_destroy (int p_id) {
+// destroy a process, its ID can then be re-used. Returns false if there was nothing to destroy
+// or the process is RUNNING. Zeroing the slot also clears p_used, which is what marks it as free
+// for p_create()
+bool p_destroy (int p_id) {
     if (!p_valid(p_id)) {
-        return; // already free (or never existed), so the count must not go down twice
+        return false; // already free (or never existed), so the count must not go down twice
+    }
+    // A RUNNING process is further up the call stack, still inside compile(). If its slot were
+    // wiped here, p_create() could hand the slot to a new process, and when the old code finished
+    // p_stack_exec would mark that new process DEAD. So it stays: whoever started it destroys it
+    // once it has finished, as kernel.c and the RUN command do
+    if (p_stack[p_id].p_rs == P_RUNNING) {
+        return false;
     }
     memset(&p_stack[p_id], 0, sizeof(p_stack[p_id]));
     p_cnt--;
+    return true;
 }
 
 // freeze a process (milliseconds)

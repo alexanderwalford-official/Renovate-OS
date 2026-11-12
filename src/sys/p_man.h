@@ -18,7 +18,7 @@
         p_exec()     -> it becomes LIVE, tickets are handed out and every LIVE process is run
         (running)    -> RUNNING while the compiler executes its code
         (finished)   -> DEAD again, with no execution time left
-        p_destroy()  -> the slot is wiped so its ID can be handed out again
+        p_destroy()  -> the slot is wiped so its ID can be handed out again (never while RUNNING)
 
     Things To Note:
     - Once a process is created, it does not execute immediately. This must be called using: p_exec(p_id).
@@ -81,8 +81,9 @@ int p_id_handler (const char* action, int p_id);
 // make a new (DEAD) process holding the code c_p_inst, returns its ID or -1 if the stack is full / c_p_inst is NULL
 int p_create (const char* c_p_inst);
 
-// wipe a process off the stack so its ID can be re-used (invalid IDs are ignored)
-void p_destroy (int p_id);
+// wipe a process off the stack so its ID can be re-used. Returns false, and does nothing, for an
+// invalid ID or a RUNNING process (that one is destroyed by whoever started it, once it finishes)
+bool p_destroy (int p_id);
 
 // mark a process FROZEN and hang the whole OS for t milliseconds, then restore its old state
 void p_freeze (int p_id, unsigned int t);
