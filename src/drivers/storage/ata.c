@@ -32,6 +32,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include "../input/GIO.h"
+#include "../../sys/sys_clck.h"
 
 // I/O and control ports of bus 0 (primary) and bus 1 (secondary)
 #define ATA_IO(bus)   ((uint16_t)((bus) ? 0x170 : 0x1F0))
@@ -70,7 +71,16 @@
 
 // the highest sector number 28 bit LBA can address (2^28 - 1)
 #define ATA_LBA28_MAX 0x0FFFFFFF
-#define ATA_TIMEOUT   1000000 // status polls before giving up on a drive
+// How long a drive may stay busy before we give up on it. A cache flush can take a real disk a
+// few seconds, and in QEMU it is an fsync of the image file on the host, which is slow when the
+// host is busy. Giving up too early makes a write "fail" that would have worked, and a write that
+// fails between the two copies of the FAT leaves them disagreeing. (A count of status reads used
+// to be the limit, but how long a read takes depends on the machine, so it could be under a
+// second.) Drives that aren't there are caught straight away by drive_probe_info, not by this
+#define ATA_TIMEOUT_MS 10000
+// a backstop for when the timer isn't running, so clkuptms() stands still: give up after this many
+// status reads instead (far more than any working drive needs)
+#define ATA_MAX_POLLS  100000000u
 // a sector moves through the 16 bit data port as 256 words
 #define SECTOR_WORDS  (SECTOR_SIZE / 2)
 
@@ -98,10 +108,21 @@ static void ata_delay(uint16_t ctrl) {
     }
 }
 
+// has a wait that began at `start` (a clkuptms() time) gone on too long, after `polls` status
+// reads? The clock is only looked at every 1024 reads, which keeps the waiting loops quick
+static bool ata_timed_out(uint32_t start, uint32_t polls) {
+    if (polls >= ATA_MAX_POLLS) {
+        return true;
+    }
+    // unsigned subtraction still gives the right answer if the millisecond counter wraps round
+    return (polls & 1023) == 0 && clkuptms() - start > ATA_TIMEOUT_MS;
+}
+
 // poll the status register until BSY clears
-// io: the bus's I/O base. Returns false if the drive is still busy after ATA_TIMEOUT polls
+// io: the bus's I/O base. Returns false if the drive is still busy after ATA_TIMEOUT_MS
 static bool ata_wait_not_busy(uint16_t io) {
-    for (int i = 0; i < ATA_TIMEOUT; i++) {
+    uint32_t start = clkuptms();
+    for (uint32_t polls = 0; !ata_timed_out(start, polls); polls++) {
         if ((inb(io + ATA_REG_STATUS) & ATA_SR_BSY) == 0) {
             return true;
         }
@@ -113,7 +134,8 @@ static bool ata_wait_not_busy(uint16_t io) {
 // a timeout returns 0xFF, which has the error bit set just like a failed command
 // (0xFF has DF set too, so callers checking ERR | DF also see a timeout as a failure)
 static uint8_t ata_wait_data(uint16_t io) {
-    for (int i = 0; i < ATA_TIMEOUT; i++) {
+    uint32_t start = clkuptms();
+    for (uint32_t polls = 0; !ata_timed_out(start, polls); polls++) {
         uint8_t status = inb(io + ATA_REG_STATUS);
         if (status & (ATA_SR_DRQ | ATA_SR_ERR)) {
             return status;
