@@ -21,7 +21,7 @@
 
 // boot options, chosen from the boot options menu (press X on the splash screen)
 #define BOOT_OPT_NORMAL 0 // look for a AEROS disk (VFS if there isn't one) and show the boot log for a moment
-#define BOOT_OPT_FAST   1 // skip the boot log delay
+#define BOOT_OPT_FAST   1 // skip the boot log delay (and the splash wait, when the command line says "fast")
 #define BOOT_OPT_DEMO   2 // VFS mode, the disks are never touched
 #define BOOT_OPT_RT     3 // a normal boot, plus the real-time tasks of RT mode (experimental, sys/rt.h)
 

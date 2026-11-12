@@ -49,7 +49,7 @@ QEMU_AUDIO = -audiodev $(AUDIO),id=snd0 -device AC97,audiodev=snd0
 # UDP port 5001 here is passed on to AerOS's port 5000, so tools/aernet.py can send to it
 QEMU_NET = -nic user,model=e1000,hostfwd=udp::5001-:5000
 
-.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev FORCE
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev test FORCE
 
 all: main.iso
 
@@ -146,6 +146,12 @@ disk-ls: $(DISK)
 # copy a file onto the disk, e.g. "make disk-put FILE=hello.aer" (DIR=/bin to put it in a folder)
 disk-put: $(DISK)
 	mcopy -i $(DISK) -o '$(FILE)' ::$(DIR)/
+
+# boot AerOS in QEMU and check it does what it should (see docs/TESTING.md). "make test T=why"
+# runs only the tests with "why" in their name. They run on every processor core at once: J=1
+# runs one at a time
+test: main.iso
+	QEMU=$(QEMU) python3 ../tools/test/run.py --kernel main.elf --iso main.iso $(if $(J),-j $(J)) $(T)
 
 # boot the ISO through GRUB with the disk attached (terminal output is mirrored to this console via the serial port)
 # -boot d starts from the CD, otherwise the BIOS would try the (non bootable) disk first

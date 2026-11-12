@@ -18,3 +18,7 @@ src/serial.log
 serial.log
 vga.bin
 *.ppm
+
+# what the tests keep of a test that failed (tools/test/run.py)
+tools/test/out/
+__pycache__/

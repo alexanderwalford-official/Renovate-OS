@@ -54,12 +54,14 @@ int splash_screen (void) {
     // the startup chime plays in the background, so X still works straight away
     sound_startup();
 
-    // wait up to 4 seconds, pressing X opens the boot options
+    // wait up to 4 seconds, pressing X opens the boot options. Not at all when the bootloader's
+    // command line asked for a fast boot (see boot_has_word in sys/boot.c: the tests do this)
+    uint32_t window = boot_option == BOOT_OPT_FAST ? 0 : 4000;
     // throw away anything typed before the logo appeared, so only a key pressed now counts
     ClearInputbuffer();
     uint32_t start = clkuptms();
     // unsigned subtraction still gives the right answer if the millisecond counter wraps around
-    while (clkuptms() - start < 4000) {
+    while (clkuptms() - start < window) {
         if (!kb_haschar()) {
             // nothing pressed yet: wait a little before checking again. sleep_ms also works when
             // the timer is dead (a bare "hlt" would then sleep until a key is pressed)

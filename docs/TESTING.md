@@ -1,0 +1,128 @@
+# Testing AerOS
+
+AerOS's tests boot it in QEMU and use it the way a person would: they type commands, press
+keys, move the mouse, and read what comes back on the screen. Nothing inside AerOS knows it is
+being tested, so a test passing means AerOS really does that.
+
+## Running them
+
+You need QEMU, Python 3 and mtools (which makes the FAT disk images), on Linux or WSL:
+
+```
+sudo apt install qemu-system-x86 mtools
+```
+
+Then, from `src/`:
+
+| Type | To |
+| --- | --- |
+| `make test` | build AerOS, then run every test, as many at once as you have processor cores |
+| `make test T=why` | only the tests with `why` in their name |
+| `make test J=1` | one at a time (or `J=4` for four), if running them all at once is too much |
+| `python3 ../tools/test/run.py -l` | list the tests |
+
+Each test prints `PASS`, `FAIL` or `SKIP` with how long it took, and a summary comes at the
+end. `make test` fails (exit code 1) if any test failed, so it can be used before a commit.
+
+On a computer with plenty of cores the whole suite takes well under a minute, which is about
+as long as its slowest test (the file versions test waits out an 11 second gap on purpose). One
+at a time it takes three or four minutes.
+
+**Faster still, with KVM.** QEMU normally imitates the processor in software. If your Linux
+user may use `/dev/kvm`, the tests switch KVM on by themselves and AerOS runs on the real
+processor. Most Linux computers have it, and so does WSL 2 on Windows 11. If `ls -l /dev/kvm`
+shows it but you aren't in its group: `sudo usermod -aG kvm $USER`, then log in again (in WSL,
+`wsl --shutdown` from Windows and open it again). `AEROS_TEST_KVM=0` turns it off.
+
+When a test fails, the report says what it expected and shows the screen as it was. Its folder
+is kept in `tools/test/out/<test name>/`, with AerOS's serial log (everything AerOS printed)
+and any screenshots, so you can see what happened.
+
+The network test needs Python's `cryptography` package (`pip install cryptography`), like
+`tools/aernet.py`. Without it, it is skipped rather than failed.
+
+## What is tested
+
+| File | Tests |
+| --- | --- |
+| `test_basics.py` | booting, commands, files without a disk, "did you mean" |
+| `test_aerlang.py` | the language (`files/langtest.aer` checks every statement and expression), and AerLang at the prompt |
+| `test_explain.py` | WHY, SRC and the read-only `/src/` folder |
+| `test_processes.py` | RUN, and the queue: QUE, GO, Ctrl+C, `queue()` |
+| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, permissions |
+| `test_input.py` | the mouse in AerLang, and held keys |
+| `test_games.py` | Maze 3D and Snake, booted from the ISO in graphics mode |
+| `test_network.py` | the firewall and sealed messages, against `tools/aernet.py` |
+
+## How it works
+
+`tools/test/aeros.py` starts QEMU with no window and talks to it through QEMU's **monitor**, a
+command line for QEMU itself, over a local network socket:
+
+- `sendkey` presses keys, and `mouse_move` / `mouse_button` work the mouse.
+- `pmemsave` copies the VGA text screen (memory at `0xB8000`, two bytes a character) to a file,
+  which is how the screen is read.
+- `screendump` saves the screen's pixels, for graphics.
+- Everything AerOS prints also goes to its serial port, which QEMU writes to `serial.log`.
+
+Most tests boot `main.elf` straight away (`-kernel`), which leaves the screen in VGA text mode
+so it can be read. QEMU also gives the kernel the command line `fast` (`-append fast`), which
+AerOS reads from the multiboot information (`boot_has_word` in `src/sys/boot.c`): it skips the
+splash screen's 4 second wait and the boot log's pause, so a test reaches the prompt in about a
+second. The graphics tests boot `main.iso` instead, where GRUB sets up a graphics screen: they
+read the serial log and check the pixels of screenshots.
+
+The tests never sleep for a guessed time after typing a line. Every prompt AerOS shows also goes
+to the serial log, so `run()` waits until a new one appears: a quick command moves on straight
+away, and a slow one is waited for. Keys go to QEMU all at once and QEMU presses them in order,
+10 ms each.
+
+Every test runs in a folder of its own with its own QEMU on a free port, so tests can run side
+by side without getting in each other's way. Disks are made fresh for each test with
+`make_disk()`, so they never touch your own disk image or files.
+
+## Writing a test
+
+A test is a function whose name starts with `test_`, in a file in `tools/test/tests/` whose
+name starts with `test_`. It is given `t`, and boots AerOS with `t.boot()`:
+
+```python
+from aeros import GUEST_PROMPT
+
+def test_sums(t):
+    aeros = t.boot()                      # the kernel, in text mode, with no disk
+    aeros.wait_for(GUEST_PROMPT)          # wait for the prompt
+    aeros.cls()                           # clear the screen, so only the answer is checked
+    aeros.run('6 * 7')                    # type it and press Enter
+    aeros.expect_line('42')               # a line that is exactly "42"
+```
+
+The machine (`aeros.py` explains each one):
+
+| Use | For |
+| --- | --- |
+| `t.boot(graphics=True)` | the ISO, in graphics mode |
+| `t.boot(disk=t.disk())` | with a new, empty AEROS disk (`files={'/bin/x.aer': path}` copies files onto it) |
+| `aeros.first_login()` | make the first account on a new disk, and wait for its prompt |
+| `aeros.run(line)` | type a line, press Enter, and wait for the next prompt |
+| `aeros.ask(line)`, `aeros.answer(text)` | a line that asks a question (a password), and each answer |
+| `aeros.type(text)` | just type |
+| `aeros.login(name, password)` | log in at the login screen |
+| `aeros.key('esc')`, `aeros.key('up', 800)` | press a key, or hold it for 800 ms |
+| `aeros.mouse_move(dx, dy)`, `aeros.mouse_buttons(1)` | the mouse |
+| `aeros.wait_for(text)` | wait until text is showing (up to a minute) |
+| `aeros.expect(text, ...)`, `aeros.expect_not(...)` | text must (or must not) be showing |
+| `aeros.expect_line(line, ...)` | a whole line must say exactly this |
+| `aeros.expect_printed(text, ...)` | printed at some point, even if it has scrolled off the screen |
+| `aeros.expect_order(a, b, ...)` | these must show, in this order |
+| `aeros.screen()`, `aeros.serial()` | the text screen, or everything printed so far |
+| `aeros.screenshot()` | `(width, height, pixels)`, three bytes a pixel |
+| `aeros.fail(message)` | stop the test, showing the screen |
+
+`run()` only waits for a prompt, so a line that asks something (a password, Y / N) or keeps
+running (a game, `lsn`) never gives one: use `ask()`, or `run(line, settle=2)` to just wait 2
+seconds. Otherwise, wait for text with `wait_for()` rather than sleeping: it carries on as soon
+as the text appears, and fails clearly if it never does.
+
+Raise `Skip('why')` (from `aeros`) when a test can't run on this computer, as the network test
+does without the `cryptography` package.

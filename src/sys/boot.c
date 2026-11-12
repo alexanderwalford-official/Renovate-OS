@@ -30,6 +30,7 @@
 #include "../drivers/input/IO.h"
 #include "../lib/aer_stdlib.h"
 #include "../lib/aer_stdio.h"
+#include "../lib/aer_string.h"
 #include "interrupts.h"
 #include "sys_clck.h"
 #include "f_sys.h"
@@ -52,7 +53,9 @@ typedef struct __attribute__((packed)) multiboot_info {
     uint32_t flags; // which of the fields below are valid
     uint32_t mem_lower; // KB of memory below 1MB
     uint32_t mem_upper; // KB of memory above 1MB
-    uint32_t unused1[8]; // boot device, command line, modules, symbols
+    uint32_t boot_device;
+    uint32_t cmdline; // the command line (flags bit 2): the address of a '\0' terminated string
+    uint32_t unused1[6]; // modules, symbols
     uint32_t mmap_length; // the memory map (flags bit 6): its size in bytes
     uint32_t mmap_addr;   // and where it is
     uint32_t unused2[9];  // drives, config table, bootloader name, APM, VBE
@@ -68,6 +71,8 @@ typedef struct __attribute__((packed)) multiboot_info {
     uint8_t red_pos, red_size, green_pos, green_size, blue_pos, blue_size;
 } multiboot_info_t;
 
+// bit 2 of the info flags: the command line field is valid
+#define MULTIBOOT_INFO_CMDLINE     0x00000004
 // bit 6 of the info flags: the memory map fields are valid
 #define MULTIBOOT_INFO_MEMORY_MAP  0x00000040
 #define MULTIBOOT_MEMORY_AVAILABLE 1
@@ -136,6 +141,29 @@ uint32_t sys_mem_upper_kb = 0; // memory from 1MB up to the first hole in the me
 bool boot_framebuffer_valid = false; // GRUB gave us a graphics framebuffer instead of text mode
 vga_framebuffer_t boot_framebuffer;
 
+// Is `word` one of the words (split by spaces) in the bootloader's command line? The command line
+// is whatever follows the kernel in the bootloader's settings: QEMU passes "-append fast" on, which
+// is how the tests in tools/test/ skip the splash screen's wait and the boot log's pause. It
+// usually starts with the kernel's own path, which can never match a word like "fast"
+static bool boot_has_word (const char* line, const char* word) {
+    size_t length = slen(word);
+    while (*line != '\0') {
+        // skip the spaces before a word, then measure it
+        while (*line == ' ') {
+            line++;
+        }
+        size_t size = 0;
+        while (line[size] != '\0' && line[size] != ' ') {
+            size++;
+        }
+        if (size == length && strncmp(line, word, length) == 0) {
+            return true;
+        }
+        line += size;
+    }
+    return false;
+}
+
 // read what the bootloader told us about the machine
 // magic = eax from GRUB, info_addr = ebx from GRUB (the physical address of the structure)
 // called very early in kernel.c, before anything else could reuse the memory GRUB put the structure in
@@ -151,6 +179,11 @@ void boot_parse_multiboot (uint32_t magic, uint32_t info_addr) {
     if (info->flags & MULTIBOOT_INFO_MEMORY) {
         sys_mem_lower_kb = info->mem_lower;
         sys_mem_upper_kb = info->mem_upper;
+    }
+    // the word "fast" on the command line boots straight to the prompt (see boot_has_word)
+    if ((info->flags & MULTIBOOT_INFO_CMDLINE) && info->cmdline != 0 &&
+        boot_has_word((const char*)(uintptr_t)info->cmdline, "fast")) {
+        boot_option = BOOT_OPT_FAST;
     }
     // a graphics framebuffer (UEFI PCs). Without paging we can only reach the first 4GB, so a
     // framebuffer above that can't be used and we stay with VGA text mode

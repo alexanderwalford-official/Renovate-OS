@@ -1,0 +1,117 @@
+# every kind of node the interpreter runs, each checked against the answer it should give
+let failures = 0
+func check(name, got, want)
+    if got == want then
+        print("PASS " + name)
+    else
+        print("FAIL " + name + ": got " + str(got) + ", wanted " + str(want))
+        failures = failures + 1
+    end
+end
+
+# for loops: up, down, with a step, break and continue
+let s = 0
+for i = 1 to 5 do
+    s = s + i
+end
+check("for up", s, 15)
+s = 0
+for i = 5 to 1 step -1 do
+    s = s * 10 + i
+end
+check("for down", s, 54321)
+s = 0
+for i = 0 to 10 step 3 do
+    s = s + i
+end
+check("for step", s, 18)
+s = 0
+for i = 1 to 10 do
+    if i == 3 then
+        continue
+    end
+    if i == 6 then
+        break
+    end
+    s = s + i
+end
+check("for continue/break", s, 12)
+s = 0
+for i = 5 to 1 do
+    s = s + 1
+end
+check("for that never runs", s, 0)
+
+# while, if / elif / else
+let n = 0
+while n < 7 do
+    n = n + 2
+end
+check("while", n, 8)
+func grade(x)
+    if x > 90 then
+        return "A"
+    elif x > 50 then
+        return "B"
+    else
+        return "C"
+    end
+end
+check("if", grade(95), "A")
+check("elif", grade(60), "B")
+check("else", grade(10), "C")
+
+# expressions: unary, binary, and / or / not, precedence
+check("unary minus", -(3 - 5), 2)
+check("precedence", 2 + 3 * 4, 14)
+check("and", true and false, false)
+check("or", false or true, true)
+check("not", not false, true)
+check("compare", 3 <= 3, true)
+
+# lists: index, assign, for in, nesting
+let l = [1, 2, 3]
+l[1] = 20
+check("index assign", l[1], 20)
+s = 0
+for x in l do
+    s = s + x
+end
+check("for in", s, 24)
+let grid = [[1, 2], [3, 4]]
+grid[1][0] = 30
+check("nested assign", grid[1][0], 30)
+check("list print", str([1, "a", true, nil]), "[1, \"a\", true, nil]")
+
+# functions: recursion and return without a value
+func fact(k)
+    if k <= 1 then
+        return 1
+    end
+    return k * fact(k - 1)
+end
+check("recursion", fact(6), 720)
+func nothing()
+    return
+end
+check("bare return", nothing(), nil)
+
+# strings
+check("concat", "ab" + "cd", "abcd")
+check("str bool", str(true) + str(false), "truefalse")
+
+# whole numbers and decimals
+check("whole divide", 7 / 2, 3)
+check("decimal divide", 7 / 2.0, 3.5)
+check("decimal str", str(2.5), "2.5")
+check("floor", floor(-2.5), -3)
+check("round", round(2.5), 3)
+check("int cuts off", int(-2.7), -2)
+check("sqrt", sqrt(16.0), 4.0)
+check("mixed compare", 3 < 3.5, true)
+
+if failures == 0 then
+    print("ALL PASSED")
+else
+    print(str(failures) + " FAILED")
+end
