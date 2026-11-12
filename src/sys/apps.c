@@ -79,6 +79,7 @@ EMBEDDED(docs_text_md)
 EMBEDDED(docs_sample_htm)
 EMBEDDED(apps_sleep_aer)
 EMBEDDED(apps_snake_aer)
+EMBEDDED(apps_maze3d_aer)
 
 // every built-in file, where it goes and where its bytes are. Apps and system files (refresh
 // false) follow the record rules at the top of this file, the manual (refresh true) is simply
@@ -98,6 +99,7 @@ static const struct {
     FILE_ENTRY("/bin/", "anim.aer", apps_anim_aer, false),
     FILE_ENTRY("/bin/", "sleep.aer", apps_sleep_aer, false),
     FILE_ENTRY("/bin/games/", "snake.aer", apps_snake_aer, false),
+    FILE_ENTRY("/bin/games/", "maze3d.aer", apps_maze3d_aer, false),
     FILE_ENTRY("/bin/games/", "move.aer", apps_move_aer, false),
     FILE_ENTRY("/bin/", "sample.mpg", apps_sample_mpg, false),
     FILE_ENTRY("/bin/", "aeros.bmp", apps_aeros_bmp, false),

@@ -213,6 +213,7 @@ end
 | `/bin/viewer.aer` | graphics, pictures and a menu |
 | `/bin/games/move.aer` | smooth movement, held keys and mixed sounds |
 | `/bin/games/snake.aer` | a whole game: graphics, a back buffer, held keys and lists |
+| `/bin/games/maze3d.aer` | a 3D maze drawn with ray casting: decimals, sin / cos and sprites |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |
 | `/bin/anim.aer` | spinners, progress bars and moving text |

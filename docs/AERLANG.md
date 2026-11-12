@@ -329,6 +329,14 @@ end
 `src/sys/mixer.c`, which feeds the sound card from the timer interrupt so sound keeps playing
 smoothly whatever the program is doing.
 
+`/bin/games/maze3d.aer` (run it with `maze3d`) goes further: a first-person 3D maze, drawn with
+ray casting the way early 3D games were. For each strip of the screen it sends a ray across a
+grid of squares until it hits a wall, and draws that wall shorter the further away it is. The
+crystals are sprites, placed with the same maths backwards and hidden behind nearer walls. It
+uses decimals, `sin` / `cos`, `keydown`, `gbuf` and `frame`, and its comments explain each step,
+so it is meant to be read and changed: draw your own maze in `MAP`, add wall colours, or widen
+`STRIP_WIDTH` for more speed on a slow computer.
+
 `/bin/viewer.aer` is a complete app built from these: a picture picker and viewer that zooms
 (`+` / `-`, `0` to fit) by drawing the picture bigger than the screen and moving it around.
 `/bin/read.aer` is a bigger one: the Markdown / HTML reader behind the `DOC` command, with its
