@@ -275,6 +275,10 @@ static int run_update (run_t* run, aerdb_table_t* table) {
 static int run_statement (aerdb_t* db, const statement_t* s, aerdb_row_fn row_out, void* ctx) {
     // the ones that don't work on an existing table's rows
     if (s->kind == S_CREATE) {
+        // IF NOT EXISTS: a table that is there already is left as it is
+        if (s->if_not_exists && table_find(db, s->table) != NULL) {
+            return AERDB_OK;
+        }
         return table_create(db, s->table, s->create);
     }
     if (s->kind == S_DROP) {

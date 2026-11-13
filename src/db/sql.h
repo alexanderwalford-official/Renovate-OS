@@ -10,7 +10,7 @@
 
     and run.c does what the statement_t says. The SQL AerDB understands:
 
-        CREATE TABLE name (column type, column type, ...)
+        CREATE TABLE [IF NOT EXISTS] name (column type, column type, ...)
         DROP TABLE name
         INSERT INTO name [(column, ...)] VALUES (value, ...)
         SELECT * | column, ... FROM name [WHERE ...] [LIMIT n]
@@ -81,6 +81,7 @@ typedef struct {
 
     int limit;                 // SELECT's LIMIT, -1 for none
     char create[128];          // CREATE TABLE: the columns, as text ("name TEXT, price REAL")
+    bool if_not_exists;        // CREATE TABLE IF NOT EXISTS: a table already there is fine
 } statement_t;
 
 // Make sense of a statement's words, filling in `out`. A ? takes the next of params[]. Text values

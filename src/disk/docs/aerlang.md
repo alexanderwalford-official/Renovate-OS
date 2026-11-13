@@ -229,7 +229,7 @@ end
 | `/bin/games/guess.aer` | random numbers and a game loop |
 | `/bin/viewer.aer` | graphics, pictures and a menu |
 | `/bin/games/move.aer` | smooth movement, held keys and mixed sounds |
-| `/bin/games/snake.aer` | a whole game: graphics, a back buffer, held keys and lists |
+| `/bin/games/snake.aer` | a whole game: graphics, a back buffer, held keys, lists, and high scores in a database |
 | `/bin/games/maze3d.aer` | a 3D maze drawn with ray casting: decimals, sin / cos, sprites and mouse look |
 | `/bin/read.aer` | this reader: text handling, a whole app |
 | `/bin/sysinfo.aer` | system information: lists, layout and scrolling |

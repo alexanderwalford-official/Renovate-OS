@@ -44,6 +44,10 @@ dbclose(db)
 | `dbquery(db, sql, values)` | runs a SELECT: a list of rows, each a list of its values |
 | `dbclose(db)` | closes it (anything left open closes when the program ends) |
 
+Snake keeps its high scores this way, in `/bin/games/scores.db`: read
+`/bin/games/snake.aer` for a whole example, or see them with
+`sql /bin/games/scores.db SELECT * FROM scores`.
+
 Each `?` in the SQL takes the next of the values. Use `?` for anything that comes from
 outside the program, rather than adding it to the SQL text. A mistake in the SQL stops the
 program and says what was wrong, and `why` shows the line. Like every file, a program
@@ -53,6 +57,7 @@ program and says what was wrong, and `why` shows the line. Like every file, a pr
 
 ```
 CREATE TABLE name (column type, ...)        DROP TABLE name
+CREATE TABLE IF NOT EXISTS name (...)       (no error if it is there already)
 INSERT INTO name VALUES (value, ...)        INSERT INTO name (column, ...) VALUES (...)
 SELECT * FROM name                          SELECT column, ... FROM name
        ... WHERE column = value AND ...            ... LIMIT 10

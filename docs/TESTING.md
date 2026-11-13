@@ -57,7 +57,7 @@ are skipped rather than failed.
 | `test_crypto.py` | the boot's crypto self-test, and the decryptor printed in `docs/SECURITY.md` run on a file AerOS encrypted |
 | `test_media.py` | WAV files in three formats and an MP3 (recorded and checked for the right notes), the startup sound, and video |
 | `test_input.py` | the mouse in AerLang, and held keys |
-| `test_games.py` | Maze 3D, Snake and `move.aer`, booted from the ISO in graphics mode |
+| `test_games.py` | Maze 3D, Snake (and its high scores) and `move.aer`, booted from the ISO in graphics mode |
 | `test_database.py` | AerDB from AerLang (`files/aerdb.aer`: every statement, many pages, reopening, COMPACT), the SQL command, and SHOW on a query |
 | `test_network.py` | the firewall and sealed messages, against `tools/aernet.py` |
 

@@ -87,8 +87,9 @@ class AerOS:
                 '-serial', f'file:{self.serial_path}', '-no-reboot']
         # "fast" on the kernel's command line skips the splash screen's 4 second wait and the
         # boot log's pause (boot_has_word in src/sys/boot.c). GRUB has its own command line, so
-        # the ISO boots as it always does
-        args += ['-cdrom', iso] if iso else ['-kernel', kernel, '-append', 'fast']
+        # the ISO boots as it always does. (-boot d: from the CD, even with a disk attached,
+        # which QEMU would otherwise try first and find nothing to boot on)
+        args += ['-cdrom', iso, '-boot', 'd'] if iso else ['-kernel', kernel, '-append', 'fast']
         # KVM runs AerOS on the real processor instead of QEMU imitating one, which is much
         # faster. It is there on most Linux computers (AEROS_TEST_KVM=0 turns it off)
         if os.access('/dev/kvm', os.R_OK | os.W_OK) and os.environ.get('AEROS_TEST_KVM') != '0':

@@ -309,12 +309,20 @@ static int read_where (parser_t* p, statement_t* s) {
 //  One function for each kind of statement
 // ================================================================================================
 
-// CREATE TABLE name (column type, column type, ...)
+// CREATE TABLE [IF NOT EXISTS] name (column type, column type, ...)
 // The columns are kept as text ("name TEXT, price REAL"): the words between the brackets,
-// joined with spaces, and ", " for each comma
+// joined with spaces, and ", " for each comma. IF NOT EXISTS makes a table that is already
+// there fine, rather than an error: how a program makes its table the first time it runs
 static int parse_create (parser_t* p, statement_t* s) {
     s->kind = S_CREATE;
     int result = need_keyword(p, "TABLE");
+    if (result == AERDB_OK && take_keyword(p, "IF")) {
+        result = need_keyword(p, "NOT");
+        if (result == AERDB_OK) {
+            result = need_keyword(p, "EXISTS");
+        }
+        s->if_not_exists = true;
+    }
     if (result == AERDB_OK) {
         result = read_name(p, s->table);
     }

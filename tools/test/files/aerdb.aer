@@ -41,6 +41,8 @@ check("whole numbers and decimals compare", len(dbquery(db, "SELECT * FROM items
 
 # bytes and true / false
 dbrun(db, "CREATE TABLE things (data BLOB, flag INTEGER)")
+dbrun(db, "CREATE TABLE IF NOT EXISTS things (data BLOB, flag INTEGER)")
+check("IF NOT EXISTS keeps the table", len(dbquery(db, "SELECT * FROM things")), 0)
 let b = bytes(3)
 b[0] = 7
 b[2] = 255

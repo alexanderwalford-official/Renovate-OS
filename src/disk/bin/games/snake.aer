@@ -9,6 +9,11 @@
 #
 # This game uses AerLang's graphics and non-blocking keyboard functions.
 # The board is made from square tiles, so the snake moves one tile per step.
+#
+# The best scores are kept in a database, /bin/games/scores.db (see "High scores" below),
+# which other games can keep their scores in too. The first time, AerOS asks if Snake may
+# change files in /bin/games/: answer A (always). Without it the game still works, just
+# without high scores.
 
 # ---------------------------------------------------------------------------
 # Colours
@@ -101,6 +106,146 @@ func make_food(snake)
     return candidate
 end
 
+func forget_keys()
+    # Keys pressed during a game wait to be read (the game watches held keys with
+    # keydown, and never reads them). Throw them away, so the next screen waits for
+    # a new press instead of going straight past.
+    while haskey() do
+        key()
+    end
+end
+
+# ---------------------------------------------------------------------------
+# High scores
+# ---------------------------------------------------------------------------
+# The scores are rows of a database table that any game can share:
+#
+#     scores:  game     name    score
+#              snake    ANNA    120
+#              snake    BEN     80
+#
+# AerDB gives rows back in the order they were added, so the best are found by
+# sorting them here. Only as many as are shown are kept.
+
+let SCORES_FILE = "/bin/games/scores.db"
+let SCORES_SHOWN = 5        # how many high scores are listed
+let NAME_LONGEST = 10       # letters in a player's name
+
+func open_scores()
+    # Open the database, and make the table the first time. Gives back nil if it
+    # can't be opened (if you said no when AerOS asked): no high scores then.
+    let db = dbopen(SCORES_FILE)
+    if db != nil then
+        dbrun(db, "CREATE TABLE IF NOT EXISTS scores (game TEXT, name TEXT, score INTEGER)")
+    end
+    return db
+end
+
+func best_scores()
+    # Snake's best scores, best first, as a list of [name, score] (at most SCORES_SHOWN).
+    if scores_db == nil then
+        return []
+    end
+    let rows = dbquery(scores_db, "SELECT name, score FROM scores WHERE game = 'snake'")
+
+    # Sort them, best first: each row goes in front of the first score it beats.
+    let sorted = []
+    for i = 0 to len(rows) - 1 do
+        let place = 0
+        while place < len(sorted) and sorted[place][1] >= rows[i][1] do
+            place = place + 1
+        end
+        insert(sorted, place, rows[i])
+    end
+
+    # Only the best SCORES_SHOWN of them.
+    let best = []
+    for i = 0 to len(sorted) - 1 do
+        if i < SCORES_SHOWN then
+            push(best, sorted[i])
+        end
+    end
+    return best
+end
+
+func is_high_score(score)
+    # Is this score good enough to be in the list? (While the list isn't full yet,
+    # any score above 0 is.)
+    if scores_db == nil or score == 0 then
+        return false
+    end
+    let best = best_scores()
+    return len(best) < SCORES_SHOWN or score > best[len(best) - 1][1]
+end
+
+func save_score(name, score)
+    # Keep a new high score, then forget the scores too low to be listed any more.
+    # The ? values are filled in by AerDB, so a name with a ' in it is fine.
+    dbrun(scores_db, "INSERT INTO scores VALUES ('snake', ?, ?)", [name, score])
+    let best = best_scores()
+    if len(best) == SCORES_SHOWN then
+        let lowest = best[SCORES_SHOWN - 1][1]
+        dbrun(scores_db, "DELETE FROM scores WHERE game = 'snake' AND score < ?", [lowest])
+    end
+end
+
+func padded(words, width)
+    # The words with spaces on the end, to make them `width` letters long, so the
+    # names in the list line up.
+    let out = words
+    while len(out) < width do
+        out = out + " "
+    end
+    return out
+end
+
+func draw_scores(y)
+    # List the high scores, starting at row y: "1. ANNA        120".
+    let best = best_scores()
+    if len(best) == 0 then
+        return
+    end
+    centre(y, "HIGH SCORES", GOLD)
+    for i = 0 to len(best) - 1 do
+        let score_text = str(best[i][1])
+        let entry = str(i + 1) + ". " + padded(best[i][0], NAME_LONGEST) + padded("", 6 - len(score_text)) + score_text
+        centre(y + 22 + i * 18, entry, WHITE)
+    end
+end
+
+func ask_name(score)
+    # Ask for the player's name, typed on the screen a letter at a time: Backspace
+    # rubs one out, Enter is done, Escape means "don't keep it". Gives back the
+    # name, or nil.
+    let name = ""
+    while true do
+        gclear(BLACK)
+        text((gw() - 14 * 32) / 2, gh() / 3, "NEW HIGH SCORE", GOLD, 4)
+        centre(gh() / 2 + 20, "SCORE: " + str(score), WHITE)
+        centre(gh() / 2 + 52, "TYPE YOUR NAME, THEN PRESS ENTER", GREY)
+        # the name so far, in big letters, with a _ where the next letter goes
+        let shown = name + "_"
+        text((gw() - len(shown) * 16) / 2, gh() / 2 + 84, shown, GREEN, 2)
+        gshow()
+
+        let k = key()
+        if k == KEY_ENTER then
+            if len(name) > 0 then
+                return name
+            end
+        elif k == KEY_ESCAPE then
+            return nil
+        elif k == KEY_BACKSPACE then
+            if len(name) > 0 then
+                name = sub(name, 0, len(name) - 1)
+            end
+        elif k >= 32 and k < 127 and len(name) < NAME_LONGEST then
+            # a letter, a digit or a symbol you can see (not an arrow or Shift)
+            name = name + chr(k)
+        end
+    end
+end
+
 func wait_for_start(title, subtitle)
     # Simple title / game-over screen. Any key continues.
     gclear(BLACK)
@@ -108,6 +253,7 @@ func wait_for_start(title, subtitle)
     centre(gh() / 2 + 30, subtitle, WHITE)
     centre(gh() / 2 + 58, "ARROWS TO MOVE", GREY)
     centre(gh() / 2 + 76, "ESC TO QUIT", GREY)
+    draw_scores(gh() / 2 + 112)
     gshow()
 
     # Wait for a single key press rather than polling a held key.
@@ -117,6 +263,10 @@ end
 # ---------------------------------------------------------------------------
 # Start graphics mode
 # ---------------------------------------------------------------------------
+
+# The high scores first, so if AerOS asks whether Snake may keep them, the
+# question is in the terminal (nil if the answer was no).
+let scores_db = open_scores()
 
 if not gopen() then
     print("Snake needs a graphics screen.")
@@ -211,9 +361,18 @@ while not quit_game do
             dy = 0
         end
 
-        # Escape exits the current game and the outer loop.
+        # Escape exits the current game and the outer loop. keydown() only sees a
+        # key still held, and a quick tap can come and go between two steps, so also
+        # read every key pressed since the last step (this also stops them piling up).
         if keydown(KEY_ESCAPE) then
             quit_game = true
+        end
+        while haskey() do
+            if key() == KEY_ESCAPE then
+                quit_game = true
+            end
+        end
+        if quit_game then
             alive = false
         end
 
@@ -274,12 +433,25 @@ while not quit_game do
     end
 
     if not quit_game then
+        # The arrows pressed while playing are still waiting to be read: throw them
+        # away, so the screens below wait for new keys.
+        forget_keys()
+
+        # A score good enough for the list: ask for a name, and keep it.
+        if is_high_score(score) then
+            let name = ask_name(score)
+            if name != nil then
+                save_score(name, score)
+            end
+        end
+
         # Game over screen. The outer loop starts a fresh game after a key.
         gclear(BLACK)
         text((gw() - 9 * 32) / 2, gh() / 3, "GAME OVER", RED, 4)
         centre(gh() / 2 + 20, "FINAL SCORE: " + str(score), WHITE)
         centre(gh() / 2 + 52, "PRESS A KEY TO RETRY", GOLD)
         centre(gh() / 2 + 76, "ESC DURING GAME TO QUIT", GREY)
+        draw_scores(gh() / 2 + 112)
         gshow()
 
         # key() waits for the next press. Escape is handled by the next game
@@ -293,5 +465,9 @@ end
 
 # Give the terminal its screen back. AerOS also does this automatically
 # when a program ends, but closing graphics explicitly is good practice.
+# The same goes for the high scores' database.
+if scores_db != nil then
+    dbclose(scores_db)
+end
 gclose()
 print("Thanks for playing Snake!")
