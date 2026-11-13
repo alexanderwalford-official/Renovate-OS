@@ -76,5 +76,6 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] RT mode, experimental. (boot option 6: real-time tasks from the timer, a schedulability check and a watchdog; RT lists them)
 - [x] Decimal numbers in AerLang. (3.14, 7 / 2.0, sqrt, sin, cos, atan2, floor, round, PI, on the x87 FPU)
 - [x] A 3D game demo. (MAZE3D, a first-person maze drawn with ray casting, with mouse look, written in AerLang to show what it can do)
+- [x] A database. (AerDB: tables of rows in one file, a little SQL, the SQL command and dbopen / dbrun / dbquery in AerLang)
 - [x] Ethernet network driver. (Intel e1000, sealed messages only, and a firewall that blocks everything until FW ALLOW; see docs/NETWORK.md)
 - [ ] More in the pipeline coming soon..

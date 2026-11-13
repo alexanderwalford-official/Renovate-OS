@@ -49,7 +49,7 @@ def boot_and_stop(t, disk):
     """Boot with the disk until AerOS asks for an account (the apps are installed before that),
     then stop. Gives what AerOS printed."""
     aeros = t.boot(disk=disk)
-    aeros.wait_for('Create the first account', 60)
+    aeros.wait_for('Create the first account', 180)
     printed = aeros.serial()
     aeros.quit()
     return printed

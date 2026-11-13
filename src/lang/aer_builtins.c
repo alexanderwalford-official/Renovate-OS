@@ -96,6 +96,10 @@ const aer_builtin_t aer_builtins[] = {
     BUILTIN("cmd", bi_cmd, 1, 1),
     BUILTIN("nsend", bi_net_send, 3, 3),
     BUILTIN("nrecv", bi_net_receive, 2, 2),
+    BUILTIN("dbopen", bi_dbopen, 1, 1),
+    BUILTIN("dbrun", bi_dbrun, 2, 3),
+    BUILTIN("dbquery", bi_dbquery, 2, 3),
+    BUILTIN("dbclose", bi_dbclose, 1, 1),
     BUILTIN("appmode", bi_appmode, 0, 0),
     BUILTIN("random", bi_random, 1, 1),
     BUILTIN("beep", bi_beep, 0, 1),
@@ -137,14 +141,15 @@ const int aer_builtin_count = sizeof(aer_builtins) / sizeof(aer_builtins[0]);
 // 14 names, so 16 leaves room for the NULL and one more
 static const struct {
     uint32_t part;
-    const char* names[16];   // ends with NULL
+    const char* names[24];   // ends with NULL
 } parts[] = {
     { APP_GRAPHICS, { "gopen", "gclose", "gw", "gh", "gclear", "rgb", "pixel", "rect", "line",
                       "text", "image", "imgsz", "gbuf", "gshow", NULL } },
     { APP_SOUND,    { "beep", "play", "sload", "splay", "sstop", "isply", NULL } },
     { APP_VIDEO,    { "video", NULL } },
     { APP_FILES,    { "rdf", "rdb", "wrf", "apf", "isf", "delf", "la", "cwd", "enc", "dec",
-                      "isenc", "rdenc", "rdat", "wrat", "trunc", NULL } },
+                      "isenc", "rdenc", "rdat", "wrat", "trunc", "dbopen", "dbrun", "dbquery",
+                      "dbclose", NULL } },
     { APP_NETWORK,  { "nsend", "nrecv", NULL } },
 };
 
@@ -222,5 +227,6 @@ void aer_give_screen_back (void) {
 void aer_builtins_finish (void) {
     mixer_stop_all(); // sounds from splay() stop with the program (their memory is about to go)
     mouse_stop();     // the mouse is only for programs: the terminal goes back to not having it
+    database_finish(); // databases a program left open are closed
     aer_give_screen_back();
 }

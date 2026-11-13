@@ -346,9 +346,25 @@ class AerOS:
 
     # ---- common steps ------------------------------------------------------------------------
 
+    def run_checks(self, program, timeout=120):
+        """Run an AerLang program that prints PASS / FAIL lines and ALL PASSED (like
+        files/langtest.aer), and fail the test on any FAIL. A program in /bin/ asks before it
+        changes files in the home folder: it is told "always"."""
+        before = self.prompts()
+        self.ask(program)
+        self.wait_for('[ ? ]', 30)
+        self.key('a')
+        self.wait_prompt(before, timeout, what=program)
+        printed = self.serial()
+        failures = [line for line in printed.split('\n') if line.startswith('FAIL')]
+        if failures or 'ALL PASSED' not in printed:
+            self.fail(f'{program} failed:\n' + '\n'.join(failures))
+
     def first_login(self, name='tester', password='secret1'):
         """On a new disk AerOS asks for the first account: make one and wait for its prompt."""
-        self.wait_for('Create the first account', 60)
+        # a new disk first gets every built-in file (a few MB, each write flushed), which takes a
+        # while when many tests are writing at once
+        self.wait_for('Create the first account', 180)
         self.answer(name)
         self.answer(password)
         self.answer(password)

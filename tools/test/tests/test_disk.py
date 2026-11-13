@@ -258,20 +258,6 @@ def test_a_full_disk_is_reported(t):
     aeros.expect('What you can do')
 
 
-def run_aer_checks(aeros, program, timeout=120):
-    """Run an AerLang program that prints PASS / FAIL lines and ALL PASSED, and fail on any FAIL.
-    A program in /bin/ asks before it changes files in the home folder: it is told "always"."""
-    before = aeros.prompts()
-    aeros.ask(program)
-    aeros.wait_for('[ ? ]', 30)
-    aeros.key('a')
-    aeros.wait_prompt(before, timeout)
-    printed = aeros.serial()
-    failures = [line for line in printed.split('\n') if line.startswith('FAIL')]
-    if failures or 'ALL PASSED' not in printed:
-        aeros.fail(f'{program} failed:\n' + '\n'.join(failures))
-
-
 def test_writing_in_place(t, fat32=False):
     # rdat, wrat and trunc change a file a piece at a time (fs_write_at, fs_truncate), on a real
     # FAT disk: files/pages.aer checks what AerOS reads back, then the disk is checked from outside
@@ -279,7 +265,7 @@ def test_writing_in_place(t, fat32=False):
     aeros = t.boot(disk=disk)
     aeros.first_login()
     aeros.cls()
-    run_aer_checks(aeros, 'pages')
+    aeros.run_checks('pages')
     aeros.quit()
     t.check_disk(disk)
 

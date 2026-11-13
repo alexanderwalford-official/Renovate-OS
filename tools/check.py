@@ -28,7 +28,7 @@ import re
 import sys
 
 SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'src')
-FOLDERS = ['.', 'lib', 'sys', 'sys/accounts', 'sys/terminal', 'lang', 'drivers/audio',
+FOLDERS = ['.', 'lib', 'sys', 'sys/accounts', 'sys/terminal', 'lang', 'db', 'drivers/audio',
            'drivers/input', 'drivers/net', 'drivers/pci', 'drivers/serial', 'drivers/storage',
            'drivers/video']
 LEFT_OUT = {'sys/splash_logo.c', 'drivers/video/font8x16.c'}

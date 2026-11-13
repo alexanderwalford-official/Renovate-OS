@@ -14,7 +14,7 @@ CFLAGS = -m32 -march=i686 -std=gnu99 -ffreestanding -fno-builtin -fno-stack-prot
 LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
 # every .c file is compiled on its own into obj/, then linked together
-SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
+SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c db/*.c)
 # the built-in files: everything in disk/ is linked into the kernel as raw data, and sys/apps.c
 # copies it to the same place in AerOS when it starts. disk/ is laid out just like AerOS's own
 # folders, so disk/bin/hello.aer is /bin/hello.aer and disk/docs/index.md is /docs/index.md.
@@ -25,7 +25,7 @@ BUILTIN_FILES = $(sort $(shell find disk -type f))
 # /src/ (see sys/source.h): every .c and .h file AerOS was built from, plus the files that
 # build and boot it. Left out: other people's code (lib/minimp3, lib/pl_mpeg, which the
 # wildcards don't reach) and two big files that are only data (the logo and the font)
-HEADERS = $(wildcard *.h lib/*.h lib/shim/*.h sys/*.h sys/*/*.h drivers/*/*.h lang/*.h)
+HEADERS = $(wildcard *.h lib/*.h lib/shim/*.h sys/*.h sys/*/*.h drivers/*/*.h lang/*.h db/*.h)
 SOURCE_CODE = $(sort $(filter-out sys/splash_logo.c drivers/video/font8x16.c, \
                 $(SOURCES) $(HEADERS)) entry.asm linker.ld Makefile iso/boot/grub/grub.cfg)
 SOURCE_OBJECTS = $(patsubst %,obj/source/%.o,$(SOURCE_CODE)) obj/source_index.o

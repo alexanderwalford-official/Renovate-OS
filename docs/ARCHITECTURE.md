@@ -116,6 +116,12 @@ src/
     shim/                 <string.h> and <stdlib.h> for the decoders, pointing at the files above
     aer_comp.c            runs a process's line of code (the built-in "instructions")
 
+  db/                   AerDB, the database (see the top of aerdb.h)
+    aerdb.h               the file format, values, and every function
+    file.c, table.c       opening a database and its pages; tables, and adding / reading rows
+    value.c               values, and rows to bytes and back
+    sql.c, sql.h, run.c   SQL to words to a statement_t, and running it (and COMPACT)
+
   lang/                 the AerLang interpreter
     aer_lexer.c           source text -> tokens
     aer_parser.c          tokens -> syntax tree

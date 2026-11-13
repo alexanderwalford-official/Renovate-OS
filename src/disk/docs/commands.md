@@ -21,6 +21,7 @@ suggestion (`Did you mean DEL?`), and `why` explains any problem.
 | `la` | list the files and folders here |
 | `sd <dir>` | go to a folder: `sd /bin`, `sd ..`, `sd /` |
 | `rd <file>` | show a file (asks for the password if it is encrypted) |
+| `sql <file> [sql]` | run SQL on a database, or open a `sql>` prompt ([more](database.md)) |
 | `mkf <file> [text]` | make a file, with some text in it if you like |
 | `wr <file> <text>` | add a line to the end of a file |
 | `mkd <dir>` | make a folder |

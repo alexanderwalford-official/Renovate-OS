@@ -58,6 +58,7 @@ are skipped rather than failed.
 | `test_media.py` | WAV files in three formats and an MP3 (recorded and checked for the right notes), the startup sound, and video |
 | `test_input.py` | the mouse in AerLang, and held keys |
 | `test_games.py` | Maze 3D, Snake and `move.aer`, booted from the ISO in graphics mode |
+| `test_database.py` | AerDB from AerLang (`files/aerdb.aer`: every statement, many pages, reopening, COMPACT), the SQL command, and SHOW on a query |
 | `test_network.py` | the firewall and sealed messages, against `tools/aernet.py` |
 
 Every test that writes to a disk finishes by checking the disk is still a consistent FAT volume:

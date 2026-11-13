@@ -110,6 +110,9 @@ orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`
 file, and if you say no the function fails as if the file wasn't there. `rdf("notes.txt@2")`
 reads an [old version](versions.md) of a file.
 
+**Databases:** `dbopen(path)`, `dbrun(db, sql, values)`, `dbquery(db, sql, values)` (a list of
+rows) and `dbclose(db)` keep tables of rows in a file, in SQL: see [Databases](database.md).
+
 To change a file a piece at a time (a database's pages, say) rather than all of it:
 `rdat(path, offset, count)` reads `count` bytes from byte `offset`, `wrat(path, offset, data)`
 writes bytes or text there, in place, and `trunc(path, size)` makes the file that long. Writing

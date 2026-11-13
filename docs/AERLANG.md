@@ -197,6 +197,24 @@ encrypted file and `gopen` opens the graphics screen.
 `apf(path, text)` · `isf(path)` · `delf(path)` ·
 `la(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
 
+**Databases** (AerDB, `src/db/`: tables of rows in one file, and a little SQL)
+`dbopen(path)` open a database, making it if need be: a number for it, nil if it can't ·
+`dbrun(db, sql, values)` run a statement, giving back how many rows it changed ·
+`dbquery(db, sql, values)` run a SELECT: a list of rows, each a list of its values ·
+`dbclose(db)` close it. Each `?` in the SQL takes the next of `values`, a list:
+
+```
+let db = dbopen("shop.db")
+dbrun(db, "CREATE TABLE items (name TEXT, price REAL)")
+dbrun(db, "INSERT INTO items VALUES (?, ?)", ["tea", 2.5])
+for row in dbquery(db, "SELECT name, price FROM items WHERE price < ?", [3]) do
+    print(row[0], row[1])
+end
+```
+
+The SQL it understands is in the manual inside AerOS (`doc database`); the terminal's `SQL`
+command runs it too. How AerDB works inside starts at the top of `src/db/aerdb.h`.
+
 **A piece of a file at a time** (for files changed in place, like a database's pages)
 `rdat(path, offset, count)` that many bytes from byte `offset`, as bytes (fewer at the end) ·
 `wrat(path, offset, data)` write bytes or text at `offset`, in place, making the file if need
