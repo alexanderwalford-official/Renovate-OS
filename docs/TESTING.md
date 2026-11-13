@@ -52,7 +52,7 @@ are skipped rather than failed.
 | `test_aerlang.py` | the language (`files/langtest.aer` checks every statement and expression), and AerLang at the prompt |
 | `test_explain.py` | WHY, SRC, SHOW and the read-only `/src/` folder |
 | `test_processes.py` | RUN, and the queue: QUE, GO, Ctrl+C, `queue()` |
-| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, DEL on big files and folders, the wipe after three wrong passwords, a full disk reported rather than ignored, permissions |
+| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, DEL on big files and folders, the wipe after three wrong passwords, a full disk reported rather than ignored, permissions, and changing files in place (`files/pages.aer`, on FAT16, FAT32 and in memory) |
 | `test_apps.py` | the DOC reader, the animation demo, and how built-in apps are installed and kept up to date on a disk |
 | `test_crypto.py` | the boot's crypto self-test, and the decryptor printed in `docs/SECURITY.md` run on a file AerOS encrypted |
 | `test_media.py` | WAV files in three formats and an MP3 (recorded and checked for the right notes), the startup sound, and video |

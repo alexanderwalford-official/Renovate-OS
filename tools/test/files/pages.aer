@@ -1,0 +1,85 @@
+# Changing files in place, a piece at a time: rdat, wrat and trunc (what a database does with
+# its pages). Each check prints PASS or FAIL, and ALL PASSED at the end. The test that runs this
+# also checks the disk is still consistent afterwards, and the files' bytes from outside.
+let failures = 0
+func check(name, got, want)
+    if got == want then
+        print("PASS " + name)
+    else
+        print("FAIL " + name + ": got " + str(got) + ", wanted " + str(want))
+        failures = failures + 1
+    end
+end
+
+# a few bytes, all with the same value
+func filled(count, value)
+    let b = bytes(count)
+    for i = 0 to count - 1 do
+        b[i] = value
+    end
+    return b
+end
+
+# in the middle, and across the edge of a 512 byte sector
+wrf("small.txt", "hello world")
+wrat("small.txt", 6, "AerOS")
+check("overwrite", rdf("small.txt"), "hello AerOS")
+wrf("edge.txt", str(filled(1, 46)))
+trunc("edge.txt", 1000)
+wrat("edge.txt", 510, "XYZW")
+check("across a sector edge", rdat("edge.txt", 509, 6)[1], ord("X"))
+check("across a sector edge, after", rdat("edge.txt", 513, 1)[0], ord("W"))
+
+# past the end: the gap reads as zeros
+wrat("small.txt", 20, "end")
+let all = rdb("small.txt")
+check("longer", len(all), 23)
+check("gap is zeros", all[15], 0)
+# (rdf reads text, which stops at the first zero byte: the bytes past the gap need rdat)
+check("after the gap", rdat("small.txt", 20, 3)[0], ord("e"))
+
+# pages: 40 of 4096 bytes, written last first, each filled with its own number, then read back
+let page = 4096
+for p = 39 to 0 step -1 do
+    wrat("pages.db", p * page, filled(page, p + 1))
+end
+check("pages size", len(rdb("pages.db")), 40 * page)
+let wrong = 0
+for p = 0 to 39 do
+    let back = rdat("pages.db", p * page, page)
+    if back[0] != p + 1 or back[page - 1] != p + 1 or len(back) != page then
+        wrong = wrong + 1
+    end
+end
+check("pages read back", wrong, 0)
+# change one page again, in place, and its neighbours stay as they were
+wrat("pages.db", 7 * page, filled(page, 99))
+check("page rewritten", rdat("pages.db", 7 * page + 100, 1)[0], 99)
+check("page before it", rdat("pages.db", 6 * page + page - 1, 1)[0], 7)
+check("page after it", rdat("pages.db", 8 * page, 1)[0], 9)
+
+# shorter, then longer again: what was cut off must not come back
+trunc("pages.db", 5000)
+check("cut short", len(rdb("pages.db")), 5000)
+trunc("pages.db", 9000)
+let grown = rdat("pages.db", 4990, 4010)
+check("grown", len(grown), 4010)
+check("kept before the cut", grown[9], 2)
+check("zeros after the cut", grown[10], 0)
+check("zeros at the end", grown[4009], 0)
+
+# down to nothing, then written again (a file with no clusters at all)
+trunc("pages.db", 0)
+check("empty", len(rdb("pages.db")), 0)
+wrat("pages.db", 0, "again")
+check("written after empty", rdf("pages.db"), "again")
+
+# reading past the end, and a file that isn't there
+check("past the end", len(rdat("small.txt", 100, 10)), 0)
+check("missing file", rdat("nothere.db", 0, 10), nil)
+
+if failures == 0 then
+    print("ALL PASSED")
+else
+    print(str(failures) + " FAILED")
+end

@@ -197,6 +197,13 @@ encrypted file and `gopen` opens the graphics screen.
 `apf(path, text)` · `isf(path)` · `delf(path)` ·
 `la(dir)` (directories end in `/`) · `cwd()` the current directory, e.g. `"/bin/"`
 
+**A piece of a file at a time** (for files changed in place, like a database's pages)
+`rdat(path, offset, count)` that many bytes from byte `offset`, as bytes (fewer at the end) ·
+`wrat(path, offset, data)` write bytes or text at `offset`, in place, making the file if need
+be (past the end makes it longer, and a gap is zeros) · `trunc(path, size)` make it `size`
+bytes long. They use `fs_write_at` / `fs_truncate` (`src/sys/f_sys.h`), and keep no old
+versions: a database changes pages too often to copy the whole file each time.
+
 `rdf("notes.txt@2")` (and `rdb`, `isf`) reach an old version of a file in a home folder (see
 VERS in the manual). A program asks the person at the keyboard before it reads anything
 outside `/bin/`, `/docs/`, `/src/`, `/sys/`, its own folder and the files named on its

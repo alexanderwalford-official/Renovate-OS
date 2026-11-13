@@ -256,3 +256,58 @@ def test_a_full_disk_is_reported(t):
     aeros.expect("Couldn't keep a version of notes.txt for UNDO: no space left")
     aeros.run('why')
     aeros.expect('What you can do')
+
+
+def run_aer_checks(aeros, program, timeout=120):
+    """Run an AerLang program that prints PASS / FAIL lines and ALL PASSED, and fail on any FAIL.
+    A program in /bin/ asks before it changes files in the home folder: it is told "always"."""
+    before = aeros.prompts()
+    aeros.ask(program)
+    aeros.wait_for('[ ? ]', 30)
+    aeros.key('a')
+    aeros.wait_prompt(before, timeout)
+    printed = aeros.serial()
+    failures = [line for line in printed.split('\n') if line.startswith('FAIL')]
+    if failures or 'ALL PASSED' not in printed:
+        aeros.fail(f'{program} failed:\n' + '\n'.join(failures))
+
+
+def test_writing_in_place(t, fat32=False):
+    # rdat, wrat and trunc change a file a piece at a time (fs_write_at, fs_truncate), on a real
+    # FAT disk: files/pages.aer checks what AerOS reads back, then the disk is checked from outside
+    disk = t.disk(files={"/bin/pages.aer": t.files + "/pages.aer"}, size_mb=64 if fat32 else 32, fat32=fat32)
+    aeros = t.boot(disk=disk)
+    aeros.first_login()
+    aeros.cls()
+    run_aer_checks(aeros, 'pages')
+    aeros.quit()
+    t.check_disk(disk)
+
+    # the bytes on the disk are what they should be
+    if read_disk_file(disk, '/home/tester/small.txt') != b'hello AerOS' + bytes(9) + b'end':
+        aeros.fail('small.txt is wrong on the disk')
+    if read_disk_file(disk, '/home/tester/pages.db') != b'again':
+        aeros.fail('pages.db is wrong on the disk')
+    edge = read_disk_file(disk, '/home/tester/edge.txt')
+    if len(edge) != 1000 or edge[510:514] != b'XYZW' or edge[509] != 0:
+        aeros.fail('edge.txt is wrong on the disk')
+
+
+def test_writing_in_place_fat32(t):
+    # the same on a FAT32 disk, which keeps its table of clusters differently
+    test_writing_in_place(t, fat32=True)
+
+
+def test_writing_in_place_in_memory(t):
+    # the same without a disk, in the in-memory file system
+    aeros = t.boot()
+    aeros.wait_for(GUEST_PROMPT, 60)
+    aeros.run('wrf("a.txt", "hello world")')
+    aeros.run('wrat("a.txt", 6, "AerOS")')
+    aeros.run('wrat("a.txt", 15, "!")')
+    aeros.cls()
+    aeros.run('sub(rdf("a.txt"), 0, 11)')
+    aeros.run('len(rdb("a.txt"))')
+    aeros.run('trunc("a.txt", 5)')
+    aeros.run('rdf("a.txt")')
+    aeros.expect_line('hello AerOS', '16', 'hello')

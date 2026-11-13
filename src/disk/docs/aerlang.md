@@ -110,6 +110,11 @@ orange, also called `BROWN`), `BRIGHT`, `DARK_GRAY`, `LIGHT_BLUE`, `LIGHT_GREEN`
 file, and if you say no the function fails as if the file wasn't there. `rdf("notes.txt@2")`
 reads an [old version](versions.md) of a file.
 
+To change a file a piece at a time (a database's pages, say) rather than all of it:
+`rdat(path, offset, count)` reads `count` bytes from byte `offset`, `wrat(path, offset, data)`
+writes bytes or text there, in place, and `trunc(path, size)` makes the file that long. Writing
+past the end makes it longer, with zeros in any gap. These keep no old versions.
+
 The names are built like the terminal's commands: `rd` read, `wr` write, `ap` append,
 `del` delete, `is` "is there one?", then `f` file or `b` bytes. So `rdf` reads a file and
 `isf` asks if a file is there. `enc` / `dec` encrypt and decrypt, and `g` means graphics.

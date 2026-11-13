@@ -237,6 +237,14 @@ and every AerLang function gets them without doing anything:
 * **Permissions** aren't in `f_sys.c`: they are checked one level up, by AerLang's file
   functions, so the terminal (which is you) never asks. See `sys/perm.h`.
 
+Most writes replace a whole file, writing it into new clusters and freeing the old ones only
+once the directory entry points at the new data. `fs_write_at` and `fs_truncate` are the
+exception, for files changed a piece at a time (a database's pages): they change the bytes
+asked for in place (`fat_write_at`, `fat_truncate`). Their order keeps the disk consistent if
+the power goes part way: growing takes and zeros the new clusters first and puts the new size
+in the entry last; shrinking puts the new size in the entry first and frees clusters after.
+They keep no versions; a caller that wants one calls `versions_keep()` once first.
+
 ## The manual inside AerOS
 
 `src/disk/docs/` holds the manual that ships inside the OS: short Markdown pages written for an

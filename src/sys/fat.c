@@ -1111,6 +1111,242 @@ int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t leng
     return (int32_t)done;
 }
 
+// ---- writing into the middle of a file, and changing its length --------------------------------
+//
+// Everything else that writes a file writes all of it, into new clusters (see fat_replace_file).
+// A database works differently: it changes a page here and a page there of a file that can be
+// big, so these write in place, into the clusters the file already has.
+//
+// The order things happen in keeps the disk consistent if the power goes in the middle:
+//   growing a file:    take and zero the new clusters first, then write the data, and only then
+//                      put the new size in the directory entry. Until then the entry still says
+//                      the old size, and the new clusters on the end of the chain are never read.
+//   shrinking a file:  the directory entry gets the new size first, then the chain is cut and the
+//                      clusters past the new end are freed. If that is cut short, the worst that
+//                      happens is some clusters nothing uses ("lost"), never a file that points at
+//                      someone else's data.
+// A sector that is only partly changed is read, changed in memory and written back whole.
+
+// the bytes in one cluster
+static uint32_t fat_cluster_bytes (void) {
+    return fat_vol.sectors_per_cluster * FAT_SECTOR_SIZE;
+}
+
+// how many clusters `size` bytes take, rounded up (0 bytes take none)
+static uint32_t fat_clusters_for (uint32_t size) {
+    uint32_t bytes = fat_cluster_bytes();
+    return size / bytes + (size % bytes != 0);
+}
+
+// cut a chain after its cluster number `keep` - 1, freeing the rest: the last kept cluster
+// becomes the end of the chain. keep 0 frees the whole chain
+static void fat_cut_chain (uint32_t first, uint32_t keep) {
+    if (keep == 0) {
+        fat_free_chain(first);
+        return;
+    }
+    // walk to the last cluster to keep
+    uint32_t last = first;
+    for (uint32_t i = 1; i < keep && fat_valid_cluster(last); i++) {
+        last = fat_get(last);
+    }
+    if (!fat_valid_cluster(last)) {
+        return; // the chain was shorter than that already (a damaged disk): nothing to cut
+    }
+    uint32_t rest = fat_get(last);
+    if (fat_valid_cluster(rest)) {
+        // end the chain here first, so it never runs into clusters that are being freed
+        fat_set(last, fat_end_of_chain());
+        fat_free_chain(rest);
+    }
+}
+
+// make a chain at least `clusters` long, adding zeroed clusters on its end (zeroed, so whatever
+// was in them before can't turn up in the file). *first is the chain's first cluster, or 0 for
+// an empty file, which then gets one. If the disk fills up part way, the chain is put back to
+// its old length, so no cluster is left on it that nothing will use. Returns an FS_ code
+static int fat_grow_chain (uint32_t* first, uint32_t clusters) {
+    // count the chain as it is, and find its last cluster (the loop guard stops a damaged chain
+    // that loops back on itself)
+    uint32_t have = 0;
+    uint32_t last = 0;
+    for (uint32_t c = *first; fat_valid_cluster(c) && have <= fat_vol.cluster_count; c = fat_get(c)) {
+        last = c;
+        have++;
+    }
+    uint32_t old_have = have;
+    uint32_t old_first = *first;
+
+    while (have < clusters) {
+        uint32_t cluster = fat_alloc_cluster(last); // 0 = the disk is full (or a drive error)
+        if (cluster == 0 || !fat_zero_cluster(cluster)) {
+            // put the chain back as it was: freeing the new clusters (all of it, if the file had
+            // none before)
+            if (old_have == 0) {
+                fat_free_chain(*first);
+                *first = old_first;
+            } else {
+                fat_cut_chain(*first, old_have);
+            }
+            return cluster == 0 ? FS_ERR_FULL : FS_ERR_IO;
+        }
+        if (*first == 0) {
+            *first = cluster;
+        }
+        last = cluster;
+        have++;
+    }
+    if (have > old_have) {
+        TRACE("added %u zeroed cluster(s) to the end of the file", (unsigned int)(have - old_have));
+    }
+    return FS_OK;
+}
+
+// write `length` bytes of data into the file's chain at `offset` (data NULL writes zeros instead).
+// The chain must be long enough already. Whole sectors inside one cluster go to the drive in one
+// write; a sector that is only partly changed is read first and written back whole
+static int fat_write_range (fat_file_t* file, uint32_t offset, const uint8_t* data, uint32_t length) {
+    uint32_t cluster_bytes = fat_cluster_bytes();
+    uint32_t done = 0;
+    while (done < length) {
+        // the byte of the file we are up to, the cluster holding it, and where it is in that
+        uint32_t position = offset + done;
+        if (!fat_go_to_cluster(file, position / cluster_bytes)) {
+            return FS_ERR_IO;
+        }
+        uint32_t in_cluster = position % cluster_bytes;
+        uint32_t sector = in_cluster / FAT_SECTOR_SIZE;
+        uint32_t in_sector = in_cluster % FAT_SECTOR_SIZE;
+        uint32_t lba = fat_cluster_lba(file->cluster) + sector;
+        uint32_t left = length - done;
+
+        if (data != NULL && in_sector == 0 && left >= FAT_SECTOR_SIZE) {
+            // whole sectors, straight from the caller's data: as many as fit in this cluster
+            // (its sectors are next to each other on the disk, the next cluster can be anywhere)
+            uint32_t sectors = left / FAT_SECTOR_SIZE;
+            uint32_t sectors_left_in_cluster = fat_vol.sectors_per_cluster - sector;
+            if (sectors > sectors_left_in_cluster) {
+                sectors = sectors_left_in_cluster;
+            }
+            if (!drive_write(fat_vol.bus, fat_vol.slave, lba, sectors, data + done)) {
+                return FS_ERR_IO;
+            }
+            done += sectors * FAT_SECTOR_SIZE;
+            continue;
+        }
+
+        // part of a sector (or zeros): read it, change the part that's wanted, write it back.
+        // A whole sector of zeros needn't be read first, as all of it is about to change
+        fat_sector_t whole;
+        uint32_t take = FAT_SECTOR_SIZE - in_sector;
+        if (take > left) {
+            take = left;
+        }
+        if (take < FAT_SECTOR_SIZE && !fat_read_sector(lba, &whole)) {
+            return FS_ERR_IO;
+        }
+        if (data != NULL) {
+            memcpy(whole.u8 + in_sector, data + done, take);
+        } else {
+            memset(whole.u8 + in_sector, 0, take);
+        }
+        if (!fat_write_sector(lba, &whole)) {
+            return FS_ERR_IO;
+        }
+        done += take;
+    }
+    return FS_OK;
+}
+
+// write `length` bytes of data at `offset` in a file that is already there, in place (see above).
+// Writing past the end makes the file longer, and a gap between its old end and `offset` reads
+// as zeros. data NULL writes zeros (fat_truncate uses that to make a file longer)
+int fat_write_at (const char* f_path, const char* name, uint32_t offset, const void* data, uint32_t length) {
+    fat_entry_t e;
+    if (!fat_find_file(f_path, name, &e)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (length == 0) {
+        return FS_OK;
+    }
+    // a FAT file is at most 4 GB - 1: the end of the write has to fit in 32 bits too (written
+    // as offset > MAX - length, so the sum itself can't overflow)
+    if (offset > 0xFFFFFFFFu - length) {
+        return FS_ERR_FULL;
+    }
+
+    uint32_t old_size = e.entry.size;
+    uint32_t end = offset + length;
+    uint32_t new_size = end > old_size ? end : old_size;
+
+    // 1. enough clusters for the new size (new ones are zeroed)
+    uint32_t first = fat_entry_cluster(&e.entry);
+    int result = fat_grow_chain(&first, fat_clusters_for(new_size));
+    if (result != FS_OK) {
+        return result;
+    }
+
+    // 2. the data, after zeroing any gap between the old end and where the write starts (the
+    // last old cluster may still hold bytes from before the file was made shorter)
+    fat_file_t file = { first, new_size, first, 0 };
+    if (offset > old_size) {
+        result = fat_write_range(&file, old_size, NULL, offset - old_size);
+    }
+    if (result == FS_OK) {
+        result = fat_write_range(&file, offset, data, length);
+    }
+    if (result != FS_OK) {
+        return result;
+    }
+
+    // 3. last, the directory entry: where the file starts (it may have had no clusters before),
+    // its new size and the time it changed
+    fat_set_entry_cluster(&e.entry, first);
+    e.entry.size = new_size;
+    e.entry.attr |= FAT_ATTR_ARCHIVE;
+    fat_stamp(&e.entry, false);
+    if (!fat_write_entry(e.lba, e.slot, &e.entry)) {
+        return FS_ERR_IO;
+    }
+    TRACE("wrote %u bytes into %s at byte %u, in place (it is now %u bytes)", (unsigned int)length,
+          name, (unsigned int)offset, (unsigned int)new_size);
+    return FS_OK;
+}
+
+// make a file `size` bytes long: shorter cuts off its end, longer adds zeros (see above)
+int fat_truncate (const char* f_path, const char* name, uint32_t size) {
+    fat_entry_t e;
+    if (!fat_find_file(f_path, name, &e)) {
+        return FS_ERR_NOT_FOUND;
+    }
+    uint32_t old_size = e.entry.size;
+    if (size == old_size) {
+        return FS_OK;
+    }
+    if (size > old_size) {
+        return fat_write_at(f_path, name, old_size, NULL, size - old_size);
+    }
+
+    // shorter: the entry first (with no clusters at all if nothing is left), then the chain
+    uint32_t first = fat_entry_cluster(&e.entry);
+    uint32_t keep = fat_clusters_for(size);
+    e.entry.size = size;
+    if (keep == 0) {
+        fat_set_entry_cluster(&e.entry, 0);
+    }
+    e.entry.attr |= FAT_ATTR_ARCHIVE;
+    fat_stamp(&e.entry, false);
+    if (!fat_write_entry(e.lba, e.slot, &e.entry)) {
+        return FS_ERR_IO;
+    }
+    if (fat_valid_cluster(first)) {
+        fat_cut_chain(first, keep);
+    }
+    TRACE("cut %s down from %u to %u bytes, keeping %u cluster(s)", name, (unsigned int)old_size,
+          (unsigned int)size, (unsigned int)keep);
+    return FS_OK;
+}
+
 // what fat_list_dir() passes to fat_each_visit(): the caller's callback and its own ctx,
 // plus a count of the entries seen
 typedef struct {

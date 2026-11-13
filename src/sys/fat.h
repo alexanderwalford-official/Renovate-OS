@@ -143,6 +143,15 @@ bool fat_open (const char* f_path, const char* name, fat_file_t* file);
 // length at the end of the file, 0 past it, and -1 on a disk error
 int32_t fat_read_at (fat_file_t* file, uint32_t offset, void* out, uint32_t length);
 
+// write `length` bytes of data at `offset` in a file that is already there, in place: the rest of
+// the file stays as it is. Writing past the end makes the file longer (a gap reads as zeros), and
+// data NULL writes zeros. Returns FS_OK, or FS_ERR_NOT_FOUND / FS_ERR_FULL / FS_ERR_IO
+int fat_write_at (const char* f_path, const char* name, uint32_t offset, const void* data, uint32_t length);
+
+// make a file `size` bytes long: shorter cuts off its end (freeing the clusters it no longer
+// needs), longer adds zeros on the end. Returns FS_OK or an FS_ERR_ code
+int fat_truncate (const char* f_path, const char* name, uint32_t size);
+
 // create a new file holding contents, name must fit the 8.3 format (FS_ERR_BAD_NAME otherwise)
 int fat_create_file (const char* f_path, const char* name, const char* contents, uint32_t length);
 

@@ -14,6 +14,7 @@
 #include "builtins.h"
 #include "../lib/aer_string.h"
 #include "../lib/aer_stdlib.h"
+#include "../lib/aer_stdio.h"
 #include "../lib/crypto.h"
 #include "../sys/f_sys.h"
 #include "../sys/fcrypt.h"
@@ -87,6 +88,88 @@ value_t bi_write_file (int argc, value_t* argv, int line) {
 value_t bi_append_file (int argc, value_t* argv, int line) {
     (void)argc;
     return save_file(argv, line, "apf", true);
+}
+
+// ---- part of a file at a time (for files changed a piece at a time, like a database's pages) ----
+
+// rdat(path, offset, count): count bytes of a file from byte `offset` on, as bytes (fewer at the
+// end of the file, none past it). nil if the file isn't there
+value_t bi_read_at (int argc, value_t* argv, int line) {
+    (void)argc;
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    if (!file_arg(argv, 0, line, "rdat", PERM_READ, dir, name)) {
+        return aer_nil();
+    }
+    int32_t offset = int_arg(argv, 1, line, "rdat");
+    int32_t count = int_arg(argv, 2, line, "rdat");
+    if (offset < 0 || count < 0) {
+        aer_error(line, "rdat() needs an offset and a count of 0 or more");
+    }
+    // fs_open wants the path in one piece
+    char path[FS_PATH_MAX + FS_NAME_MAX];
+    sfmt(path, sizeof(path), "%s%s", dir, name);
+    fs_file_t file;
+    if (!fs_open(path, &file)) {
+        return aer_nil();
+    }
+    // no more than is there: the file's end limits the count (so a huge count can't use up memory)
+    uint32_t left = (uint32_t)offset < file.size ? file.size - (uint32_t)offset : 0;
+    uint32_t wanted = (uint32_t)count < left ? (uint32_t)count : left;
+    value_t b = aer_bytes(wanted);
+    int32_t got = wanted > 0 ? fs_read_at(&file, (uint32_t)offset, b.as.obj->data.bytes, wanted) : 0;
+    if (got < 0) {
+        aer_release(b);
+        return aer_nil(); // a disk error
+    }
+    b.as.obj->length = (uint32_t)got;
+    return b;
+}
+
+// wrat(path, offset, data): write data (bytes, or a string) into a file at byte `offset`, in
+// place: the rest of the file stays as it is. Past the end makes the file longer (a gap is
+// zeros). Makes the file if it isn't there. True if it worked. Keeps no old version (see fs_write_at)
+value_t bi_write_at (int argc, value_t* argv, int line) {
+    (void)argc;
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    if (!file_arg(argv, 0, line, "wrat", PERM_CHANGE, dir, name)) {
+        return aer_bool(false);
+    }
+    int32_t offset = int_arg(argv, 1, line, "wrat");
+    if (offset < 0) {
+        aer_error(line, "wrat() needs an offset of 0 or more");
+    }
+    // bytes are written as they are; anything else the way print() would show it (a new
+    // string we own, released below)
+    value_t text = argv[2].type == V_BYTES ? argv[2] : aer_to_string(argv[2]);
+    const void* data = argv[2].type == V_BYTES ? (const void*)text.as.obj->data.bytes
+                                               : (const void*)text.as.obj->data.chars;
+    uint32_t length = text.as.obj->length;
+
+    int result = FS_OK;
+    if (!fs_file_exists(dir, name)) {
+        result = fs_create_bytes(dir, name, "", 0);
+    }
+    if (result == FS_OK) {
+        result = fs_write_at(dir, name, (uint32_t)offset, data, length);
+    }
+    if (argv[2].type != V_BYTES) {
+        aer_release(text);
+    }
+    return aer_bool(result == FS_OK);
+}
+
+// trunc(path, size): make a file size bytes long, cutting off its end or adding zeros. True if it worked
+value_t bi_truncate (int argc, value_t* argv, int line) {
+    (void)argc;
+    char dir[FS_PATH_MAX], name[FS_NAME_MAX];
+    if (!file_arg(argv, 0, line, "trunc", PERM_CHANGE, dir, name)) {
+        return aer_bool(false);
+    }
+    int32_t size = int_arg(argv, 1, line, "trunc");
+    if (size < 0) {
+        aer_error(line, "trunc() needs a size of 0 or more");
+    }
+    return aer_bool(fs_truncate(dir, name, (uint32_t)size) == FS_OK);
 }
 
 // isf(path): is there a file there?

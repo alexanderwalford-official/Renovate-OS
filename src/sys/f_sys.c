@@ -388,6 +388,60 @@ static int mem_replace_file (const char* folder, const char* name, const void* d
     return FS_OK;
 }
 
+// write `length` bytes at `offset` in a file in memory, in place: the rest stays as it is.
+// Writing past the end makes the buffer bigger, with zeros in any gap. data NULL writes zeros.
+// The buffer always keeps a '\0' after the contents, so it can still be read as text
+static int mem_write_at (const char* folder, const char* name, uint32_t offset, const void* data, uint32_t length) {
+    int index = mem_find_file(folder, name);
+    if (index < 0) {
+        return FS_ERR_NOT_FOUND;
+    }
+    // f_size is an int, so a file in memory stops just short of 2 GB (and the end of the write
+    // must fit: offset > MAX - length, written so the sum itself can't overflow)
+    if (length > 0x7FFFFFFFu || offset > 0x7FFFFFFFu - length) {
+        return FS_ERR_FULL;
+    }
+    struct file* file = &files[index];
+    uint32_t old_size = (uint32_t)file->f_size;
+    uint32_t end = offset + length;
+
+    // longer: grow the buffer (+ 1 for the '\0'), with the new part zeroed. If realloc fails the
+    // old buffer is still there, untouched
+    if (end > old_size) {
+        char* contents = realloc(file->f_cont, end + 1);
+        if (contents == NULL) {
+            return FS_ERR_NO_MEMORY;
+        }
+        memset(contents + old_size, 0, end - old_size + 1);
+        file->f_cont = contents;
+        file->f_size = (int)end;
+    }
+    if (data != NULL) {
+        memcpy(file->f_cont + offset, data, length);
+    } else {
+        memset(file->f_cont + offset, 0, length);
+    }
+    return FS_OK;
+}
+
+// make a file in memory `size` bytes long: shorter cuts off its end, longer adds zeros
+static int mem_truncate (const char* folder, const char* name, uint32_t size) {
+    int index = mem_find_file(folder, name);
+    if (index < 0) {
+        return FS_ERR_NOT_FOUND;
+    }
+    struct file* file = &files[index];
+    uint32_t old_size = (uint32_t)file->f_size;
+    if (size >= old_size) {
+        return mem_write_at(folder, name, old_size, NULL, size - old_size);
+    }
+    // shorter: zero what is cut off (so it can't turn up again), and end the text there. The
+    // buffer stays the size it was: it is freed with the file
+    memset(file->f_cont + size, 0, old_size - size);
+    file->f_size = (int)size;
+    return FS_OK;
+}
+
 // remove a file from the table and free its contents
 static int mem_delete_file (const char* folder, const char* name) {
     int index = mem_find_file(folder, name);
@@ -626,6 +680,44 @@ int fs_write_bytes (const char* f_path, const char* f_name, const void* data, ui
         return fat_replace_file(folder, f_name, data, length, wipe_old);
     }
     return mem_replace_file(folder, f_name, data, length, wipe_old);
+}
+
+// write `length` bytes at `offset` in a file that is already there, in place (see f_sys.h).
+// Unlike the other writes it keeps no old version: a database changes a page at a time, often,
+// and copying the whole file each time would be far too slow. Call versions_keep() once first
+// if a version is wanted
+int fs_write_at (const char* f_path, const char* f_name, uint32_t offset, const void* data, uint32_t length) {
+    char folder[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (source_in(folder)) {
+        TRACE("%s%s is inside /src/, which can't be changed", folder, f_name);
+        return FS_ERR_READ_ONLY;
+    }
+    if (on_disk()) {
+        return fat_write_at(folder, f_name, offset, data, length);
+    }
+    TRACE("writing %u bytes at byte %u of %s%s, in memory", (unsigned int)length,
+          (unsigned int)offset, folder, f_name);
+    return mem_write_at(folder, f_name, offset, data, length);
+}
+
+// make a file `size` bytes long, in place (see f_sys.h). Keeps no old version, like fs_write_at
+int fs_truncate (const char* f_path, const char* f_name, uint32_t size) {
+    char folder[FS_PATH_MAX];
+    if (!fs_resolve_dir(f_path, folder, sizeof(folder))) {
+        return FS_ERR_NOT_FOUND;
+    }
+    if (source_in(folder)) {
+        TRACE("%s%s is inside /src/, which can't be changed", folder, f_name);
+        return FS_ERR_READ_ONLY;
+    }
+    if (on_disk()) {
+        return fat_truncate(folder, f_name, size);
+    }
+    TRACE("making %s%s %u bytes long, in memory", folder, f_name, (unsigned int)size);
+    return mem_truncate(folder, f_name, size);
 }
 
 // a copy of a text file's contents, or NULL if there is no such file. The copy is the

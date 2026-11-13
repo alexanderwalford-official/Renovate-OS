@@ -73,6 +73,9 @@ const aer_builtin_t aer_builtins[] = {
     BUILTIN("rdb", bi_read_bytes, 1, 1),
     BUILTIN("wrf", bi_write_file, 2, 2),
     BUILTIN("apf", bi_append_file, 2, 2),
+    BUILTIN("rdat", bi_read_at, 3, 3),
+    BUILTIN("wrat", bi_write_at, 3, 3),
+    BUILTIN("trunc", bi_truncate, 2, 2),
     BUILTIN("isf", bi_file_exists, 1, 1),
     BUILTIN("delf", bi_delete_file, 1, 1),
     BUILTIN("enc", bi_encrypt_file, 2, 2),
@@ -141,7 +144,7 @@ static const struct {
     { APP_SOUND,    { "beep", "play", "sload", "splay", "sstop", "isply", NULL } },
     { APP_VIDEO,    { "video", NULL } },
     { APP_FILES,    { "rdf", "rdb", "wrf", "apf", "isf", "delf", "la", "cwd", "enc", "dec",
-                      "isenc", "rdenc", NULL } },
+                      "isenc", "rdenc", "rdat", "wrat", "trunc", NULL } },
     { APP_NETWORK,  { "nsend", "nrecv", NULL } },
 };
 

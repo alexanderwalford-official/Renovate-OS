@@ -96,6 +96,25 @@ int fs_write_bytes (const char* f_path, const char* f_name, const void* data, ui
 // read a whole file and its length (binary safe), NULL if missing; free() the result
 char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size);
 
+// CHANGING PART OF A FILE IN PLACE, for files that are changed a piece at a time (a database's
+// pages). The writes above all replace the whole file; these change only the bytes asked for:
+//
+//     fs_write_at("/home/alex/", "shop.db", 4096, page, 4096);   // bytes 4096 to 8191
+//     fs_truncate("/home/alex/", "shop.db", 8192);               // now exactly 8192 bytes long
+//
+// The file must exist already (make it with fs_create_bytes). Writing past the end makes it
+// longer, and any gap reads as zeros. These keep no old versions (see sys/versions.h): call
+// versions_keep(folder, name) once yourself first if you want one. On the disk they are written
+// in an order that keeps the disk consistent if the power goes part way (see fat_write_at).
+// An fs_file_t opened before a write still has the old size: open it again to see the new one
+
+// write `length` bytes of data at `offset`, in place. data NULL writes zeros. Returns FS_OK, or
+// FS_ERR_NOT_FOUND, FS_ERR_READ_ONLY (/src/), FS_ERR_FULL, FS_ERR_NO_MEMORY or FS_ERR_IO
+int fs_write_at (const char* f_path, const char* f_name, uint32_t offset, const void* data, uint32_t length);
+
+// make a file `size` bytes long: shorter cuts off its end, longer adds zeros on the end
+int fs_truncate (const char* f_path, const char* f_name, uint32_t size);
+
 // READING A FILE A PIECE AT A TIME, for files too big to read whole (a video):
 //
 //     fs_file_t file;
