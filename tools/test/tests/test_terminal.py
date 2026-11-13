@@ -75,3 +75,38 @@ def test_editor(t):
     aeros.cls()
     aeros.run('rd t.aer')
     aeros.expect_line('let x = 5', 'print("x is", x)')
+
+
+def test_editing_a_line(t):
+    # Left, Right, Home and End move along the line; typing goes in at the cursor, Backspace
+    # takes the character before it and Delete the one under it
+    aeros = t.boot()
+    aeros.wait_for(GUEST_PROMPT, 60)
+    aeros.cls()
+
+    def keys(*names):
+        for name in names:
+            aeros.key(name)
+
+    # "ec hello" with an h put in after the "ec"
+    aeros.type('ec hello')
+    keys('home', 'right', 'right')
+    aeros.type('h')
+    aeros.run('')
+    # "eccch hi" with two of the c's taken out by Backspace
+    aeros.type('eccch hi')
+    keys('home', 'right', 'right', 'right', 'right', 'backspace', 'backspace')
+    aeros.run('')
+    # "exch yes" with the x taken out by Delete
+    aeros.type('exch yes')
+    keys('home', 'right', 'delete')
+    aeros.run('')
+    aeros.expect_line('hello', 'hi', 'yes')
+
+    # a line long enough to wrap onto the next row, edited before the wrap
+    aeros.cls()
+    aeros.type('ech ' + 'a' * 60 + 'B' * 30)
+    keys(*(['left'] * 40))
+    aeros.type('XYZ')
+    aeros.run('')
+    aeros.expect_printed('a' * 50 + 'XYZ' + 'a' * 10 + 'B' * 30)

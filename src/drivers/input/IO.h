@@ -18,7 +18,8 @@
     - The IRQ1 handler in IO.c turns scancodes into characters (tracking shift, ctrl and caps lock)
       and puts them in a ring buffer.
     - getk() takes keys back out of that buffer, and getln() builds a whole line editor
-      with backspace and command history on top of it. The terminal uses getln for its prompt.
+      on top of it: left / right, Home / End, backspace and delete anywhere in the line, and
+      command history. The terminal uses it (GetLine, with Tab completion) for its prompt.
 */
 
 #ifndef IO_H

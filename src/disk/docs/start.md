@@ -49,6 +49,11 @@ shows who you are (`alex`) and the folder you are in (`/`). Type a command and p
 The up and down arrows bring back earlier commands, and **Page Up** / **Page Down** scroll
 back through output that has gone off the top of the screen (any other key comes back).
 
+To fix a mistake, the **left** and **right** arrows move along what you have typed, and
+**Home** / **End** jump to its start and end. Typing goes in where the cursor is, **Backspace**
+takes out the character before it and **Delete** the one under it. Enter runs the whole line,
+wherever the cursor is.
+
 **Tab** finishes what you are typing, like on Linux: `ec` then Tab gives `ech`, and
 `rd /docs/sec` then Tab gives `rd /docs/security.md`. If more than one thing fits, Tab fills
 in as much as they share, and when there is nothing more to fill in it lists them all.

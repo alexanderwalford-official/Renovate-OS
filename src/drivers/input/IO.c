@@ -432,12 +432,64 @@ void ClearInputHistory(void) {
     input_history_next = 0;
 }
 
+// ---- the line being edited, on screen -------------------------------------------------------
+//
+// The line editor lets the cursor move inside the line (Left, Right, Home, End), so it has to know
+// where on the screen each character of the line is. A line can wrap onto the rows below, so it
+// is kept as one number: the screen cell its first character is in, counting cells from the top
+// left (row * COLS + column). Character i of the line is then in cell line_start + i.
+// When typing at the bottom of the screen scrolls it up, everything moves up a row, line_start
+// with it: after anything is written, the cursor is checked against where it should have ended up,
+// and the difference is how far the screen scrolled. (line_start can go below 0 when the start of a
+// long line has scrolled off the top, which is fine: those cells are just never drawn again.)
+static int line_start;
+
+// the cell the console cursor is in, counting from the top left
+static int cursor_cell(void) {
+    uint8_t x, y;
+    console_get_cursor(&x, &y);
+    return y * COLS + x;
+}
+
+// put the cursor on character `offset` of the line (offset == length: just after the end)
+static void line_cursor_to(int offset) {
+    int cell = line_start + offset;
+    if (cell < 0) {
+        cell = 0; // that part of the line has scrolled off the top: the best we can do
+    }
+    console_set_cursor((uint8_t)(cell % COLS), (uint8_t)(cell / COLS));
+}
+
+// after writing up to character `offset` of the line, the cursor should be just after it. If it
+// is higher up, the screen scrolled while writing, by exactly that much: move the line up with it
+static void line_follow_scroll(int offset) {
+    int scrolled = line_start + offset - cursor_cell();
+    if (scrolled > 0) {
+        line_start -= scrolled;
+    }
+}
+
+// draw the line from character `from` to its end, then `erase` spaces to rub out what was there
+// before (a character deleted from the middle leaves the old last one behind). The cursor is
+// left wherever the caller puts it next
+static void line_redraw(const char* in, int from, int length, int erase) {
+    line_cursor_to(from);
+    for (int i = from; i < length; i++) {
+        console_putchar_raw(in[i]);
+    }
+    for (int i = 0; i < erase; i++) {
+        console_putchar_raw(' ');
+    }
+    line_follow_scroll(length + erase);
+}
+
 // the line editor: read keys until enter, echoing them and keeping in up to date as we go
 // in: buffer that receives the line, size: its size in bytes (the line is at most size - 1 characters)
 // returns in, which is left empty if there is no keyboard
-// supported keys: printable characters (appended at the end), backspace, enter, up / down for the
-// history, Page Up / Page Down to look back at earlier output, and Tab if a complete function
-// was given. Anything else (left / right, escape, ctrl codes...) is ignored.
+// supported keys: printable characters (typed in where the cursor is), Left / Right, Home / End,
+// Backspace (the character before the cursor) and Delete (the one under it), Enter, Up / Down for
+// the history, Page Up / Page Down to look back at earlier output, and Tab if a complete function
+// was given. Anything else (escape, ctrl codes...) is ignored.
 char* GetLine(char* in, int size, tab_complete_fn complete) {
     if (kb_clear_pending) {
         // throw away keys that were pressed between the clear and this point
@@ -445,27 +497,22 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
         kb_clear_pending = false;
     }
 
-    int len = 0;
+    int len = 0;   // how long the line is
+    int pos = 0;   // where the cursor is in it: 0 = before the first character, len = after the last
     int history_pos = input_history_count; // one past the newest entry = the line being typed
     in[0] = '\0';
+    line_start = cursor_cell(); // the line starts where the cursor is now, after the prompt
 
     for (;;) {
         int key = getk();
         if (key == 0) {
             break; // no keyboard
         }
-        // enter (or ctrl + M) finishes the line
+        // enter (or ctrl + M) finishes the line, wherever the cursor is in it
         if (key == '\n' || key == '\r') {
+            line_cursor_to(len);
             console_putchar('\n');
             break;
-        }
-        // backspace: drop the last character from the buffer and rub it out on screen
-        if (key == '\b') {
-            if (len > 0) {
-                in[--len] = '\0';
-                console_backspace();
-            }
-            continue;
         }
         // Page Up / Page Down look back through what has scrolled off the top of the screen, a
         // screen at a time (one line less, so the line at the edge stays in view). Any other key
@@ -475,6 +522,54 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
             continue;
         }
         console_view_live();
+
+        // moving along the line: nothing in it changes, only where the cursor is
+        if (key == KEY_LEFT || key == KEY_RIGHT || key == KEY_HOME || key == KEY_END) {
+            if (key == KEY_LEFT && pos > 0) {
+                pos--;
+            } else if (key == KEY_RIGHT && pos < len) {
+                pos++;
+            } else if (key == KEY_HOME) {
+                pos = 0;
+            } else if (key == KEY_END) {
+                pos = len;
+            }
+            line_cursor_to(pos);
+            continue;
+        }
+
+        // backspace: drop the character before the cursor
+        if (key == '\b') {
+            if (pos == 0) {
+                continue;
+            }
+            if (pos == len) {
+                // at the end, the quick way: rub out the last character on screen
+                in[--len] = '\0';
+                pos--;
+                console_backspace();
+                continue;
+            }
+            // in the middle: close the gap (memmove, as the two areas overlap, and len - pos + 1
+            // takes the '\0' along), then redraw from the gap on, with a space over the old end
+            memmove(in + pos - 1, in + pos, (size_t)(len - pos + 1));
+            len--;
+            pos--;
+            line_redraw(in, pos, len, 1);
+            line_cursor_to(pos);
+            continue;
+        }
+        // delete: drop the character under the cursor (nothing at the end of the line)
+        if (key == KEY_DELETE) {
+            if (pos < len) {
+                memmove(in + pos, in + pos + 1, (size_t)(len - pos));
+                len--;
+                line_redraw(in, pos, len, 1);
+                line_cursor_to(pos);
+            }
+            continue;
+        }
+
         // up = an older line, down = a newer one, down from the newest gets back to an empty line
         // pressing past either end does nothing
         if (key == KEY_UP || key == KEY_DOWN) {
@@ -485,29 +580,47 @@ char* GetLine(char* in, int size, tab_complete_fn complete) {
             } else {
                 continue;
             }
-            // replace the current line with the history entry
-            // first rub out what is on screen one character at a time...
-            while (len > 0) {
-                console_backspace();
-                len--;
-            }
-            // ...then copy the entry in (cut to fit the caller's buffer) and print it
+            // replace the current line with the history entry: draw the entry over it, with
+            // spaces over whatever of the old line is left past its end...
+            int old_len = len;
             const char* entry = (history_pos < input_history_count) ? input_history_get(history_pos) : "";
             scpy(in, entry, (size_t)size);
             len = (int)slen(in);
-            console_write(in);
+            line_redraw(in, 0, len, old_len > len ? old_len - len : 0);
+            // ...and the cursor goes to its end, ready to carry on typing
+            pos = len;
+            line_cursor_to(pos);
             continue;
         }
-        // Tab: let the caller finish the word (it prints whatever it adds, see IO.h)
+        // Tab: let the caller finish the word (it prints whatever it adds, see IO.h). It works
+        // on the end of the line, so the cursor goes there first. It may print a list of choices
+        // and the line again below them, so afterwards the line starts len characters before
+        // wherever the cursor has ended up
         if (key == '\t' && complete) {
+            line_cursor_to(len);
             len = complete(in, len, size);
+            pos = len;
+            line_start = cursor_cell() - len;
             continue;
         }
-        // a normal character: append it if there is still room for it and the NUL
+        // a normal character: type it in at the cursor, if there is still room for it and the NUL
         if (isprint(key) && len < size - 1) {
-            in[len++] = (char)key;
-            in[len] = '\0';
-            console_putchar((char)key);
+            if (pos == len) {
+                // at the end, the quick way: just print it
+                in[len++] = (char)key;
+                in[len] = '\0';
+                pos++;
+                console_putchar((char)key);
+                line_follow_scroll(pos);
+                continue;
+            }
+            // in the middle: open a gap (moving the '\0' too), put it in, and redraw from there
+            memmove(in + pos + 1, in + pos, (size_t)(len - pos + 1));
+            in[pos] = (char)key;
+            len++;
+            line_redraw(in, pos, len, 0);
+            pos++;
+            line_cursor_to(pos);
         }
     }
 
