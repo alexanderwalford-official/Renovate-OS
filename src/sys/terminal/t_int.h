@@ -5,8 +5,9 @@
     the computer is restarted or turned off: show the login screen and the banner, then over
     and over: print the prompt, read a line, run the command.
 
-    The commands themselves, and how to add or rename one, are in t_int.c. Type HLP (help) in
-    the terminal for the list.
+    The table of commands, and how to rename one, is in t_int.c. The commands themselves are in
+    the cmd_ files beside it, one file to a topic: commands.h says which file holds which
+    command, and how to add one. Type HLP (help) in the terminal for the list.
 */
 
 #ifndef T_INT_H

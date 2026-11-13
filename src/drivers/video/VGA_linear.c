@@ -283,8 +283,7 @@ bool vga_framebuffer_info(vga_framebuffer_t* out) {
 
 // where a block of cells is on screen, in framebuffer pixels
 // false in VGA text mode, where there are no pixels to give
-bool vga_cell_area(uint8_t col, uint8_t row, uint8_t cols, uint8_t rows,
-                   uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h) {
+bool vga_cell_area(uint8_t col, uint8_t row, uint8_t cols, uint8_t rows, uint32_t* x, uint32_t* y, uint32_t* w, uint32_t* h) {
     if (!fb_mode) {
         return false;
     }

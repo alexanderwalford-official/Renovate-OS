@@ -95,6 +95,7 @@
 #include "../lib/aer_stdlib.h"
 #include "../lib/aer_stdio.h"
 #include "../lib/busy.h"
+#include "trace.h"
 
 #define FAT_SECTOR_SIZE        512   // the only sector size we handle (drive_is_fat_boot_sector() checks it)
 #define FAT_ENTRIES_PER_SECTOR (FAT_SECTOR_SIZE / 32)  // 16 directory entries of 32 bytes per sector
@@ -404,6 +405,7 @@ static void fat_free_chain (uint32_t cluster) {
     // A damaged disk can have a chain that loops back on itself. No real chain is longer than
     // the disk has clusters, so stop after that many steps whatever happens
     uint32_t steps = 0;
+    uint32_t sectors_written = 0; // FAT sectors written, for SHOW
 
     while (fat_valid_cluster(cluster) && steps < fat_vol.cluster_count) {
         uint32_t sector_index = cluster / per_sector; // which sector of the FAT this entry is in
@@ -432,10 +434,15 @@ static void fat_free_chain (uint32_t cluster) {
         }
 
         if (!fat_write_freed_sector(sector_index, freed, freed_count)) {
+            TRACE("the drive couldn't write the FAT: %u cluster(s) were freed before it stopped",
+                  (unsigned int)steps);
             return;
         }
+        sectors_written++;
         busy(); // a big file spans many FAT sectors: let a spinner turn (DEL)
     }
+    TRACE("freed %u cluster(s), writing %u sector(s) of each FAT copy", (unsigned int)steps,
+          (unsigned int)sectors_written);
 }
 
 // count the free clusters by checking every FAT entry
@@ -905,11 +912,13 @@ static int fat_write_chain (const char* data, uint32_t length, uint32_t* first) 
     fat_sector_t sector;
     uint32_t written = 0; // bytes of data written so far
     uint32_t prev = 0;    // the cluster before this one (0 = this is the first)
+    uint32_t clusters = 0; // how many have been taken, for SHOW
 
     *first = 0;
     while (written < length) {
         uint32_t cluster = fat_alloc_cluster(prev);
         if (cluster == 0) {
+            TRACE("the disk is full: giving back the %u cluster(s) taken so far", (unsigned int)clusters);
             fat_free_chain(*first);
             *first = 0;
             return FS_ERR_FULL;
@@ -918,18 +927,24 @@ static int fat_write_chain (const char* data, uint32_t length, uint32_t* first) 
             *first = cluster;
         }
         prev = cluster;
+        clusters++;
         // fill the cluster one sector at a time (stopping early if the data runs out)
         for (uint32_t s = 0; s < fat_vol.sectors_per_cluster && written < length; s++) {
             uint32_t n = MIN(length - written, (uint32_t)FAT_SECTOR_SIZE);
             memset(&sector, 0, sizeof(sector)); // so a short last sector doesn't carry old bytes
             memcpy(&sector, data + written, n);
             if (!fat_write_sector(fat_cluster_lba(cluster) + s, &sector)) {
+                TRACE("the drive couldn't write cluster %u: giving the clusters back", (unsigned int)cluster);
                 fat_free_chain(*first);
                 *first = 0;
                 return FS_ERR_IO;
             }
             written += n;
         }
+    }
+    if (clusters > 0) {
+        TRACE("wrote %u bytes into %u new cluster(s), starting at cluster %u", (unsigned int)length,
+              (unsigned int)clusters, (unsigned int)*first);
     }
     return FS_OK;
 }
@@ -1241,6 +1256,7 @@ int fat_replace_file (const char* f_path, const char* name, const void* data, ui
         fat_free_chain(first); // the entry still points at the old data, so drop the new copy
         return FS_ERR_IO;
     }
+    TRACE("pointed %s's entry at the new data (one sector write), so the old data can go", name);
     // the old data now belongs to nobody. Zero it first if asked to, because freeing a
     // cluster only changes the FAT and leaves the bytes on the disk
     if (wipe_old) {
@@ -1260,6 +1276,7 @@ int fat_delete_file (const char* f_path, const char* name) {
     if (!fat_mark_deleted(&e)) {
         return FS_ERR_IO;
     }
+    TRACE("marked %s's entry deleted first, so nothing points at its clusters as they go", name);
     fat_free_chain(fat_entry_cluster(&e.entry));
     return FS_OK;
 }

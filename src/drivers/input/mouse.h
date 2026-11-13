@@ -2,7 +2,7 @@
     mouse.h - the PS/2 mouse, for AerLang programs
 
     Only programs use the mouse: the terminal never does. The mouse is switched on the first time
-    a program asks about it (mouse(), mousemove() or mousedown() in lang/aer_builtins.c) and off
+    a program asks about it (mouse(), mousemove() or mousedown() in lang/bi_graphics.c) and off
     again when the program ends, so with no program running AerOS works just as it always has.
 
     How a PS/2 mouse talks:

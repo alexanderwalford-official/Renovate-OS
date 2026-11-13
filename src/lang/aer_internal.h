@@ -3,7 +3,7 @@
     The pieces of the AerLang interpreter shared between its files:
 
         source text --aer_lexer.c--> tokens --aer_parser.c--> syntax tree --aer_interp.c--> runs it
-                                                                    calls aer_builtins.c for print() etc.
+                                                                    calls the built-ins (bi_*.c) for print() etc.
 
     Memory: everything a program allocates goes through aer_alloc, which keeps a list of it, so
     when the program ends (normally or with an error half way through) aer_free_all gives it all
@@ -208,7 +208,7 @@ const char* aer_type_name (value_t v);
 value_t aer_to_string (value_t v); // a new string showing v the way print() does
 void aer_print_value (value_t v);
 
-// builtins (aer_builtins.c)
+// builtins (the table is in aer_builtins.c, the functions in bi_*.c: see builtins.h)
 typedef value_t (*aer_native_t)(int argc, value_t* argv, int line);
 typedef struct {
     const char* name;

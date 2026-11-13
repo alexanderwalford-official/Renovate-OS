@@ -22,7 +22,8 @@ Then, from `src/`:
 | `python3 ../tools/test/run.py -l` | list the tests |
 
 Each test prints `PASS`, `FAIL` or `SKIP` with how long it took, and a summary comes at the
-end. `make test` fails (exit code 1) if any test failed, so it can be used before a commit.
+end. `make test` fails (exit code 1) if any test failed, so it can be used before a commit,
+along with `make check`, which checks the code keeps the conventions WHY and SRC rely on.
 
 On a computer with plenty of cores the whole suite takes under a minute, which is about as long
 as its slowest test (the file versions test waits out an 11 second gap on purpose). One at a time
@@ -49,9 +50,9 @@ are skipped rather than failed.
 | `test_basics.py` | booting, commands, files without a disk, "did you mean" |
 | `test_terminal.py` | usage messages, Tab completion, Page Up / Page Down, and the editor (save, run, quit) |
 | `test_aerlang.py` | the language (`files/langtest.aer` checks every statement and expression), and AerLang at the prompt |
-| `test_explain.py` | WHY, SRC and the read-only `/src/` folder |
+| `test_explain.py` | WHY, SRC, SHOW and the read-only `/src/` folder |
 | `test_processes.py` | RUN, and the queue: QUE, GO, Ctrl+C, `queue()` |
-| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, DEL on big files and folders, the wipe after three wrong passwords, permissions |
+| `test_disk.py` | a real FAT disk: accounts and logging in, file versions, encryption, DEL on big files and folders, the wipe after three wrong passwords, a full disk reported rather than ignored, permissions |
 | `test_apps.py` | the DOC reader, the animation demo, and how built-in apps are installed and kept up to date on a disk |
 | `test_crypto.py` | the boot's crypto self-test, and the decryptor printed in `docs/SECURITY.md` run on a file AerOS encrypted |
 | `test_media.py` | WAV files in three formats and an MP3 (recorded and checked for the right notes), the startup sound, and video |

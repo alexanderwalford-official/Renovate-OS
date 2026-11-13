@@ -222,8 +222,7 @@ void hmac_init (hmac_t* h, const void* key, size_t key_length) {
 
 // one HMAC over first || second (second may be empty), starting from a prepared context, which
 // is left unchanged so it can be used again. out may be the same buffer as first
-static void hmac_run (const hmac_t* h, const void* first, size_t first_length,
-                      const void* second, size_t second_length, uint8_t out[SHA256_SIZE]) {
+static void hmac_run (const hmac_t* h, const void* first, size_t first_length, const void* second, size_t second_length, uint8_t out[SHA256_SIZE]) {
     // inner hash: carry on from a copy of the prepared state (key ^ ipad already in), add the data
     uint8_t inner[SHA256_SIZE];
     sha256_t s = h->inner;
@@ -263,8 +262,7 @@ void hmac_sha256 (const void* key, size_t key_length, const void* data, size_t l
 // an attacker can't work out a table of common passwords in advance.
 
 // stretch a password and salt into length bytes of key, running HMAC iterations times per block
-void pbkdf2_sha256 (const void* password, size_t password_length, const void* salt, size_t salt_length,
-                    uint32_t iterations, uint8_t* out, size_t length) {
+void pbkdf2_sha256 (const void* password, size_t password_length, const void* salt, size_t salt_length, uint32_t iterations, uint8_t* out, size_t length) {
     hmac_t h;
     hmac_init(&h, password, password_length); // the password is the HMAC key every time
 

@@ -142,7 +142,7 @@ isn't saved on interrupts, so a float there could upset a program that was using
 ## The startup sound
 
 * It lives at **`/sys/startup.wav`**, copied there from a built-in copy
-  ([`src/apps/startup.wav`](../src/apps/startup.wav)) if the file is missing. A replacement is
+  ([`src/disk/sys/startup.wav`](../src/disk/sys/startup.wav)) if the file is missing. A replacement is
   never overwritten.
 * **To change it**, replace the file with any WAV, or with an MP3 under the same name (the
   contents decide the format, not the name):

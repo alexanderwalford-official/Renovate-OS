@@ -31,7 +31,8 @@
     The terminal's own commands, and code typed at its prompt, never ask: that is you. (So
     AerLang's cmd(), which runs a terminal command, only works at the prompt.)
 
-    The checks are made by AerLang's file functions (lang/aer_builtins.c), which call
+    The checks are made by AerLang's file functions (lang/bi_files.c, through file_arg and
+    allowed_path in lang/bi_args.c), which call
     perm_allows() before they do anything.
 */
 #ifndef PERM_H

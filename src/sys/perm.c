@@ -26,6 +26,7 @@
 #include "../drivers/video/gfx.h"
 #include "../drivers/input/IO.h"
 #include "../lib/primary_definitions.h"
+#include "trace.h"
 
 #define PERM_FILE_FOLDER "/acc/"
 #define PERM_FILE_NAME   "perms"
@@ -360,12 +361,16 @@ bool perm_allows (const char* folder, const char* name, perm_kind_t kind) {
     // 2. the accounts: never. This comes before any asking, so a program can't talk anyone
     // into letting it read password hashes or write itself an "always" in /acc/perms
     if (strncasecmp(folder, PERM_FILE_FOLDER, slen(PERM_FILE_FOLDER)) == 0) {
+        TRACE("%s may never touch %s: the accounts are off limits to programs", program.name, folder);
         return false;
     }
     // 3. free to read
     if (kind == PERM_READ) {
         bool own_folder = strcasecmp(folder, program.folder) == 0;
         if (system_folder(folder) || own_folder || named_by_you(folder, name)) {
+            TRACE("%s may read %s%s without asking: %s", program.name, folder, name,
+                  own_folder ? "it is the program's own folder" :
+                  system_folder(folder) ? "it is one of AerOS's own folders" : "you named it");
             return true;
         }
     }
@@ -384,11 +389,14 @@ bool perm_allows (const char* folder, const char* name, perm_kind_t kind) {
     }
     // 5. "always", from before
     if (always_allowed(folder, kind)) {
+        TRACE("%s may use %s: you said \"always\" before (PERM lists it)", program.name, folder);
         return true;
     }
 
     // 6. ask
     answer_t answer = ask(folder, name, kind);
+    TRACE("asked you about %s%s for %s: %s", folder, name, program.name,
+          answer == ANSWER_NO ? "no" : answer == ANSWER_ALWAYS ? "always" : "yes, this time");
     if (answer == ANSWER_ALWAYS) {
         remember_always(folder, kind);
     }

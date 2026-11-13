@@ -9,7 +9,7 @@ It's an opensource operating system and its design is remarkably simple consider
 Like many other operating systems, apps that shape the user experience can be edited in realtime. If you don't like how the text editor works, change it using said editor and save your changes. Then reload the app to test said changes immediately. No recompiling needed.
 
 ## What makes it different
-- **It explains itself.** Type `why` after anything goes wrong and AerOS tells you what happened, why, and what to do. `why del` explains a command from the comments in its own source code, `src del` shows that code, and the whole source is built in as the read-only `/src/` folder.
+- **It explains itself.** Type `why` after anything goes wrong and AerOS tells you what happened, why, and what to do. `why del` explains a command from the comments in its own source code, `src del` shows that code, and the whole source is built in as the read-only `/src/` folder. `show del notes.txt` runs a command and then tells you, step by step, what AerOS did inside to carry it out.
 - **The prompt is a programming language.** Anything that isn't a command runs as AerLang: `let x = 2`, `x * 10`, `for f in la() do print(f) end`. `cmd("la")` turns a command's output into data.
 - **Apps ask before they touch your files.** Programs read AerOS's own files freely, but ask before reading yours or changing anything (yes, always, or no).
 - **Files remember their past.** Changing or deleting a file in your home folder keeps the old version: `vers notes.txt`, `rd notes.txt@2`, `undo notes.txt`.
@@ -69,7 +69,7 @@ I've decided to use inline assmembly in C with the GCC GNU99 standard for the mo
 - [x] Scrollback. (Page Up / Page Down in the terminal look back through the last 400 lines of output)
 - [x] Games groundwork. (a back buffer for smooth drawing, held keys, and a mixer playing up to 8 sounds at once)
 - [x] Video. (PLY plays MPEG-1 .mpg videos full screen with their sound in step, using pl_mpeg; see docs/VIDEO.md)
-- [x] An OS that explains itself. (WHY explains problems, commands and functions, SRC shows the code, /src/ holds it all)
+- [x] An OS that explains itself. (WHY explains problems, commands and functions, SRC shows the code, /src/ holds it all, and SHOW narrates what a command did inside)
 - [x] AerLang at the prompt. (variables, sums and code right in the terminal, "did you mean", and cmd() for a command's output)
 - [x] Programs ask first. (apps ask before reading your files or changing any, PERM remembers the answers)
 - [x] File versions. (the last 10 versions of every file in a home folder: VERS, file@N and UNDO)

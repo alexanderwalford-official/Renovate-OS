@@ -414,9 +414,14 @@ typedef struct {
 
 // a 16 bit little endian number at p: the first byte is the low one. Read a byte at a time, as
 // BMP fields aren't always lined up on a 2 or 4 byte boundary
-static uint32_t u16(const uint8_t* p) { return (uint32_t)p[0] | ((uint32_t)p[1] << 8); }
+static uint32_t u16(const uint8_t* p) {
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8);
+}
+
 // a 32 bit little endian number at p: two 16 bit halves, the low half first
-static uint32_t u32(const uint8_t* p) { return u16(p) | (u16(p + 2) << 16); }
+static uint32_t u32(const uint8_t* p) {
+    return u16(p) | (u16(p + 2) << 16);
+}
 
 // read and check the headers, false for anything that isn't a BMP we can draw, or that claims
 // more pixels than the file holds (so a damaged file can't make us read past its end)

@@ -38,6 +38,7 @@ suggestion (`Did you mean DEL?`), and `why` explains any problem.
 | `why` | explain the last thing that went wrong ([more](why.md)) |
 | `why <name>` | explain a command, an AerLang function or a C function: `why del` |
 | `src <name>` | show the code behind one, with line numbers: `src del`, `src fat.c` |
+| `show <command>` | run a command, then see step by step what AerOS did inside: `show del notes.txt` ([more](why.md)) |
 | `perm [del <n>]` | what [programs may always do](perms.md) with your files, or forget it |
 
 ## Encrypted files

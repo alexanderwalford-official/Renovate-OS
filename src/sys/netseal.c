@@ -66,8 +66,7 @@ size_t netseal_seal (const uint8_t key[NETSEAL_KEY_SIZE], const void* message, s
 }
 
 // open a sealed packet into out: false, and nothing in out, unless its tag matches this key
-bool netseal_open (const uint8_t key[NETSEAL_KEY_SIZE], const uint8_t* packet, size_t length,
-                   uint8_t* out, size_t* out_length) {
+bool netseal_open (const uint8_t key[NETSEAL_KEY_SIZE], const uint8_t* packet, size_t length, uint8_t* out, size_t* out_length) {
     // At least "AERN", a nonce and a tag (an empty message is allowed), starting with "AERN".
     // Without the length check, length - TAG_SIZE below could wrap round to a huge number
     if (length < NETSEAL_OVERHEAD || memcmp(packet, MAGIC, MAGIC_SIZE) != 0) {

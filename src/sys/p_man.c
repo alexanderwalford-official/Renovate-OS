@@ -18,6 +18,7 @@
 #include "../lib/primary_definitions.h"
 #include "../lib/aer_comp.h"
 #include "sys_clck.h"
+#include "trace.h"
 
 int p_cnt = 0; // process count, automatic handler (p_create adds one, p_destroy takes one off)
 struct process p_stack[P_STACK_SIZE]; // process stack
@@ -74,6 +75,7 @@ int p_create (const char* c_p_inst) {
         p->p_et = (unsigned int)slen(p->p_inst) * 10; // 0.01 seconds per character
         p->p_rs = P_DEAD;
         p_cnt++;
+        TRACE("made process %d for \"%s\" (it waits until it is run)", id, p->p_inst);
         return id;
     }
     // every slot is in use
@@ -96,6 +98,7 @@ bool p_destroy (int p_id) {
     }
     memset(&p_stack[p_id], 0, sizeof(p_stack[p_id]));
     p_cnt--;
+    TRACE("process %d has finished, and its slot is free again", p_id);
     return true;
 }
 
@@ -214,6 +217,7 @@ void p_stack_exec (int p_id) {
     struct process* p = &p_stack[p_id];
     // RUNNING first, so a nested p_exec() of this same process (see p_exec) leaves it alone
     p->p_rs = P_RUNNING;
+    TRACE("running process %d: \"%s\"", p_id, p->p_inst);
 
     // a process with no code has nothing to compile (p_create("") makes one of these)
     if (p->p_inst[0] == '\0') {

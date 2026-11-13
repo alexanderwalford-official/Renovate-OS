@@ -57,7 +57,7 @@ almost no power sitting at the prompt.
 
 | Part | Source |
 | --- | --- |
-| the terminal and its commands | `src/sys/terminal/t_int.c` |
+| the terminal and its commands | `src/sys/terminal/` (`t_int.c`, and `cmd_*.c` by topic) |
 | files: disk (FAT) or memory | `src/sys/f_sys.c`, `src/sys/fat.c` |
 | accounts and encryption | `src/sys/accounts/`, `src/sys/fcrypt.c` |
 | AerLang, and AerLang at the prompt | `src/lang/` |
@@ -65,7 +65,7 @@ almost no power sitting at the prompt.
 | old versions of files | `src/sys/versions.c` |
 | programs asking first | `src/sys/perm.c` |
 | drivers | `src/drivers/` |
-| apps and this manual | `src/apps/`, `src/docs/` |
+| apps and this manual | `src/disk/` (laid out as they are in AerOS) |
 
 Every source file starts with an explanation of what it does, and every one of them is on
 your computer too, in `/src/` (about half of that 1.8 MB is AerOS's own source code). So

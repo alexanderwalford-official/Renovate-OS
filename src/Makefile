@@ -15,10 +15,11 @@ LDFLAGS = -m elf_i386 -nostdlib -T linker.ld -z noexecstack --gc-sections
 
 # every .c file is compiled on its own into obj/, then linked together
 SOURCES = $(wildcard *.c lib/*.c sys/*.c sys/*/*.c drivers/*/*.c lang/*.c)
-# the built-in files are linked into the kernel as raw data, and sys/apps.c copies them onto
-# the disk when the OS starts: apps/ (the apps and their files) into /bin/, and docs/ (the
-# documentation the DOCS command shows) into /docs/
-BUILTIN_FILES = $(wildcard apps/* docs/*)
+# the built-in files: everything in disk/ is linked into the kernel as raw data, and sys/apps.c
+# copies it to the same place in AerOS when it starts. disk/ is laid out just like AerOS's own
+# folders, so disk/bin/hello.aer is /bin/hello.aer and disk/docs/index.md is /docs/index.md.
+# Adding a file there is all it takes: obj/builtin_index.c (below) lists them for apps.c
+BUILTIN_FILES = $(sort $(shell find disk -type f))
 
 # AerOS's own source code is linked in too, the same way, and shows up as the read-only folder
 # /src/ (see sys/source.h): every .c and .h file AerOS was built from, plus the files that
@@ -30,7 +31,7 @@ SOURCE_CODE = $(sort $(filter-out sys/splash_logo.c drivers/video/font8x16.c, \
 SOURCE_OBJECTS = $(patsubst %,obj/source/%.o,$(SOURCE_CODE)) obj/source_index.o
 
 OBJECTS = obj/entry.o $(patsubst %.c,obj/%.o,$(SOURCES)) $(patsubst %,obj/%.o,$(BUILTIN_FILES)) \
-          $(SOURCE_OBJECTS)
+          obj/builtin_index.o $(SOURCE_OBJECTS)
 
 QEMU = qemu-system-i386
 
@@ -49,7 +50,7 @@ QEMU_AUDIO = -audiodev $(AUDIO),id=snd0 -device AC97,audiodev=snd0
 # UDP port 5001 here is passed on to AerOS's port 5000, so tools/aernet.py can send to it
 QEMU_NET = -nic user,model=e1000,hostfwd=udp::5001-:5000
 
-.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev test FORCE
+.PHONY: all clean clean-disk move run run-kernel run-img run-vfs run-uefi disk-ls disk-put setup-dev test check FORCE
 
 all: main.iso
 
@@ -73,13 +74,9 @@ obj/%.o: %.c
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
 
 # a built-in file: "ld -b binary" wraps the file's bytes in an object file, with the symbols
-# _binary_<folder>_<name>_start / _end marking where they are (see sys/apps.c)
-obj/apps/%.o: apps/%
-	@mkdir -p obj/apps
-	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
-
-obj/docs/%.o: docs/%
-	@mkdir -p obj/docs
+# _binary_disk_bin_hello_aer_start / _end marking where they are (see sys/apps.c)
+obj/disk/%.o: disk/%
+	@mkdir -p '$(dir $@)'
 	$(LD) -m elf_i386 -r -b binary -z noexecstack -o '$@' '$<'
 
 # a source file for /src/: obj/source/sys/fat.c.o holds sys/fat.c, between the symbols
@@ -110,6 +107,30 @@ obj/source_index.c: FORCE
 	@if cmp -s '$@.new' '$@'; then rm -f '$@.new'; else mv '$@.new' '$@'; fi
 
 obj/source_index.o: obj/source_index.c
+	$(CC) $(CFLAGS) -c '$<' -o '$@'
+
+# the table of built-in files that sys/apps.c installs, one line per file in disk/:
+#     { "/bin/games/", "snake.aer", _binary_disk_bin_games_snake_aer_start, ..._end, false },
+# the folder is the file's own folder with disk/ taken off, and refresh is true for the manual
+# (disk/docs/). Like source_index.c it is only replaced when a file was added or removed
+builtin_dir = /$(patsubst disk/%,%,$(dir $(1)))
+
+obj/builtin_index.c: FORCE
+	@mkdir -p obj
+	@{ \
+	  echo '/* written by the Makefile: the files in src/disk/, built into AerOS, see sys/apps.h */'; \
+	  echo '#include "../sys/apps.h"'; \
+	  echo; \
+	  $(foreach f,$(BUILTIN_FILES),echo 'extern const char $(call source_symbol,$(f))_start[], $(call source_symbol,$(f))_end[];';) \
+	  echo; \
+	  echo 'const builtin_file_t builtin_files[] = {'; \
+	  $(foreach f,$(BUILTIN_FILES),echo '    { "$(call builtin_dir,$(f))", "$(notdir $(f))", $(call source_symbol,$(f))_start, $(call source_symbol,$(f))_end, $(if $(filter disk/docs/%,$(f)),true,false) },';) \
+	  echo '};'; \
+	  echo 'const int builtin_file_count = sizeof(builtin_files) / sizeof(builtin_files[0]);'; \
+	} > '$@.new'
+	@if cmp -s '$@.new' '$@'; then rm -f '$@.new'; else mv '$@.new' '$@'; fi
+
+obj/builtin_index.o: obj/builtin_index.c
 	$(CC) $(CFLAGS) -c '$<' -o '$@'
 
 FORCE:
@@ -146,6 +167,11 @@ disk-ls: $(DISK)
 # copy a file onto the disk, e.g. "make disk-put FILE=hello.aer" (DIR=/bin to put it in a folder)
 disk-put: $(DISK)
 	mcopy -i $(DISK) -o '$(FILE)' ::$(DIR)/
+
+# check the C code keeps the conventions WHY and SRC rely on: a comment right above every
+# function, definitions on one line, closing braces at column 0 (see tools/check.py)
+check:
+	python3 ../tools/check.py
 
 # boot AerOS in QEMU and check it does what it should (see docs/TESTING.md). "make test T=why"
 # runs only the tests with "why" in their name. They run on every processor core at once: J=1

@@ -40,6 +40,7 @@
 #include "sys_clck.h"
 #include "../lib/primary_definitions.h"
 #include "../lib/busy.h"
+#include "trace.h"
 
 int fs_mode = FS_MODE_MEMORY;  // VFS until fs_init() finds a disk
 char fs_disk_status[96] = "";  // what happened when looking for a disk, e.g. "no AEROS disk found"
@@ -547,8 +548,10 @@ int fs_create_d (const char* d_path, const char* d_name) {
         return FS_ERR_EXISTS;
     }
     if (source_in(path)) {
+        TRACE("%s is inside /src/, which can't be changed", path);
         return FS_ERR_READ_ONLY; // also "/src/" itself, which would hide the built-in one
     }
+    TRACE("making the folder %s %s", path, on_disk() ? "on the disk" : "in memory (no disk)");
     if (on_disk()) {
         return fat_create_dir(path);
     }
@@ -573,8 +576,11 @@ int fs_create_bytes (const char* f_path, const char* f_name, const void* data, u
         return FS_ERR_BAD_NAME;
     }
     if (source_in(folder)) {
+        TRACE("%s%s is inside /src/, which can't be changed", folder, f_name);
         return FS_ERR_READ_ONLY;
     }
+    TRACE("making %s%s, %u bytes, %s", folder, f_name, (unsigned int)length,
+          on_disk() ? "on the disk" : "in memory (no disk)");
     if (on_disk()) {
         return fat_create_file(folder, f_name, data, length);
     }
@@ -591,6 +597,7 @@ int fs_write_f (const char* f_path, const char* f_name, const char* text, bool a
         return FS_ERR_READ_ONLY;
     }
     versions_keep(folder, f_name); // the file as it is now, before it changes
+    TRACE("%s %s%s", append ? "adding to" : "replacing the text of", folder, f_name);
     if (on_disk()) {
         return fat_write_file(folder, f_name, text, append);
     }
@@ -613,6 +620,8 @@ int fs_write_bytes (const char* f_path, const char* f_name, const void* data, ui
     } else {
         versions_keep(folder, f_name);
     }
+    TRACE("replacing %s%s with %u bytes%s", folder, f_name, (unsigned int)length,
+          wipe_old ? ", wiping the old bytes as it goes" : "");
     if (on_disk()) {
         return fat_replace_file(folder, f_name, data, length, wipe_old);
     }
@@ -662,7 +671,14 @@ char* fs_read_bytes (const char* f_path, const char* f_name, uint32_t* size) {
     char base[FS_NAME_MAX];
     int number;
     if (contents == NULL && versions_split_name(f_name, base, sizeof(base), &number)) {
+        TRACE("no file called %s: reading version %d of %s instead", f_name, number, base);
         contents = versions_read(folder, base, number, size);
+    }
+    if (contents != NULL) {
+        TRACE("read %s%s, %u bytes, from %s", folder, f_name, (unsigned int)*size,
+              source_in(folder) ? "AerOS's own source" : on_disk() ? "the disk" : "memory");
+    } else {
+        TRACE("%s%s isn't there", folder, f_name);
     }
     return contents;
 }
@@ -759,9 +775,11 @@ int fs_delete_f (const char* f_path, const char* f_name) {
         return FS_ERR_NOT_FOUND;
     }
     if (source_in(folder)) {
+        TRACE("%s%s is inside /src/, which can't be changed", folder, f_name);
         return FS_ERR_READ_ONLY;
     }
     versions_keep(folder, f_name); // so UNDO can bring it back
+    TRACE("deleting %s%s %s", folder, f_name, on_disk() ? "from the disk" : "from memory");
     if (on_disk()) {
         return fat_delete_file(folder, f_name);
     }
@@ -781,8 +799,10 @@ int fs_delete_d (const char* d_path) {
     // The '/' on the end of every path stops look-alikes matching: "/system/" doesn't start
     // with "/sys/"
     if (strncmp(cd, path, slen(path)) == 0) {
+        TRACE("not deleting %s: you are in it", path);
         return FS_ERR_BUSY;
     }
+    TRACE("deleting the empty folder %s", path);
     if (on_disk()) {
         return fat_delete_dir(path);
     }

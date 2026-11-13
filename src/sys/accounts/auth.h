@@ -56,7 +56,7 @@ bool auth_valid_new_name (const char* name);
 // make a new account and its home folder, returns AUTH_OK or an AUTH_ERR_ code
 // (name must already be lower case)
 int auth_add (const char* name, const char* password);
-// delete an account (the caller decides who is allowed to, see DELU in t_int.c); its home
+// delete an account (the caller decides who is allowed to, see DELU in sys/terminal/cmd_accounts.c); its home
 // folder is left as it is
 int auth_delete (const char* name);
 // give an existing account a new password (and a new salt)

@@ -8,6 +8,7 @@
 #include "../drivers/serial/serial.h"
 #include "../lib/aer_stdio.h"
 #include "../lib/aer_string.h"
+#include "trace.h"
 
 // what the last app mode program asked for, and what that gave back (read with appmode_now)
 static appmode_t now;
@@ -78,6 +79,12 @@ void appmode_begin (uint32_t uses) {
     sfmt(line, sizeof(line), "app mode: profile %02x, %u KB given back, %u KB free\r\n",
          (unsigned int)uses, (unsigned int)(now.freed / 1024), (unsigned int)(now.free / 1024));
     serial_write(line);
+
+    // and for SHOW: what the program was found to use, and what that left room for
+    char parts[96];
+    appmode_describe(uses, parts, sizeof(parts));
+    TRACE("read the whole program first: it uses %s, so the rest was put away (%u KB back, %u KB free)",
+          parts, (unsigned int)(now.freed / 1024), (unsigned int)(now.free / 1024));
 }
 
 // what app mode last did (now.ran is false if no program has used it yet)

@@ -1376,7 +1376,7 @@ void aer_shell_start (void) {
     }
     session_begin("prompt", 0);
     aer->repl = true;    // show the value of an expression
-    aer->shell = true;   // cmd() works (see aer_builtins.c)
+    aer->shell = true;   // cmd() works (see bi_system.c)
     shell_started = true;
 }
 

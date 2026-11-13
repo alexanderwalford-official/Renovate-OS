@@ -9,7 +9,7 @@ here is in four files:
 | [`src/lib/crypto.c`](../src/lib/crypto.c) | the algorithms: SHA-256, HMAC, PBKDF2, AES-256, CTR mode, random numbers |
 | [`src/sys/accounts/auth.c`](../src/sys/accounts/auth.c) | user accounts and the login screen |
 | [`src/sys/fcrypt.c`](../src/sys/fcrypt.c) | password protected files |
-| [`src/sys/terminal/t_int.c`](../src/sys/terminal/t_int.c) | the `ENC`, `DEC`, `RD`, `PW`, `MKU`... commands |
+| [`src/sys/terminal/cmd_files.c`](../src/sys/terminal/cmd_files.c), [`cmd_accounts.c`](../src/sys/terminal/cmd_accounts.c) | the `ENC`, `DEC`, `RD` commands, and `PW`, `MKU`, `DELU`... |
 
 The crypto library is about 600 lines of C, most of it comments, written from the published
 standards. Nothing is

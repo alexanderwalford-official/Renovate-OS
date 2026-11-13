@@ -33,6 +33,7 @@
 #include "../drivers/net/e1000.h"
 #include "../lib/crypto.h"
 #include "../lib/primary_definitions.h"
+#include "trace.h"
 
 // where things are in a frame
 #define ETHERNET_HEADER 14
@@ -515,6 +516,9 @@ static void handle_udp (uint32_t from, const uint8_t* udp, size_t length) {
     // everything else needs a rule, and a seal that opens with the rule's key
     const fw_rule_t* rule = fw_find(from, to_port);
     if (rule == NULL) {
+        char text[16];
+        net_format_address(from, text);
+        TRACE("blocked a packet from %s to port %u: no firewall rule allows it", text, to_port);
         block(from, to_port);
         return;
     }
@@ -523,9 +527,11 @@ static void handle_udp (uint32_t from, const uint8_t* udp, size_t length) {
     static uint8_t message[NET_MESSAGE_MAX + NETSEAL_OVERHEAD];
     size_t message_length;
     if (data_length > sizeof(message) || !netseal_open(rule->key, data, data_length, message, &message_length)) {
+        TRACE("threw away a packet on port %u: its seal didn't open with the rule's password", to_port);
         counts.rejected++;
         return;
     }
+    TRACE("let in a sealed message on port %u: a rule allows it and its seal opened", to_port);
     counts.received++;
     inbox_add(to_port, from, message, message_length);
     // the inbox has its own copy now: don't leave the message lying about in this buffer
@@ -685,9 +691,14 @@ int net_send (uint32_t address, uint16_t port, const void* message, size_t lengt
     // the firewall is asked before anything at all goes out, even the ARP question: with no
     // rule, the network never hears from AerOS
     const fw_rule_t* rule = fw_find(address, port);
+    char text[16];
+    net_format_address(address, text);
     if (rule == NULL) {
+        TRACE("not sending to %s port %u: the firewall has no rule for it, so nothing goes out", text, port);
         return NET_ERR_BLOCKED;
     }
+    TRACE("the firewall allows %s port %u: sealing %u bytes with the rule's key", text, port,
+          (unsigned int)length);
     // the sealed message is 44 bytes longer: "AERN", the nonce and the tag (sys/netseal.h)
     static uint8_t sealed[NET_MESSAGE_MAX + NETSEAL_OVERHEAD];
     size_t sealed_length = netseal_seal(rule->key, message, length, sealed);

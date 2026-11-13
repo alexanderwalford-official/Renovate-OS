@@ -33,6 +33,7 @@
 #include <stdbool.h>
 #include "../input/GIO.h"
 #include "../../sys/sys_clck.h"
+#include "../../sys/trace.h"
 
 // I/O and control ports of bus 0 (primary) and bus 1 (secondary)
 #define ATA_IO(bus)   ((uint16_t)((bus) ? 0x170 : 0x1F0))
@@ -363,7 +364,9 @@ bool drive_write(int bus, int slave, uint32_t lba, uint32_t count, const void* b
 
     // the buffer is only read from when writing
     // (so casting the const away for the shared transfer helper is safe)
+    uint32_t start = clkuptms();
     if (!ata_pio_transfer(bus, slave, lba, count, (uint8_t*)buffer, true)) {
+        TRACE("the drive didn't take %u sector(s) at %u", (unsigned int)count, (unsigned int)lba);
         return false;
     }
 
@@ -377,7 +380,14 @@ bool drive_write(int bus, int slave, uint32_t lba, uint32_t count, const void* b
     ata_delay(ctrl);
     // the flush keeps the drive busy until the cache is empty, then the status says how it went
     if (!ata_wait_not_busy(io)) {
+        TRACE("the drive was still flushing after %d seconds: giving up on it", ATA_TIMEOUT_MS / 1000);
         return false;
+    }
+    // a slow write is worth knowing about (a busy or failing drive), a quick one isn't
+    uint32_t took = clkuptms() - start;
+    if (took >= 100) {
+        TRACE("writing %u sector(s) at %u and flushing them took the drive %u ms", (unsigned int)count,
+              (unsigned int)lba, (unsigned int)took);
     }
     return (inb(io + ATA_REG_STATUS) & (ATA_SR_ERR | ATA_SR_DF)) == 0;
 }

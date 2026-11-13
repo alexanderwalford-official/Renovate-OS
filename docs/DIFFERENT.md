@@ -4,7 +4,8 @@ AerOS isn't trying to be a small Linux. Four ideas run through it that you won't
 in the usual hobby OS, or in the big ones:
 
 1. **It explains itself.** `why` explains the last thing that went wrong, `why del` explains
-   a command, and `src del` shows its code. The source code is inside the OS, in `/src/`.
+   a command, and `src del` shows its code. `show del notes.txt` runs a command and then
+   tells you step by step what AerOS did inside. The source code is inside the OS, in `/src/`.
 2. **The prompt is a programming language.** Anything that isn't a command runs as AerLang,
    so `let x = 2` and `x * 10` work at the prompt, and `cmd("la")` turns a command's output
    into a list.
@@ -104,6 +105,33 @@ Two kinds of problem get more:
   `explain_program()`, which keeps a copy of the lines around it (the program's memory is gone
   by the time you type `WHY`), and `WHY` shows them with an arrow at the line that failed.
 
+### SHOW: watching it work
+
+`WHY` explains after the fact. `SHOW` narrates: `show del notes.txt` runs the line as if it had
+been typed (`HandleInput`), then lists what AerOS did inside, step by step, each step naming the
+C function that did it, so `WHY` and `SRC` can take it from there.
+
+The steps come from `TRACE()` lines in the code (`sys/trace.h`). Each one says, in plain words,
+what its function decided or did:
+
+```c
+TRACE("kept %s as it was, as %s@1 (in %s), so UNDO can bring it back", name, name, place.versions);
+```
+
+`TRACE()` is a macro that adds the function's own name (C's `__func__`) and checks a flag
+first, so while nothing is watching it costs one comparison and no more. While `SHOW` watches,
+`trace_note()` formats each note into the next slot of a plain array (48 of them: SHOW wants
+how a command began, so any more are only counted), and the same note twice in a row becomes
+one step with a count. `trace_print()` lists them, the names in a column and each note wrapped
+under its own.
+
+The notes are written where something is decided: which of the three places a file is in
+(`f_sys.c`), clusters taken and freed and the order things are written in (`fat.c`), versions
+kept or why not (`versions.c`), which permission rule allowed or refused something
+(`perm.c`), what the firewall let through (`net.c`), a slow or failed disk write (`ata.c`), what
+app mode put away (`appmode.c`), and processes made and run (`p_man.c`). Not every little
+thing: what someone reading the code would want to know. Adding to it is one line.
+
 
 ## 2. The prompt is a programming language
 
@@ -193,7 +221,7 @@ to change includes reading. A permission is for one folder, not the folders insi
 
 `aer_run_file()` tells `perm_program_started()` which program is starting (its folder, name and
 arguments) and `perm_program_ended()` when it is done. AerLang's file functions get their path
-through `file_arg(..., kind, ...)` or `allowed_path(...)` in `lang/aer_builtins.c`, which call
+through `file_arg(..., kind, ...)` or `allowed_path(...)` in `lang/bi_args.c`, which call
 `perm_allows()`. If the answer is no they fail exactly as they would for a missing file (`nil`
 or `false`), so a program doesn't need any special code for it.
 

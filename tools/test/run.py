@@ -64,7 +64,7 @@ class Test:
         return os.path.join(self.workdir, name)
 
     def repo(self, *parts):
-        """A file in the repository, e.g. t.repo('src', 'apps', 'viewer.aer')."""
+        """A file in the repository, e.g. t.repo('src', 'disk', 'bin', 'viewer.aer')."""
         return os.path.join(REPO, *parts)
 
     def check_disk(self, disk):

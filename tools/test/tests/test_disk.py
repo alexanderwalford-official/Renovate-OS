@@ -1,10 +1,11 @@
 """A real FAT disk: accounts and logging in, file versions, file encryption, and permissions."""
 
 import os
+import re
 import subprocess
 import time
 
-from aeros import GUEST_PROMPT, read_disk_file
+from aeros import GUEST_PROMPT, read_disk_file, write_disk_file
 
 
 def test_accounts(t):
@@ -221,3 +222,37 @@ def test_permissions(t):
     aeros.expect('may read', 'files in /data/')
     aeros.run('perm del 1')
     aeros.expect('Forgot 1 answer(s)')
+
+
+def fill_disk(t, disk):
+    """Fill every free byte of a disk image with one big file, between boots."""
+    listing = subprocess.run(['mdir', '-i', disk, '::'], capture_output=True, text=True).stdout
+    free = int(re.search(r'([\d ]+) bytes free', listing).group(1).replace(' ', ''))
+    filler = t.path('filler.bin')
+    with open(filler, 'wb') as f:
+        f.truncate(free)
+    subprocess.run(['mcopy', '-i', disk, filler, '::/filler.bin'], check=True, capture_output=True)
+
+
+def test_a_full_disk_is_reported(t):
+    # A write that fails says so, rather than nothing: the boot log for a built-in file it
+    # couldn't update, and the terminal for a version of a file it couldn't keep
+    disk = t.disk()
+    aeros = t.boot(disk=disk)
+    aeros.first_login()
+    aeros.run('mkf notes.txt hello')
+    aeros.quit()
+
+    # an older manual page for the boot to update, then no room at all
+    write_disk_file(disk, '/docs/why.md', 'an older page\n')
+    fill_disk(t, disk)
+
+    aeros = t.boot(disk=disk)
+    aeros.wait_for('Authentication required', 60)
+    aeros.expect_printed("built-in file(s) couldn't be written to the disk")
+    aeros.login()
+    aeros.cls()
+    aeros.run('wr notes.txt changed')
+    aeros.expect("Couldn't keep a version of notes.txt for UNDO: no space left")
+    aeros.run('why')
+    aeros.expect('What you can do')

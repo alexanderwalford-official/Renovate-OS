@@ -49,6 +49,28 @@ src fat.c        a whole file, in the reader
 
 Page Up scrolls back if the function is longer than the screen.
 
+## Watch it work
+
+`show` runs a command, then tells you step by step what AerOS did inside to carry it out:
+
+```
+alex@0//home/alex/: show wr notes.txt more
+What AerOS did:
+  1. versions_keep     kept notes.txt as it was, as notes.txt@1, so UNDO can
+                       bring it back
+  2. fs_write_f        adding to /home/alex/notes.txt
+  3. fat_write_chain   wrote 19 bytes into 1 new cluster(s), starting at
+                       cluster 1175
+  4. fat_replace_file  pointed notes.txt's entry at the new data (one sector
+                       write), so the old data can go
+  5. fat_free_chain    freed 1 cluster(s), writing 1 sector(s) of each FAT copy
+```
+
+Each step names the C function that did it, so `why` and `src` can tell you more about any of
+them. It works for anything you can type: `show del notes.txt`, `show hello`, `show msg ...`,
+or a line of AerLang. It is a good way to see why something was refused, too: `show msg 10.0.2.2
+5000 hi` shows the firewall deciding.
+
 ## /src/: all of AerOS
 
 The source code AerOS was built from is built into it, as a folder you can read but not

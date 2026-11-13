@@ -17,6 +17,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// switch the FPU on (see the top of this file), so float and double maths can be used. Only the
+// first call does anything
 void fpu_enable (void) {
     static bool enabled = false;
     if (enabled) {

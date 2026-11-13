@@ -70,7 +70,7 @@ coloured in, and a new line keeps the indentation of the one above.
 Programs can also be written on another computer and copied onto the AerOS disk with
 `make disk-put FILE=myapp.aer` (see `src/README.md`).
 
-The apps in `src/apps/` are built into AerOS and copied to `/bin/` when it starts.
+The apps in `src/disk/bin/` are built into AerOS and copied to `/bin/` when it starts.
 
 ## The language
 

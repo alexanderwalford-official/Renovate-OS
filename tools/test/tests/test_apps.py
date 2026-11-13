@@ -57,8 +57,8 @@ def boot_and_stop(t, disk):
 
 def test_built_in_apps_are_installed(t):
     disk = t.disk()
-    built_in_hello = open(t.repo('src', 'apps', 'hello.aer'), 'rb').read()
-    built_in_viewer = open(t.repo('src', 'apps', 'viewer.aer'), 'rb').read()
+    built_in_hello = open(t.repo('src', 'disk', 'bin', 'hello.aer'), 'rb').read()
+    built_in_viewer = open(t.repo('src', 'disk', 'bin', 'viewer.aer'), 'rb').read()
 
     # a new disk gets every built-in file, and a record of what it was given
     printed = boot_and_stop(t, disk)

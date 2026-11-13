@@ -18,6 +18,8 @@
 #include "f_sys.h"
 #include "sys_clck.h"
 #include "../lib/primary_definitions.h"
+#include "explain.h"
+#include "trace.h"
 
 #define HOMES "/home/"
 #define HEADER_MARK "#AERV "   // every version's first line starts with this
@@ -311,19 +313,26 @@ static void keep_now (const place_t* place, const char* folder, const char* name
     free(contents);
 
     // the versions folder is only made the first time something in the home folder changes
+    int result = FS_OK;
     if (!fs_dir_exists(place->versions)) {
-        fs_create_d(place->versions, "old versions of files");
+        result = fs_create_d(place->versions, "old versions of files");
     }
     char file[16];
     slot_name(place, slot, file, sizeof(file));
     // a slot that is already a file gets written over, an empty one is made
     // (neither keeps a version of its own: versions_apply() says no for the versions folder)
-    if (slots[slot].used) {
-        fs_write_bytes(place->versions, file, version, header_length + size, false);
-    } else {
-        fs_create_bytes(place->versions, file, version, header_length + size);
+    if (result == FS_OK && slots[slot].used) {
+        result = fs_write_bytes(place->versions, file, version, header_length + size, false);
+    } else if (result == FS_OK) {
+        result = fs_create_bytes(place->versions, file, version, header_length + size);
     }
     free(version);
+
+    // The change itself still goes ahead, but say that this version couldn't be kept (a full
+    // disk, or a drive error), so nobody counts on UNDO for it. WHY gives the reason
+    if (result != FS_OK) {
+        explain_say_fs(result, name, "[ ! ] Couldn't keep a version of %s for UNDO", name);
+    }
 }
 
 // is the file there, and small enough to keep a version of?
@@ -336,14 +345,25 @@ static bool keepable (const place_t* place) {
 void versions_keep (const char* folder, const char* name) {
     place_t place;
     // paused, not in a home folder, or a version was kept only moments ago: nothing to do
-    if (paused > 0 || !find_place(folder, name, &place) || kept_lately(place.hash)) {
+    if (paused > 0) {
+        TRACE("no version of %s: versions are paused while UNDO or ENC writes", name);
+        return;
+    }
+    if (!find_place(folder, name, &place)) {
+        TRACE("no version of %s: only files in a home folder keep versions", name);
+        return;
+    }
+    if (kept_lately(place.hash)) {
+        TRACE("no new version of %s: one was kept moments ago, and this change joins it", name);
         return;
     }
     if (!keepable(&place)) {
+        TRACE("no version of %s: it is new, or too big to keep", name);
         return; // a new file (nothing to keep yet), or too big to keep
     }
     keep_now(&place, folder, name);
     remember_kept(place.hash);
+    TRACE("kept %s as it was, as %s@1 (in %s), so UNDO can bring it back", name, name, place.versions);
 }
 
 // delete every version of a file, zeroing each one first
