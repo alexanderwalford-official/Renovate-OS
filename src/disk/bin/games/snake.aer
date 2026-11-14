@@ -124,8 +124,8 @@ end
 #              snake    ANNA    120
 #              snake    BEN     80
 #
-# AerDB gives rows back in the order they were added, so the best are found by
-# sorting them here. Only as many as are shown are kept.
+# ORDER BY score DESC gives the best first, and LIMIT only as many as are shown.
+# Only those are kept: save_score deletes the rest.
 
 let SCORES_FILE = "/bin/games/scores.db"
 let SCORES_SHOWN = 5        # how many high scores are listed
@@ -146,26 +146,7 @@ func best_scores()
     if scores_db == nil then
         return []
     end
-    let rows = dbquery(scores_db, "SELECT name, score FROM scores WHERE game = 'snake'")
-
-    # Sort them, best first: each row goes in front of the first score it beats.
-    let sorted = []
-    for i = 0 to len(rows) - 1 do
-        let place = 0
-        while place < len(sorted) and sorted[place][1] >= rows[i][1] do
-            place = place + 1
-        end
-        insert(sorted, place, rows[i])
-    end
-
-    # Only the best SCORES_SHOWN of them.
-    let best = []
-    for i = 0 to len(sorted) - 1 do
-        if i < SCORES_SHOWN then
-            push(best, sorted[i])
-        end
-    end
-    return best
+    return dbquery(scores_db, "SELECT name, score FROM scores WHERE game = 'snake' ORDER BY score DESC LIMIT ?", [SCORES_SHOWN])
 end
 
 func is_high_score(score)

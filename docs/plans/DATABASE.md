@@ -539,8 +539,9 @@ changes the inside of one layer and leaves the rest alone:
 - **A journal**, so a change is all there or not at all if the power goes: save each page's old
   bytes in `shop.dbj` before changing it, and delete the journal at COMMIT. On opening, a
   journal still there means "put those pages back".
-- **Bigger rows** that carry on onto extra pages, and more of SQL: OR, brackets, ORDER BY,
-  LIMIT, `count(*)`, joins.
+- **Bigger rows** that carry on onto extra pages, and more of SQL: OR, brackets, `count(*)`,
+  joins, ORDER BY more than one column. (ORDER BY one column is built: see
+  [ORDER_BY.md](ORDER_BY.md).)
 - **SQLite's file format**, so Python and other programs can open AerDB's files
   (https://www.sqlite.org/fileformat2.html). The biggest change: B-trees instead of chains, and
   big-endian numbers (read with `get16` / `get32` helpers rather than `memcpy`). The SQL and

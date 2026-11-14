@@ -7,7 +7,9 @@
         CREATE TABLE   table_create
         DROP TABLE     table_drop
         INSERT         puts the values in the table's column order, then table_insert
-        SELECT         table_scan, giving back the columns asked for of each row the WHERE allows
+        SELECT         table_scan, giving back the columns asked for of each row the WHERE allows.
+                       With ORDER BY, the rows are kept until they have all been read, then
+                       sorted, then given back (see "ORDER BY" below)
         DELETE         table_delete_where, deleting each row the WHERE allows
         UPDATE         the same, but each deleted row first gets its new values, and is added
                        again afterwards with the same rowid
@@ -26,6 +28,15 @@
 #include "../lib/primary_definitions.h"
 #include "../sys/trace.h"
 
+// SELECT ... ORDER BY: one row, kept until every row has been read so they can be sorted.
+// It is a copy of the row's bytes, in memory of its own: the values table_scan gives point into
+// the page it is reading, and that memory holds a different page once it moves on
+typedef struct {
+    uint8_t* bytes;     // the row, as row_encode makes it
+    uint16_t size;      // how many bytes
+    db_value_t key;     // its value in the ORDER BY column (text in it points into `bytes`)
+} sort_row_t;
+
 // what running one statement needs to know while it goes through the rows
 typedef struct {
     aerdb_t* db;
@@ -38,6 +49,11 @@ typedef struct {
     aerdb_row_fn row_out;                            // SELECT: where the rows go
     void* ctx;
     int given;                                       // SELECT: rows given back so far
+    // SELECT ... ORDER BY
+    int order_column;                                // the column to sort by, -1 for no ORDER BY
+    sort_row_t* kept;                                // the rows the WHERE allowed, waiting to be sorted
+    int kept_count;
+    bool out_of_memory;                              // a row couldn't be kept
     // UPDATE: the changed rows, ready to be added again once the old ones are deleted
     struct pending_row {
         uint32_t rowid;
@@ -147,14 +163,9 @@ static int run_insert (run_t* run, aerdb_table_t* table) {
     return result;
 }
 
-// SELECT, for one row: if the WHERE allows it, give back the columns asked for. Gives back true
-// (stop) once LIMIT rows have been given
-static bool select_row (uint32_t rowid, const db_value_t* values, int count, void* ctx) {
-    (void)rowid;
-    run_t* run = ctx;
-    if (!row_matches(run, values, count)) {
-        return false;
-    }
+// SELECT: give one row back to whoever asked (the columns they chose, in their order). Gives
+// back true (stop) when they have had enough, or once LIMIT rows have been given
+static bool give_row (run_t* run, const db_value_t* values, int count) {
     db_value_t out[AERDB_COLUMNS_MAX];
     for (int i = 0; i < run->chosen_count; i++) {
         int column = run->chosen[i];
@@ -164,6 +175,114 @@ static bool select_row (uint32_t rowid, const db_value_t* values, int count, voi
     bool caller_stops = run->row_out != NULL && run->row_out(out, run->chosen_count, run->ctx);
     bool limit_reached = run->s->limit >= 0 && run->given >= run->s->limit;
     return caller_stops || limit_reached;
+}
+
+// ---- ORDER BY -----------------------------------------------------------------------------------
+//
+// The first row given back has to be the smallest, and that might be the table's last row. So
+// with ORDER BY, rows aren't given back as they are read: in four steps,
+//     keep_row          keeps a copy of each row the WHERE allows (while table_scan reads them)
+//     sort_kept_rows    sorts the copies
+//     give_kept_rows    gives them back, in order, up to the LIMIT
+//     forget_kept_rows  frees the copies
+
+// Keep a copy of one row, and its value in the ORDER BY column, on the end of run->kept. Gives
+// back true (stop reading) if there isn't the memory for it
+static bool keep_row (run_t* run, const db_value_t* values, int count) {
+    // the row as bytes, the way it is stored in a page
+    uint8_t bytes[AERDB_PAGE_SIZE];
+    uint16_t size = row_encode(values, count, bytes, sizeof(bytes));
+
+    // room for one more in the list, and memory of its own for the bytes
+    sort_row_t* bigger = realloc(run->kept, (size_t)(run->kept_count + 1) * sizeof(sort_row_t));
+    if (bigger == NULL) {
+        run->out_of_memory = true;
+        return true;
+    }
+    run->kept = bigger;
+    uint8_t* copy = malloc(size > 0 ? size : 1);
+    if (copy == NULL) {
+        run->out_of_memory = true;
+        return true;
+    }
+    memcpy(copy, bytes, size);
+
+    // The key is read from the copy, not from `values`: text in `values` points into the page
+    // being read, which is about to change. (A missing value at the end of the row is a NULL)
+    db_value_t copied[AERDB_COLUMNS_MAX];
+    int copied_count = row_decode(copy, size, copied, AERDB_COLUMNS_MAX);
+    sort_row_t* row = &run->kept[run->kept_count];
+    row->bytes = copy;
+    row->size = size;
+    if (run->order_column < copied_count) {
+        row->key = copied[run->order_column];
+    } else {
+        row->key = value_null();
+    }
+    run->kept_count++;
+    return false;
+}
+
+// Should row a come after row b? Smallest first (ASC), or biggest first (DESC). value_compare
+// knows the order of values: NULL first, then numbers by size, then text by its bytes
+static bool comes_after (const run_t* run, const sort_row_t* a, const sort_row_t* b) {
+    int order = value_compare(&a->key, &b->key);   // -1: a is smaller, 0: the same, 1: a is bigger
+    if (run->s->order_desc) {
+        return order < 0;
+    }
+    return order > 0;
+}
+
+// Sort the kept rows (an insertion sort): each row in turn slides back past every row before it
+// that should come after it. Rows with the same value never pass each other, so they stay in
+// the order they were read
+static void sort_kept_rows (run_t* run) {
+    for (int i = 1; i < run->kept_count; i++) {
+        sort_row_t moving = run->kept[i];
+        int place = i;
+        while (place > 0 && comes_after(run, &run->kept[place - 1], &moving)) {
+            run->kept[place] = run->kept[place - 1];   // that one moves along one place
+            place--;
+        }
+        run->kept[place] = moving;
+    }
+}
+
+// Give the kept rows back, in their sorted order, until the LIMIT (or whoever asked stops)
+static void give_kept_rows (run_t* run) {
+    for (int i = 0; i < run->kept_count; i++) {
+        db_value_t values[AERDB_COLUMNS_MAX];
+        int count = row_decode(run->kept[i].bytes, run->kept[i].size, values, AERDB_COLUMNS_MAX);
+        if (give_row(run, values, count)) {
+            return;
+        }
+    }
+}
+
+// Free every kept row (those past the LIMIT too), and the list
+static void forget_kept_rows (run_t* run) {
+    for (int i = 0; i < run->kept_count; i++) {
+        free(run->kept[i].bytes);
+    }
+    free(run->kept);
+    run->kept = NULL;
+    run->kept_count = 0;
+}
+
+// ---- SELECT -------------------------------------------------------------------------------------
+
+// SELECT, for one row: if the WHERE allows it, give it back (or with ORDER BY, keep it to sort
+// later). Gives back true to stop reading
+static bool select_row (uint32_t rowid, const db_value_t* values, int count, void* ctx) {
+    (void)rowid;
+    run_t* run = ctx;
+    if (!row_matches(run, values, count)) {
+        return false;
+    }
+    if (run->order_column >= 0) {
+        return keep_row(run, values, count);
+    }
+    return give_row(run, values, count);
 }
 
 // SELECT: which columns, then every row of the table through select_row
@@ -189,10 +308,36 @@ static int run_select (run_t* run, aerdb_table_t* table) {
     }
     run->db->result_count = run->chosen_count;
 
+    // ORDER BY: which column, as a number (-1 means there's no ORDER BY)
+    run->order_column = -1;
+    if (s->order_by[0] != '\0') {
+        run->order_column = column_number(run, s->order_by);
+        if (run->order_column < 0) {
+            return aerdb_fail(run->db, AERDB_ERR_NOT_FOUND, "%s has no column called %s", s->table, s->order_by);
+        }
+    }
+
     if (s->limit != 0) {
         table_scan(run->db, table, select_row, run);
     }
-    TRACE("read %s from its first page to its last: %d row(s) matched", table->name, run->given);
+
+    // without ORDER BY, the rows have been given back already
+    if (run->order_column < 0) {
+        TRACE("read %s from its first page to its last: %d row(s) matched", table->name, run->given);
+        return AERDB_OK;
+    }
+
+    // with it, they've only been kept: now sort them and give them back
+    if (run->out_of_memory) {
+        forget_kept_rows(run);
+        return aerdb_fail(run->db, AERDB_ERR_NO_MEMORY, "not enough memory to sort %s", table->name);
+    }
+    int matched = run->kept_count;
+    sort_kept_rows(run);
+    give_kept_rows(run);
+    forget_kept_rows(run);
+    TRACE("read %s from its first page to its last: %d row(s) matched, sorted by %s, %d given back",
+          table->name, matched, s->order_by, run->given);
     return AERDB_OK;
 }
 

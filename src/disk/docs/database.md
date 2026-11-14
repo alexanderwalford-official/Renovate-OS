@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS name (...)       (no error if it is there already)
 INSERT INTO name VALUES (value, ...)        INSERT INTO name (column, ...) VALUES (...)
 SELECT * FROM name                          SELECT column, ... FROM name
        ... WHERE column = value AND ...            ... LIMIT 10
+       ... ORDER BY column                         ... ORDER BY column DESC (biggest first)
 UPDATE name SET column = value, ... WHERE ...
 DELETE FROM name WHERE ...
 COMPACT
@@ -75,7 +76,10 @@ A row can hold up to 16 values, and has to fit in 4 KB.
 
 DELETE only marks rows as deleted. `COMPACT` gives their space back, and makes the file smaller.
 
-Not there yet: OR, ORDER BY, joins and `count(*)`. AerDB says so when it meets them.
+ORDER BY sorts by one column: smallest first, NULLs before everything, text in alphabetical
+order (capitals before small letters). Rows with the same value keep the order they were added.
+
+Not there yet: OR, joins and `count(*)`. AerDB says so when it meets them.
 
 ## Watching it work
 

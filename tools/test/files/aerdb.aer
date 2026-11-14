@@ -39,6 +39,26 @@ check("LIMIT", len(dbquery(db, "SELECT * FROM items LIMIT 2")), 2)
 check("LIMIT 0", len(dbquery(db, "SELECT * FROM items LIMIT 0")), 0)
 check("whole numbers and decimals compare", len(dbquery(db, "SELECT * FROM items WHERE price = 4")), 1)
 
+# ORDER BY (docs/plans/ORDER_BY.md): smallest first, or DESC for biggest first. The items are
+#     tea 2.5 40,  cake 4.0 3,  milk 0.9 NULL,  it's -1.5 0
+check("ORDER BY", str(dbquery(db, "SELECT name FROM items ORDER BY price")), "[[\"it's\"], [\"milk\"], [\"tea\"], [\"cake\"]]")
+check("ORDER BY ASC", str(dbquery(db, "SELECT name FROM items ORDER BY price ASC")), "[[\"it's\"], [\"milk\"], [\"tea\"], [\"cake\"]]")
+check("ORDER BY DESC", str(dbquery(db, "SELECT name FROM items ORDER BY price DESC")), "[[\"cake\"], [\"tea\"], [\"milk\"], [\"it's\"]]")
+check("ORDER BY text", str(dbquery(db, "SELECT name FROM items ORDER BY name")), "[[\"cake\"], [\"it's\"], [\"milk\"], [\"tea\"]]")
+check("NULL comes first", str(dbquery(db, "SELECT name FROM items ORDER BY stock")), "[[\"milk\"], [\"it's\"], [\"cake\"], [\"tea\"]]")
+check("ORDER BY a column not given back", str(dbquery(db, "SELECT name FROM items ORDER BY stock DESC")), "[[\"tea\"], [\"cake\"], [\"it's\"], [\"milk\"]]")
+check("ORDER BY with a WHERE", str(dbquery(db, "SELECT name FROM items WHERE price > 0 ORDER BY price DESC")), "[[\"cake\"], [\"tea\"], [\"milk\"]]")
+check("LIMIT after sorting", str(dbquery(db, "SELECT name FROM items ORDER BY price LIMIT 2")), "[[\"it's\"], [\"milk\"]]")
+check("ORDER BY and LIMIT 0", len(dbquery(db, "SELECT * FROM items ORDER BY price LIMIT 0")), 0)
+check("ORDER BY with ?", str(dbquery(db, "SELECT name FROM items WHERE price < ? ORDER BY price DESC", [3])), "[[\"tea\"], [\"milk\"], [\"it's\"]]")
+check("order by in small letters", str(dbquery(db, "SELECT name FROM items order by PRICE desc LIMIT 1")), "[[\"cake\"]]")
+dbrun(db, "CREATE TABLE ties (name TEXT, n INTEGER)")
+dbrun(db, "INSERT INTO ties VALUES ('a', 1)")
+dbrun(db, "INSERT INTO ties VALUES ('b', 2)")
+dbrun(db, "INSERT INTO ties VALUES ('c', 1)")
+check("equal values keep their order", str(dbquery(db, "SELECT name FROM ties ORDER BY n")), "[[\"a\"], [\"c\"], [\"b\"]]")
+check("equal values keep their order, DESC", str(dbquery(db, "SELECT name FROM ties ORDER BY n DESC")), "[[\"b\"], [\"a\"], [\"c\"]]")
+
 # bytes and true / false
 dbrun(db, "CREATE TABLE things (data BLOB, flag INTEGER)")
 dbrun(db, "CREATE TABLE IF NOT EXISTS things (data BLOB, flag INTEGER)")
@@ -66,6 +86,8 @@ for i = 1 to 400 do
 end
 check("400 rows", len(dbquery(db, "SELECT n FROM log")), 400)
 check("the last row", dbquery(db, "SELECT text FROM log WHERE n = 400")[0][0], "entry number 400 of the log, with some words")
+check("ORDER BY over many pages", str(dbquery(db, "SELECT n FROM log ORDER BY n DESC LIMIT 3")), "[[400], [399], [398]]")
+check("ORDER BY every row", len(dbquery(db, "SELECT n, text FROM log ORDER BY text")), 400)
 let big = len(rdb("shop.db"))
 check("many pages", big > 4096 * 5, true)
 

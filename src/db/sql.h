@@ -13,7 +13,7 @@
         CREATE TABLE [IF NOT EXISTS] name (column type, column type, ...)
         DROP TABLE name
         INSERT INTO name [(column, ...)] VALUES (value, ...)
-        SELECT * | column, ... FROM name [WHERE ...] [LIMIT n]
+        SELECT * | column, ... FROM name [WHERE ...] [ORDER BY column [ASC | DESC]] [LIMIT n]
         UPDATE name SET column = value, ... [WHERE ...]
         DELETE FROM name [WHERE ...]
         COMPACT   (VACUUM does the same)
@@ -79,6 +79,8 @@ typedef struct {
     condition_t where[SQL_CONDITIONS_MAX];   // WHERE ... AND ... (none: every row)
     int where_count;
 
+    char order_by[AERDB_NAME_MAX];   // SELECT's ORDER BY column, "" for none
+    bool order_desc;                 // ORDER BY ... DESC: biggest first
     int limit;                 // SELECT's LIMIT, -1 for none
     char create[128];          // CREATE TABLE: the columns, as text ("name TEXT, price REAL")
     bool if_not_exists;        // CREATE TABLE IF NOT EXISTS: a table already there is fine

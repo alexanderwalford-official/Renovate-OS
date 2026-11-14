@@ -36,10 +36,22 @@ def test_sql_command(t):
     # mistakes say what was wrong
     aeros.cls()
     aeros.run('sql pets.db SELECT * FROM dogs')
-    aeros.run('sql pets.db SELECT * FROM pets ORDER BY name')
+    aeros.run('sql pets.db SELECT * FROM pets WHERE legs = 2 OR legs = 4')
     aeros.run("sql pets.db INSERT INTO pets VALUES ('fish')")
-    aeros.expect('Error: no such table: dogs', "Error: AerDB can't do ORDER BY yet",
+    aeros.expect('Error: no such table: dogs', "Error: AerDB can't do OR in a WHERE yet: only AND",
                  'Error: pets has 2 column(s), but 1 value(s) were given')
+
+    # ORDER BY (docs/plans/ORDER_BY.md), and what it says about mistakes
+    aeros.cls()
+    aeros.run('sql pets.db SELECT name FROM pets ORDER BY legs')
+    aeros.expect_order('bird', 'cat', '(2 rows)')
+    aeros.cls()
+    aeros.run('sql pets.db SELECT * FROM pets ORDER BY colour')
+    aeros.run('sql pets.db SELECT * FROM pets ORDER name')
+    aeros.run('sql pets.db SELECT * FROM pets ORDER BY')
+    aeros.run('sql pets.db SELECT * FROM pets ORDER BY legs LIMIT 1 DESC')
+    aeros.expect('Error: pets has no column called colour', 'Error: expected BY, but found name',
+                 'Error: expected a name, but found the end', "Error: didn't expect DESC there")
 
     # the prompt: statement after statement, until an empty line
     aeros.cls()

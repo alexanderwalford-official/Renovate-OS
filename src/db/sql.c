@@ -417,7 +417,7 @@ static int parse_insert (parser_t* p, statement_t* s) {
     return need_keyword(p, ")");
 }
 
-// SELECT * | column, ... FROM name [WHERE ...] [LIMIT n]
+// SELECT * | column, ... FROM name [WHERE ...] [ORDER BY column [ASC | DESC]] [LIMIT n]
 static int parse_select (parser_t* p, statement_t* s) {
     s->kind = S_SELECT;
     s->limit = -1;
@@ -441,8 +441,21 @@ static int parse_select (parser_t* p, statement_t* s) {
         return result;
     }
 
-    if (at_keyword(p, "ORDER")) {
-        return aerdb_fail(p->db, AERDB_ERR_UNSUPPORTED, "AerDB can't do ORDER BY yet");
+    // ORDER BY column, then maybe ASC or DESC (ORDER BY comes before LIMIT, as in SQL)
+    if (take_keyword(p, "ORDER")) {
+        result = need_keyword(p, "BY");
+        if (result == AERDB_OK) {
+            result = read_name(p, s->order_by);
+        }
+        if (result != AERDB_OK) {
+            return result;
+        }
+
+        if (take_keyword(p, "DESC")) {
+            s->order_desc = true;     // biggest first
+        } else {
+            take_keyword(p, "ASC");   // smallest first: the usual way, so ASC changes nothing
+        }
     }
     if (take_keyword(p, "LIMIT")) {
         db_value_t limit;
